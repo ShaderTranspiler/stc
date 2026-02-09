@@ -22,11 +22,26 @@ The current aim is to build the transpiler in a GLSL-first manner. It's importan
 
 The project uses CMake for the build and development pipeline. It pulls together a couple of different tools and build requirements, which are listed below. Entries marked *(optional)* will not cause the config/build process to fail if they are not available on the development system, but they will be automatically enabled when accessible through PATH.
 
-The standard build flow is (see [Compilation output](#compilation-output) for what this actually produces):
+The standard build flow is the following:
 ```bash
 cmake -B build
 cmake --build build
 ```
+See [Compilation output](#compilation-output) for what this actually produces.
+
+## Note for development using Visual Studio
+
+### Approach #1
+
+The recommended way to use Visual Studio for development is to simply not, whenever possible.
+
+### Approach #2
+
+If [Approach #1](#approach-1) is not applicable, the second best way to use Visual Studio is to open the root directory directly, rather than the CMake generated solution and project files. VS will still integrate with CMake, and will use it for configuring and building the project. The reasoning for this approach is that this allows the use of tools like clang-tidy, which Visual Studio (and MSVC in general) mostly ignores otherwise, when ran directly on the generated files.
+
+There are a couple of build configurations provided (see *CMakeSettings.json* for details). The main difference is the generator they use (Ninja or VS, where Ninja is **highly** recommended over VS), and whether Debug or Release building is used. All configs are x64-based, though x86 can be set up later, if needed. All configs also use MSVC, though, again, this can be extended in the future to include clang, gcc, etc. (however, with other compilers, any environment other than VS probably offers a better dev experience, see [Approach #1](#approach-1)).
+
+VS support is not perfect, but it should be a viable option for development. As I personally don't mainly use VS, I did not want to dedicate any more time to implementing every single build step two times (once for clang/gcc, and once for MSVC). One imperfection is that with Ninja as a generator, clang-tidy correctly respects the warnings as errors option during building, whereas with the VS generators, it does not. Another nuisance is that VS tends to miss and/or misrecognize the more dynamic parts of the build process (e.g. addition/removal of sandbox targets), this is usually solved by deleting the CMake cache and reconfiguring. If that doesn't fix the issue, restarting VS might help. If that still doesn't fix the issue, it might be time to reconsider [Approach #1](#approach-1).
 
 ## libjulia linking
 

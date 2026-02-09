@@ -1,0 +1,57 @@
+﻿{
+	"configurations": [
+		{
+			"name": "x64-Ninja-Debug",
+			"generator": "Ninja",
+			"configurationType": "Debug",
+			"inheritEnvironments": [ "msvc_x64_x64" ],
+			"buildRoot": "${projectDir}\\vs_build\\${name}",
+			"installRoot": "${projectDir}\\vs_install\\${name}",
+			"cmakeCommandArgs": "",
+			"buildCommandArgs": "",
+			"ctestCommandArgs": "",
+			"enableMicrosoftCodeAnalysis": false,
+			"enableClangTidyCodeAnalysis": true
+		},
+		{
+			"name": "x64-VS-Debug",
+			"generator": "Visual Studio 17 2022 Win64",
+			"configurationType": "Debug",
+			"inheritEnvironments": [ "msvc_x64_x64" ],
+			"buildRoot": "${projectDir}\\vs_build\\${name}",
+			"installRoot": "${projectDir}\\vs_install\\${name}",
+			"cmakeCommandArgs": "",
+			"buildCommandArgs": "",
+			"ctestCommandArgs": "",
+			"enableMicrosoftCodeAnalysis": false,
+			"enableClangTidyCodeAnalysis": true,
+			"clangTidyChecks": "-modernize-use-nullptr"
+		},
+		{
+			"name": "x64-Ninja-Rel",
+			"generator": "Ninja",
+			"configurationType": "Release",
+			"inheritEnvironments": [ "msvc_x64_x64" ],
+			"buildRoot": "${projectDir}\\vs_build\\${name}",
+			"installRoot": "${projectDir}\\vs_install\\${name}",
+			"cmakeCommandArgs": "",
+			"buildCommandArgs": "",
+			"ctestCommandArgs": "",
+			"enableMicrosoftCodeAnalysis": false,
+			"enableClangTidyCodeAnalysis": false
+		},
+		{
+			"name": "x64-VS-Rel",
+			"generator": "Visual Studio 17 2022 Win64",
+			"configurationType": "Release",
+			"inheritEnvironments": [ "msvc_x64_x64" ],
+			"buildRoot": "${projectDir}\\vs_build\\${name}",
+			"installRoot": "${projectDir}\\vs_install\\${name}",
+			"cmakeCommandArgs": "",
+			"buildCommandArgs": "",
+			"ctestCommandArgs": "",
+			"enableMicrosoftCodeAnalysis": false,
+			"enableClangTidyCodeAnalysis": false
+		}
+	]
+}

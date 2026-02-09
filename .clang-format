@@ -1,7 +1,7 @@
 Language: Cpp
 BasedOnStyle: LLVM
 Standard: c++20
-ColumnLimit: 120
+ColumnLimit: 100
 IndentWidth: 4
 UseTab: Never
 FixNamespaceComments: true
@@ -12,13 +12,21 @@ BinPackArguments: false
 AllowShortFunctionsOnASingleLine: Inline
 AllowShortBlocksOnASingleLine: Empty
 AllowShortEnumsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: WithoutElse
 IndentCaseLabels: true
 AlignConsecutiveShortCaseStatements:
   Enabled: true
   AcrossEmptyLines: true
   AcrossComments: true
   AlignCaseColons: false
-AlignConsecutiveAssignments: true
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+AlignConsecutiveBitFields:
+  Enabled: true
+  AcrossComments: true
+  AcrossEmptyLines: false
 BreakConstructorInitializers: BeforeColon
 PackConstructorInitializers: NextLineOnly
 BreakTemplateDeclarations: Leave

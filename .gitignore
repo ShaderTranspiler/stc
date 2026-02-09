@@ -2,4 +2,13 @@
 build*/
 
 # cache for CMake FetchContent builds (e.g. Catch2)
-cmake_deps*/
+_deps*/
+
+# Visual Studio Code
+.vscode
+
+# Visual Studio
+.vs/
+out/
+vs_build/
+vs_install/

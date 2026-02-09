@@ -1,7 +1,9 @@
-#include <Test.h>
+#include <iostream>
+#include <julia.h>
+#include <temp.h>
 
 int main() {
-    stc::Test::sayHi();
+    std::cout << "Output of Lib's Temp::retOne is " << stc::Temp::retOne() << '\n';
 
     return 0;
 }
