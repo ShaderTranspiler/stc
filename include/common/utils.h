@@ -3,11 +3,14 @@
 #include <cassert>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
-#include "config.h"
+#include "common/concepts.h"
+#include "common/config.h"
 
 namespace stc {
 
@@ -42,6 +45,43 @@ template <typename T>
 requires std::is_integral_v<T>
 inline bool is_power_of_two(T x) {
     return x != 0 && (x & (x - 1)) == 0;
+}
+
+template <typename To, typename From>
+requires requires (From* f) { dynamic_cast<To*>(f); }
+std::unique_ptr<To> dynamic_unique_cast(std::unique_ptr<From>&& ptr) {
+    if (auto* cast_ptr = dynamic_cast<To*>(ptr.get())) {
+        std::ignore = ptr.release();
+        return std::unique_ptr<To>{cast_ptr};
+    }
+
+    return nullptr;
+}
+
+// only use when it's already verified that From can be successfully cast to To
+// otherwise, memory owned by ptr WILL be leaked
+template <typename To, typename From>
+requires requires (From* f) { dynamic_cast<To*>(f); }
+std::unique_ptr<To> static_unique_cast(std::unique_ptr<From>&& ptr) {
+    assert(dynamic_cast<To*>(ptr.get()) != nullptr &&
+           "Pointer passed to static_unique_cast could not be cast to target pointer type! This "
+           "will produce UB without an explicit warning/error in non-debug builds!");
+
+    return std::unique_ptr<To>(static_cast<To*>(ptr.release()));
+}
+
+// same as boost's current hash_combine implementation for 64-bit size_t:
+// https://www.boost.org/doc/libs/latest/libs/container_hash/doc/html/hash.html#notes_hash_combine
+template <typename T>
+requires Hashable<T>
+inline size_t hash_combine(size_t seed, const T& v) {
+    size_t x = seed + 0x9e3779b9 + std::hash<T>{}(v);
+    x ^= x >> 32;
+    x *= 0xe9846af9b1a615d;
+    x ^= x >> 32;
+    x *= 0xe9846af9b1a615d;
+    x ^= x >> 28;
+    return x;
 }
 
 } // namespace stc

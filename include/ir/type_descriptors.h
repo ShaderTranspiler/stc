@@ -3,63 +3,46 @@
 #include <cassert>
 #include <concepts>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <variant>
 #include <vector>
 
+#include "common/concepts.h"
+#include "common/utils.h"
+
 namespace stc::ir {
 
 // basic types modelled after SPIR-V's unified specs
-// some liberties have been taken for a more general IR
-// this includes allowing non-float scalars as matrix component types,
-// these can potentially be rewritten as arrays in the output (similarly to slang)
+// some liberties have been taken for a more general IR type system
+// this includes allowing non-float types as matrix component types,
+// these can potentially be rewritten as arrays in the output (similarly to slang -> GLSL/SPIR-V)
 
-// ctor key (passkey) pattern from:
-// https://playfulprogramming.com/posts/a-forgotten-idiom-revisited-pass-key/
-
-using TypeId = size_t;
 class TypePool;
 
-struct TypeDescriptorCtorKey {
-    friend TypePool;
+using TypeId = uint16_t;
 
-private:
-    TypeDescriptorCtorKey() = default;
-};
+namespace TypeIds {
+
+inline constexpr TypeId Invalid = std::numeric_limits<TypeId>::max();
+inline constexpr TypeId Void    = 0U;
+inline constexpr TypeId Bool    = 1U;
+
+}; // namespace TypeIds
 
 struct VoidTD {
-    explicit VoidTD(TypeDescriptorCtorKey) {}
-    VoidTD(const VoidTD&)            = delete;
-    VoidTD(VoidTD&&)                 = default;
-    VoidTD& operator=(const VoidTD&) = delete;
-    VoidTD& operator=(VoidTD&&)      = default;
-
     constexpr bool operator==(const VoidTD&) const = default;
 };
 
 struct BoolTD {
-    explicit BoolTD(TypeDescriptorCtorKey) {}
-    BoolTD(const BoolTD&)            = delete;
-    BoolTD(BoolTD&&)                 = default;
-    BoolTD& operator=(const BoolTD&) = delete;
-    BoolTD& operator=(BoolTD&&)      = default;
-
     constexpr bool operator==(const BoolTD&) const = default;
 };
 
 struct IntTD {
     uint32_t width;
     bool signedness;
-
-    constexpr explicit IntTD(TypeDescriptorCtorKey, uint32_t width, bool signedness)
-        : width(width), signedness(signedness) {}
-
-    IntTD(const IntTD&)            = delete;
-    IntTD(IntTD&&)                 = default;
-    IntTD& operator=(const IntTD&) = delete;
-    IntTD& operator=(IntTD&&)      = default;
 
     constexpr bool operator==(const IntTD&) const = default;
 };
@@ -82,32 +65,14 @@ struct FloatTD {
     }
 
     uint32_t width;
-    Encoding enc;
-
-    constexpr explicit FloatTD(TypeDescriptorCtorKey, uint32_t width,
-                               Encoding enc = Encoding::ieee754)
-        : width(width), enc(enc) {}
-
-    FloatTD(const FloatTD&)            = delete;
-    FloatTD(FloatTD&&)                 = default;
-    FloatTD& operator=(const FloatTD&) = delete;
-    FloatTD& operator=(FloatTD&&)      = default;
+    Encoding enc{Encoding::ieee754};
 
     constexpr bool operator==(const FloatTD&) const = default;
 };
 
 struct VectorTD {
-    TypeId comp_type_id;
-    uint32_t comp_count;
-
-    constexpr explicit VectorTD(TypeDescriptorCtorKey, TypeId component_type_id,
-                                uint32_t component_count)
-        : comp_type_id(component_type_id), comp_count(component_count) {}
-
-    VectorTD(const VectorTD&)            = delete;
-    VectorTD(VectorTD&&)                 = default;
-    VectorTD& operator=(const VectorTD&) = delete;
-    VectorTD& operator=(VectorTD&&)      = default;
+    TypeId component_type_id;
+    uint32_t component_count;
 
     constexpr bool operator==(const VectorTD&) const = default;
 };
@@ -116,52 +81,37 @@ struct MatrixTD {
     TypeId column_type_id;
     uint32_t column_count;
 
-    constexpr explicit MatrixTD(TypeDescriptorCtorKey, TypeId column_type_id, uint32_t column_count)
-        : column_type_id(column_type_id), column_count(column_count) {}
-
-    MatrixTD(const MatrixTD&)            = delete;
-    MatrixTD(MatrixTD&&)                 = default;
-    MatrixTD& operator=(const MatrixTD&) = delete;
-    MatrixTD& operator=(MatrixTD&&)      = default;
-
     constexpr bool operator==(const MatrixTD&) const = default;
 };
 
 struct ArrayTD {
-    TypeId elem_type_id;
+    TypeId element_type_id;
     uint32_t length;
 
-    explicit ArrayTD(TypeDescriptorCtorKey, TypeId element_type_id, uint32_t length)
-        : elem_type_id(element_type_id), length(length) {}
-
-    ArrayTD(const ArrayTD&)            = delete;
-    ArrayTD(ArrayTD&&)                 = default;
-    ArrayTD& operator=(const ArrayTD&) = delete;
-    ArrayTD& operator=(ArrayTD&&)      = default;
-
-    bool operator==(const ArrayTD& other) const = default;
+    bool operator==(const ArrayTD&) const = default;
 };
 
-struct StructTD {
+struct StructData {
     struct FieldInfo {
         TypeId type;
         std::string name;
 
-        bool operator==(const FieldInfo& other) const = default;
+        bool operator==(const FieldInfo&) const = default;
     };
 
     std::string name;
     std::vector<FieldInfo> fields;
 
-    explicit StructTD(TypeDescriptorCtorKey, std::string name, std::vector<FieldInfo> fields)
-        : name(std::move(name)), fields(std::move(fields)) {}
+    bool operator==(const StructData&) const = default;
+};
 
-    StructTD(const StructTD&)            = delete;
-    StructTD(StructTD&&)                 = default;
-    StructTD& operator=(const StructTD&) = delete;
-    StructTD& operator=(StructTD&&)      = default;
+struct StructTD {
+    const StructData* data;
 
-    bool operator==(const StructTD& other) const = default;
+    explicit StructTD(const StructData* data)
+        : data{data} {}
+
+    bool operator==(const StructTD& other) const;
 };
 
 using TDVariantType =
@@ -176,9 +126,6 @@ concept TypeDescriptorT =
 struct TypeDescriptor {
     TDVariantType type_data;
 
-    TypeDescriptor(TypeDescriptorCtorKey, TDVariantType type_data)
-        : type_data{std::move(type_data)} {}
-
     TypeDescriptor(const TypeDescriptor&)            = delete;
     TypeDescriptor(TypeDescriptor&&)                 = default;
     TypeDescriptor& operator=(const TypeDescriptor&) = delete;
@@ -191,16 +138,102 @@ struct TypeDescriptor {
 
     constexpr bool is_void() const { return is<VoidTD>(); }
     constexpr bool is_scalar() const { return is<BoolTD>() || is<IntTD>() || is<FloatTD>(); }
+    constexpr bool is_vector() const { return is<VectorTD>(); }
+    constexpr bool is_matrix() const { return is<MatrixTD>(); }
+    constexpr bool is_array() const { return is<ArrayTD>(); }
     constexpr bool is_custom() const { return is<StructTD>(); }
 
     template <TypeDescriptorT T>
-    constexpr T as() const {
+    constexpr const T& as() const {
         return std::get<T>(type_data);
     }
 
-    bool operator==(const TypeDescriptor& other) const;
-};
+    bool operator==(const TypeDescriptor&) const;
 
-std::string to_string(const TypeDescriptor& type, const TypePool& type_pool);
+private:
+    friend class TypePool;
+
+    explicit TypeDescriptor(TDVariantType type_data)
+        : type_data{std::move(type_data)} {}
+};
+static_assert(sizeof(TypeDescriptor) == sizeof(TDVariantType));
 
 } // namespace stc::ir
+
+template <>
+struct std::hash<stc::ir::VoidTD> {
+    size_t operator()(const stc::ir::VoidTD&) const noexcept { return 0; }
+};
+
+template <>
+struct std::hash<stc::ir::BoolTD> {
+    size_t operator()(const stc::ir::BoolTD&) const noexcept { return 0; }
+};
+
+template <>
+struct std::hash<stc::ir::IntTD> {
+    size_t operator()(const stc::ir::IntTD& x) const noexcept {
+        return stc::hash_combine(std::hash<uint32_t>{}(x.width), x.signedness);
+    }
+};
+
+template <>
+struct std::hash<stc::ir::FloatTD> {
+    size_t operator()(const stc::ir::FloatTD& x) const noexcept {
+        return stc::hash_combine(std::hash<uint32_t>{}(x.width), static_cast<uint8_t>(x.enc));
+    }
+};
+
+template <>
+struct std::hash<stc::ir::VectorTD> {
+    size_t operator()(const stc::ir::VectorTD& x) const noexcept {
+        return stc::hash_combine(std::hash<uint32_t>{}(x.component_count), x.component_type_id);
+    }
+};
+
+template <>
+struct std::hash<stc::ir::MatrixTD> {
+    size_t operator()(const stc::ir::MatrixTD& x) const noexcept {
+        return stc::hash_combine(std::hash<uint32_t>{}(x.column_count), x.column_type_id);
+    }
+};
+
+template <>
+struct std::hash<stc::ir::ArrayTD> {
+    size_t operator()(const stc::ir::ArrayTD& x) const noexcept {
+        return stc::hash_combine(std::hash<uint32_t>{}(x.length), x.element_type_id);
+    }
+};
+
+template <>
+struct std::hash<stc::ir::StructData::FieldInfo> {
+    size_t operator()(const stc::ir::StructData::FieldInfo& x) const noexcept {
+        return stc::hash_combine(std::hash<std::string>{}(x.name), x.type);
+    }
+};
+
+template <>
+struct std::hash<stc::ir::StructData> {
+    size_t operator()(const stc::ir::StructData& x) const noexcept {
+        size_t h = std::hash<std::string>{}(x.name);
+
+        for (const auto& field : x.fields) {
+            h = stc::hash_combine(h, field);
+        }
+
+        return h;
+    }
+};
+
+template <>
+struct std::hash<stc::ir::StructTD> {
+    size_t operator()(const stc::ir::StructTD& x) const noexcept {
+        const stc::ir::StructData& data = x.data != nullptr ? *x.data : stc::ir::StructData{"", {}};
+
+        return std::hash<stc::ir::StructData>{}(data);
+    }
+};
+
+static_assert(stc::UnorderedMapKey<stc::ir::TDVariantType>);
+
+#undef STD_HASH_SPEC

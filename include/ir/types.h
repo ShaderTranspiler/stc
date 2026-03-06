@@ -4,6 +4,8 @@
 
 namespace stc::ir {
 
+// TODO: use double-interning instead (intern base types and qual types)
+
 enum class Qualifier : uint8_t {
     None      = 0,
     Const     = 1 << 0,
@@ -13,7 +15,7 @@ enum class Qualifier : uint8_t {
     WriteOnly = 1 << 4,
     In        = 1 << 5,
     Out       = 1 << 6,
-    // TODO: ...
+    // ...
 };
 
 inline Qualifier operator|(Qualifier a, Qualifier b) {
@@ -36,6 +38,7 @@ struct Type {
         : base_type(base_type), qualifiers(qualifiers) {}
 
     bool has_qualifiers(Qualifier filter) const;
+    std::string to_string() const;
 
     bool operator==(const Type&) const = default;
 };
