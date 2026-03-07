@@ -262,7 +262,7 @@ private:
             new_capacity = capacity_fallback;
         }
 
-        SizeTy start_offset = !slabs.empty() ? slabs_tail->get_end_offset() : 0;
+        SizeTy start_offset = !slabs.empty() ? slabs_tail->get_end_offset() : 1;
 
         // prevent unnecessary offset overflows with smaller idx types
         // by limiting slab sizes based on max idx from start_offset

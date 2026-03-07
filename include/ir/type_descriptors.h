@@ -80,6 +80,8 @@ struct MatrixTD {
     uint32_t column_count;
 
     constexpr bool operator==(const MatrixTD&) const = default;
+
+    static std::pair<uint32_t, uint32_t> get_dims(TypeId mat_id, const TypePool& type_pool);
 };
 
 struct ArrayTD {
@@ -155,6 +157,9 @@ private:
         : type_data{std::move(type_data)} {}
 };
 static_assert(sizeof(TypeDescriptor) == sizeof(TDVariantType));
+
+std::string to_string(const TypeDescriptor&, const TypePool&);
+std::string to_string(TypeId, const TypePool&);
 
 } // namespace stc::ir
 

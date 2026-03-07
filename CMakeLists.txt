@@ -55,6 +55,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 set(LIB_OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
 
@@ -139,8 +140,8 @@ if (MSVC)
     target_compile_options(CommonConfig INTERFACE /W4)
 else()
     target_compile_options(CommonConfig INTERFACE
-        -Wall -Wextra -Wpedantic -Wconversion
-        $<$<NOT:$<CONFIG:Debug>>:-fvisibility=hidden>
+        -Wall -Wextra -Wpedantic -Wconversion -Wreorder
+        # $<$<NOT:$<CONFIG:Debug>>:-fvisibility=hidden>
     )
 endif()
 
@@ -152,7 +153,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 
         string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
         string(REPLACE "/ZI" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-        
+
         string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
         string(REPLACE "/ZI" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 
@@ -187,7 +188,7 @@ target_include_directories(${LIB_TARGET} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
 target_link_libraries(${LIB_TARGET} PRIVATE CommonConfig)
 target_link_libraries(${LIB_TARGET} PRIVATE ${JULIA_LIB})
 
-target_compile_definitions(${LIB_TARGET} PRIVATE STC_BUILDING_DLL JULIA_ENABLE_THREADING=1)
+target_compile_definitions(${LIB_TARGET} PRIVATE STC_BUILDING_DLL=1 JULIA_ENABLE_THREADING=1)
 
 target_sources(${LIB_TARGET} PUBLIC
     FILE_SET HEADERS

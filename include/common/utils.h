@@ -108,4 +108,7 @@ struct StrongId {
     constexpr auto operator<=>(const StrongId&) const = default;
 };
 
+template <typename... Ts>
+inline constexpr bool dependent_false_v = false;
+
 } // namespace stc

@@ -1,0 +1,16 @@
+// Subset of all statements defined by stmt.def
+
+#include "common/x_macros/begin_def.inc"
+
+STC_X_FIRST(BoolLiteral, BoolLit)
+STC_X(IntLiteral, IntLit)
+STC_X(FloatLiteral, FloatLit)
+STC_X(VectorLiteral, VecLit)
+STC_X(MatrixLiteral, MatLit)
+STC_X(ArrayLiteral, ArrayLit)
+STC_X(StructInstantiationLiteral, StructInstLit)
+STC_X(BinaryOp, BinOp)
+STC_X(ExplicitCast, ExplCast)
+STC_X_LAST(DeclRefExpr, DeclRef)
+
+#include "common/x_macros/end_def.inc"

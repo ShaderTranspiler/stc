@@ -25,12 +25,14 @@ std::nullptr_t warning(const SrcFile& file, SrcLocation location, std::string_vi
 }
 
 SrcInfoManager::SrcInfoManager(ArenaTy& arena, size_t initial_file_capacity)
-    : arena_alloc{&arena}, file_bounds{} {
+    : arena_alloc{&arena},
+      file_bounds{},
+      invalid_location_id{arena_alloc.emplace(SrcLocation::invalid()).first},
+      last_loc_id{invalid_location_id} {
     file_bounds.reserve(initial_file_capacity);
 
     // invalid location and file states
     std::ignore = make_file("SRC FILE INFO UNAVAILABLE");
-    last_loc_id = invalid_location_id = arena_alloc.emplace(SrcLocation::invalid()).first;
 }
 
 SrcLocationId SrcInfoManager::make_location(uint32_t line, uint32_t col) {

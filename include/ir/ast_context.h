@@ -25,9 +25,19 @@ public:
           src_info_manager{src_info_arena} {}
 
     template <typename T, typename... Args>
-    std::pair<uint32_t, T*> alloc_node(Args&&... args) {
+    requires std::derived_from<T, Stmt>
+    std::pair<StmtId, T*> alloc_stmt(Args&&... args) {
         return stmt_arena.emplace<T>(std::forward<Args>(args)...);
     }
+
+    template <typename T, typename... Args>
+    requires std::derived_from<T, Decl>
+    std::pair<DeclId, T*> alloc_decl(Args&&... args) {
+        return decl_arena.emplace<T>(std::forward<Args>(args)...);
+    }
+
+    Stmt* get_stmt(StmtId id) const;
+    Decl* get_decl(DeclId id) const;
 };
 
 }; // namespace stc::ir
