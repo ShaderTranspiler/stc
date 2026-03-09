@@ -2,14 +2,14 @@
 
 #include <iostream>
 
-#include "sir/ast_visitor.h"
+#include "sir/sir_visitor.h"
 
 namespace stc::sir {
 
-class ASTDumper : public ASTVisitor<ASTDumper, void, const ASTCtx> {
+class SIRDumper : public SIRVisitor<SIRDumper, const SIRCtx, void> {
 public:
-    explicit ASTDumper(const ASTCtx& ctx, std::ostream& out)
-        : ASTVisitor{ctx}, out{out} {}
+    explicit SIRDumper(const SIRCtx& ctx, std::ostream& out)
+        : SIRVisitor{ctx}, out{out} {}
 
     void pre_visit(NodeId node);
 
@@ -29,6 +29,7 @@ private:
     void dec_indent(size_t level = STC_DUMP_INDENT);
 };
 
-static_assert(CIsASTVisitorImpl<ASTDumper, void>);
+// TODO
+static_assert(CSIRVisitorImpl<SIRDumper, void>);
 
 } // namespace stc::sir

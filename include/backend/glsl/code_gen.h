@@ -3,16 +3,16 @@
 #include <sstream>
 
 #include "backend/glsl/glsl_context.h"
-#include "sir/ast_visitor.h"
+#include "sir/sir_visitor.h"
 
 namespace stc::glsl {
 
 using namespace stc::sir;
 
-class GLSLCodeGenVisitor : public ASTVisitor<GLSLCodeGenVisitor, void, const GLSLCtx> {
+class GLSLCodeGenVisitor : public SIRVisitor<GLSLCodeGenVisitor, const GLSLCtx, void> {
 public:
     GLSLCodeGenVisitor(const GLSLCtx& ctx)
-        : ASTVisitor{ctx} {}
+        : SIRVisitor{ctx} {}
 
     std::string result() const { return out.str(); }
     bool success() const { return successful_gen; }

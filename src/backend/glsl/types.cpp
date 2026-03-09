@@ -61,7 +61,7 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool) {
         return type_str(*it_td, type_pool) + dims_str;
     }
 
-    if (td.is_custom()) {
+    if (td.is_struct()) {
         auto [data_ptr] = td.as<StructTD>();
         assert(data_ptr != nullptr && "StructTD without struct data");
 

@@ -16,7 +16,7 @@ using namespace stc::types;
 struct NodeId : StrongId<uint32_t> {
     using StrongId::StrongId;
 
-    inline bool is_null() const { return *this == null_id(); }
+    bool is_null() const { return *this == null_id(); }
 
     static constexpr NodeId null_id() { return 0U; }
 };
@@ -26,7 +26,7 @@ enum class NodeKind : uint8_t {
     InvalidKind,
 
     #define X(type, kind) kind,
-        #include "frontend/jl/ast/node_defs/all_nodes.def"
+        #include "frontend/jl/node_defs/all_nodes.def"
     #undef X
 };
 // clang-format on
@@ -34,6 +34,10 @@ enum class NodeKind : uint8_t {
 struct Expr {
     SrcLocationId location;
     TypeId type;
+    uint16_t _node_storage;
+
+    explicit Expr(SrcLocationId location, TypeId type, uint16_t node_storage = 0U)
+        : location{location}, type{type}, _node_storage{node_storage} {}
 };
 
 }; // namespace stc::jl

@@ -10,7 +10,6 @@
 #include <variant>
 #include <vector>
 
-#include "common/concepts.h"
 #include "common/utils.h"
 
 namespace stc::types {
@@ -24,6 +23,8 @@ class TypePool;
 
 struct TypeId : public StrongId<uint16_t> {
     using StrongId::StrongId;
+
+    bool constexpr is_null() const { return *this == null_id(); }
 
     static constexpr TypeId null_id() { return 0U; }
     static constexpr TypeId void_id() { return 1U; }
@@ -39,8 +40,8 @@ struct BoolTD {
 };
 
 struct IntTD {
-    uint32_t width;
-    bool is_signed;
+    const uint32_t width;
+    const bool is_signed;
 
     constexpr bool operator==(const IntTD&) const = default;
 };
@@ -62,28 +63,28 @@ struct FloatTD {
         throw std::logic_error{"Unaccounted float encoding in enumeration"};
     }
 
-    uint32_t width;
-    Encoding enc{Encoding::ieee754};
+    const uint32_t width;
+    const Encoding enc{Encoding::ieee754};
 
     constexpr bool operator==(const FloatTD&) const = default;
 };
 
 struct VectorTD {
-    TypeId component_type_id;
-    uint32_t component_count;
+    const TypeId component_type_id;
+    const uint32_t component_count;
 
     constexpr bool operator==(const VectorTD&) const = default;
 };
 
 struct MatrixTD {
     struct MatrixInfo {
-        uint32_t rows;
-        uint32_t cols;
-        TypeId component_type;
+        const uint32_t rows;
+        const uint32_t cols;
+        const TypeId component_type;
     };
 
-    TypeId column_type_id;
-    uint32_t column_count;
+    const TypeId column_type_id;
+    const uint32_t column_count;
 
     constexpr bool operator==(const MatrixTD&) const = default;
 
@@ -91,8 +92,8 @@ struct MatrixTD {
 };
 
 struct ArrayTD {
-    TypeId element_type_id;
-    uint32_t length;
+    const TypeId element_type_id;
+    const uint32_t length;
 
     constexpr bool operator==(const ArrayTD&) const = default;
 
@@ -101,14 +102,14 @@ struct ArrayTD {
 
 struct StructData {
     struct FieldInfo {
-        TypeId type;
-        std::string name;
+        const TypeId type;
+        const std::string name;
 
         constexpr bool operator==(const FieldInfo&) const = default;
     };
 
-    std::string name;
-    std::vector<FieldInfo> fields;
+    const std::string name;
+    const std::vector<FieldInfo> fields;
 
     constexpr bool operator==(const StructData&) const = default;
 };
@@ -116,28 +117,37 @@ struct StructData {
 struct StructTD {
     const StructData* data;
 
-    explicit StructTD(const StructData* data)
-        : data{data} {}
-
     bool operator==(const StructTD& other) const;
 };
 
-using TDVariantType =
-    std::variant<VoidTD, BoolTD, IntTD, FloatTD, VectorTD, MatrixTD, ArrayTD, StructTD>;
+enum class EmptyBuiltinKind : uint8_t {};
 
+template <typename T>
+concept CBuiltinKind = CHashable<T> && CEqualityComparable<T>;
+
+struct BuiltinTD {
+    const uint8_t kind;
+
+    bool operator==(const BuiltinTD& other) const { return kind == other.kind; }
+};
+
+using TDVariantType =
+    std::variant<VoidTD, BoolTD, IntTD, FloatTD, VectorTD, MatrixTD, ArrayTD, StructTD, BuiltinTD>;
+
+// CLEANUP: use a variadic template instead
 template <typename T>
 concept CTypeDescriptorTy =
     std::is_same_v<T, VoidTD> || std::is_same_v<T, BoolTD> || std::is_same_v<T, IntTD> ||
     std::is_same_v<T, FloatTD> || std::is_same_v<T, VectorTD> || std::is_same_v<T, MatrixTD> ||
-    std::is_same_v<T, ArrayTD> || std::is_same_v<T, StructTD>;
+    std::is_same_v<T, ArrayTD> || std::is_same_v<T, StructTD> || std::is_same_v<T, BuiltinTD>;
 
 struct TypeDescriptor {
-    TDVariantType type_data;
+    const TDVariantType type_data;
 
-    TypeDescriptor(const TypeDescriptor&)            = delete;
-    TypeDescriptor(TypeDescriptor&&)                 = default;
-    TypeDescriptor& operator=(const TypeDescriptor&) = delete;
-    TypeDescriptor& operator=(TypeDescriptor&&)      = default;
+    TypeDescriptor(const TypeDescriptor&)                  = delete;
+    TypeDescriptor(TypeDescriptor&&)                       = default;
+    TypeDescriptor& operator=(const TypeDescriptor& other) = delete;
+    TypeDescriptor& operator=(TypeDescriptor&&)            = delete;
 
     template <CTypeDescriptorTy T>
     constexpr bool is() const {
@@ -149,7 +159,8 @@ struct TypeDescriptor {
     constexpr bool is_vector() const { return is<VectorTD>(); }
     constexpr bool is_matrix() const { return is<MatrixTD>(); }
     constexpr bool is_array() const { return is<ArrayTD>(); }
-    constexpr bool is_custom() const { return is<StructTD>(); }
+    constexpr bool is_struct() const { return is<StructTD>(); }
+    constexpr bool is_builtin() const { return is<BuiltinTD>(); }
 
     template <CTypeDescriptorTy T>
     constexpr const T& as() const {
@@ -254,6 +265,12 @@ struct std::hash<stc::types::StructTD> {
     }
 };
 
-static_assert(stc::CIsUnorderedMapKey<stc::types::TDVariantType>);
+template <>
+struct std::hash<stc::types::BuiltinTD> {
+    size_t operator()(const stc::types::BuiltinTD& x) const noexcept {
+        return std::hash<uint8_t>{}(x.kind);
+    }
+};
 
-#undef STD_HASH_SPEC
+static_assert(stc::CHashable<stc::types::TDVariantType>);
+static_assert(stc::CEqualityComparable<stc::types::TDVariantType>);

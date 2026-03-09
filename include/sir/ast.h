@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "common/base.h"
-#include "common/concepts.h"
 #include "common/src_info.h"
 #include "common/utils.h"
 #include "types/types.h"
@@ -28,7 +27,7 @@ using namespace stc::types;
 struct NodeId : public StrongId<uint32_t> {
     using StrongId::StrongId;
 
-    inline bool is_null() const { return *this == null_id(); }
+    bool is_null() const { return *this == null_id(); }
 
     // TODO: enforce in arenas
     static constexpr NodeId null_id() { return 0U; }
@@ -210,7 +209,7 @@ struct Expr : public Stmt {
     }
 
 private:
-    inline static uint32_t pack_to_u32(TypeId type, uint8_t node_storage) {
+    static uint32_t pack_to_u32(TypeId type, uint8_t node_storage) {
         return (static_cast<uint32_t>(type) << 8) | node_storage;
     }
 };
@@ -365,10 +364,6 @@ struct ReturnStmt : public Stmt {
     SAME_NODE_T_DEF(NodeKind::Return)
 };
 
-// ==================
-//   dyn_cast utils
-// ==================
-
 template <typename T>
 concept CNodeTy = std::derived_from<T, NodeBase>;
 
@@ -376,40 +371,10 @@ template <typename T>
 concept CStmtTy = std::derived_from<T, Stmt>;
 
 template <typename T>
+concept CExprTy = std::derived_from<T, Expr>;
+
+template <typename T>
 concept CDeclTy = std::derived_from<T, Decl>;
-
-// requires part is just a safe-guard, all nodes should have it implemented
-template <typename To, typename From>
-concept CIsValidDynCast = CNodeTy<To> && CNodeTy<From> && requires (From* ptr) {
-    { To::same_node_t(ptr) } -> std::same_as<bool>;
-};
-
-template <typename To, typename From>
-requires CIsValidDynCast<To, From>
-To* dyn_cast(From* ptr) {
-    if (ptr == nullptr)
-        return nullptr;
-
-    if (To::same_node_t(ptr)) {
-        return static_cast<To*>(ptr);
-    }
-
-    return nullptr;
-}
-
-template <typename To, typename From>
-requires CIsValidDynCast<To, From>
-std::unique_ptr<To> dyn_unique_cast(std::unique_ptr<From>&& ptr) {
-    if (ptr == nullptr)
-        return nullptr;
-
-    if (auto* cast_ptr = dyn_cast<To, From>(ptr.get())) {
-        std::ignore = ptr.release();
-        return std::unique_ptr<To>{cast_ptr};
-    }
-
-    return nullptr;
-}
 
 } // namespace stc::sir
 

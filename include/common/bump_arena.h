@@ -6,7 +6,6 @@
 #include <memory>
 #include <vector>
 
-#include "common/concepts.h"
 #include "common/utils.h"
 
 namespace stc {
@@ -147,10 +146,11 @@ public:
         if (offset == 0)
             return nullptr;
 
-        const auto& last_accessed = slabs[last_slab_hint].get();
+        const auto& last_accessed = slabs[last_slab_hint];
         assert(last_accessed != nullptr);
 
-        if (last_accessed->contains_offset(offset))
+        // TODO: profile marking as [[likely]] vs not
+        if (last_accessed->contains_offset(offset)) [[likely]]
             return last_accessed->offset_to_ptr(offset);
 
         auto it = std::upper_bound(slab_end_offsets.begin(), slab_end_offsets.end(), offset);
@@ -158,8 +158,8 @@ public:
         if (it == slab_end_offsets.end())
             return nullptr;
 
-        SizeTy idx = static_cast<SizeTy>(it - slab_end_offsets.begin());
-        Slab* slab = slabs[idx].get();
+        SizeTy idx       = static_cast<SizeTy>(it - slab_end_offsets.begin());
+        const auto& slab = slabs[idx];
 
         assert(slab != nullptr);
         assert(slab->contains_offset(offset) && "wrong slab returned for offset");
@@ -230,14 +230,14 @@ private:
 
     mutable SizeTy last_slab_hint;
 
-    static inline uintptr_t get_aligned_size(uintptr_t size, SizeTy alignment) {
+    static uintptr_t get_aligned_size(uintptr_t size, SizeTy alignment) {
         if (size > std::numeric_limits<uintptr_t>::max() - alignment + 1)
             throw std::overflow_error{"The specified pointer alignment would overflow"};
 
         return (size + alignment - 1) / alignment * alignment;
     }
 
-    static inline std::byte* get_aligned_ptr(std::byte* ptr, SizeTy alignment) {
+    static std::byte* get_aligned_ptr(std::byte* ptr, SizeTy alignment) {
         return reinterpret_cast<std::byte*>(
             get_aligned_size(reinterpret_cast<uintptr_t>(ptr), alignment));
     }

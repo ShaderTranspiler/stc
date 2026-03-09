@@ -1,0 +1,11 @@
+#include "common/x_macros/begin_def.inc"
+
+STC_X_FIRST(BoolLiteral, BoolLit)
+STC_X(IntLiteral, IntLit)
+STC_X(UIntLiteral, UIntLit)
+STC_X(Float32Literal, Float32Lit)
+STC_X(Float64Literal, Float64Lit)
+STC_X(BinaryOp, BinOp)
+STC_X_LAST(Return, Return)
+
+#include "common/x_macros/end_def.inc"

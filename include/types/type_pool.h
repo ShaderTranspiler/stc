@@ -14,7 +14,7 @@ private:
     using ArenaTy = BumpArena<TypeId::id_type>;
 
 public:
-    // ! expects arena to not be empty and not used by others (it can only be inspected)
+    // ! expects arena to be empty, and unused by others during its lifetime
     explicit TypePool(ArenaTy& arena)
         : arena{arena} {
 
@@ -23,7 +23,15 @@ public:
 
         // make sure arena IDs 1 and 2 will not be given out
         std::ignore = arena.allocate(2, 1);
-        assert(arena.get_current_offset() == 3);
+        assert(arena.get_current_offset() >= 3);
+    }
+
+    explicit TypePool(ArenaTy& arena, std::vector<BuiltinTD> builtins)
+        : TypePool{arena} {
+
+        for (BuiltinTD td : builtins) {
+            std::ignore = insert_or_get(td);
+        }
     }
 
     TypePool(const TypePool&)            = delete;
@@ -51,12 +59,14 @@ public:
     [[nodiscard]] TypeId vector_td(TypeId component_type_id, uint32_t component_count);
     [[nodiscard]] TypeId matrix_td(TypeId column_type_id, uint32_t column_count);
     [[nodiscard]] TypeId array_td(TypeId element_type_id, uint32_t length);
+    [[nodiscard]] TypeId builtin_td(uint8_t kind);
     [[nodiscard]] TypeId get_struct_td(std::string_view name);
 
     TypeId make_struct_td(std::string name, std::vector<StructData::FieldInfo> fields);
 
 private:
-    [[nodiscard]] TypeId insert(TDVariantType type, bool purge_duplicates = true);
+    TypeId get(TDVariantType type) const;
+    TypeId insert_or_get(TDVariantType type, bool fail_on_get = false);
 
     ArenaTy& arena;
     std::unordered_map<TDVariantType, TypeId> pool;

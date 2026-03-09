@@ -1,6 +1,6 @@
 #include <backend/glsl/code_gen.h>
 #include <iostream>
-#include <sir/ast_dumper.h>
+#include <sir/sir_dumper.h>
 
 // NOTE: main() can  throw right now
 int main() { // NOLINT
@@ -9,7 +9,7 @@ int main() { // NOLINT
     using namespace stc::glsl;
 
     GLSLCtx ctx{};
-    ASTDumper dumper{ctx, std::cout};
+    SIRDumper dumper{ctx, std::cout};
     SrcLocationId loc{0};
 
     auto i32 = ctx.type_pool.int_td(32, true);
@@ -49,7 +49,7 @@ int main() { // NOLINT
 
     std::cout << codegen.result();
 
-    std::cout << "code gen " << (codegen.success() ? "was successful" : "failed");
+    std::cout << "code gen " << (codegen.success() ? "was successful" : "failed") << '\n';
 
     return 0;
 }

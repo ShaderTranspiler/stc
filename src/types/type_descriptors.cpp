@@ -103,8 +103,11 @@ std::string to_string(const TypeDescriptor& type, const TypePool& type_pool) {
         } else if constexpr (std::is_same_v<T, StructTD>) {
             // TODO: list of fields
             return std::format("struct {}", arg.data->name);
+        } else if constexpr (std::is_same_v<T, BuiltinTD>) {
+            // TODO
+            return "???";
         } else {
-            static_assert(false, "missing visitor case(s)");
+            static_assert(false, "missing type descriptor case(s) in visitor");
         }
     };
 

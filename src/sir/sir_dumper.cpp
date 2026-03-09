@@ -1,6 +1,6 @@
 #include <format>
 
-#include "sir/ast_dumper.h"
+#include "sir/sir_dumper.h"
 #include "types/type_descriptors.h"
 
 namespace {
@@ -39,28 +39,28 @@ inline std::string label(const std::string& label_str) {
 
 namespace stc::sir {
 
-std::string ASTDumper::type_str(TypeId id) const {
+std::string SIRDumper::type_str(TypeId id) const {
     return to_string(id, ctx.type_pool);
 }
 
-std::string ASTDumper::indent() const {
+std::string SIRDumper::indent() const {
     return stc::indent(indent_level, STC_DUMP_INDENT);
 }
 
-void ASTDumper::inc_indent(size_t level) {
+void SIRDumper::inc_indent(size_t level) {
     indent_level += level;
 }
 
-void ASTDumper::dec_indent(size_t level) {
+void SIRDumper::dec_indent(size_t level) {
     indent_level -= level;
 }
 
-void ASTDumper::pre_visit(NodeId node_id) {
+void SIRDumper::pre_visit(NodeId node_id) {
     out << indent() << '[' << std::format("{:p}", static_cast<void*>(ctx.get_node(node_id))) << "|"
         << node_id << "]\n";
 }
 
-void ASTDumper::visit_VarDecl(VarDecl& var_decl) {
+void SIRDumper::visit_VarDecl(VarDecl& var_decl) {
     out << indent() << "VarDecl: '" << var_decl.identifier << "' <: " << type_str(var_decl.type)
         << '\n';
 
@@ -73,7 +73,7 @@ void ASTDumper::visit_VarDecl(VarDecl& var_decl) {
     }
 }
 
-void ASTDumper::visit_FunctionDecl(FunctionDecl& fn_decl) {
+void SIRDumper::visit_FunctionDecl(FunctionDecl& fn_decl) {
     out << indent() << "FunctionDecl: '" << fn_decl.identifier << "' -> "
         << type_str(fn_decl.return_type) << '\n';
 
@@ -84,12 +84,12 @@ void ASTDumper::visit_FunctionDecl(FunctionDecl& fn_decl) {
     dec_indent();
 }
 
-void ASTDumper::visit_ParamDecl(ParamDecl& param_decl) {
+void SIRDumper::visit_ParamDecl(ParamDecl& param_decl) {
     out << indent() << "ParamDecl: " << param_decl.identifier
         << " <: " << type_str(param_decl.param_type) << '\n';
 }
 
-void ASTDumper::visit_StructDecl(StructDecl& struct_decl) {
+void SIRDumper::visit_StructDecl(StructDecl& struct_decl) {
     out << indent() << "StructDecl: " << struct_decl.identifier << '\n';
 
     inc_indent();
@@ -98,25 +98,25 @@ void ASTDumper::visit_StructDecl(StructDecl& struct_decl) {
     dec_indent();
 }
 
-void ASTDumper::visit_FieldDecl(FieldDecl& field_decl) {
+void SIRDumper::visit_FieldDecl(FieldDecl& field_decl) {
     out << indent() << "FieldDecl: " << field_decl.identifier
         << " <: " << type_str(field_decl.field_type) << '\n';
 }
 
-void ASTDumper::visit_BoolLiteral(BoolLiteral& bool_lit) {
+void SIRDumper::visit_BoolLiteral(BoolLiteral& bool_lit) {
     out << indent() << "BoolLiteral: " << (bool_lit.value() ? "true" : "false") << '\n';
 }
 
-void ASTDumper::visit_IntLiteral(IntLiteral& int_lit) {
+void SIRDumper::visit_IntLiteral(IntLiteral& int_lit) {
     out << indent() << "IntLiteral (" << type_str(int_lit.type()) << "): " << int_lit.data << '\n';
 }
 
-void ASTDumper::visit_FloatLiteral(FloatLiteral& float_lit) {
+void SIRDumper::visit_FloatLiteral(FloatLiteral& float_lit) {
     out << indent() << "FloatLiteral (" << type_str(float_lit.type()) << "): " << float_lit.data
         << '\n';
 }
 
-void ASTDumper::visit_VectorLiteral(VectorLiteral& vec_lit) {
+void SIRDumper::visit_VectorLiteral(VectorLiteral& vec_lit) {
     out << indent() << "VectorLiteral (" << type_str(vec_lit.type()) << "):\n";
 
     inc_indent();
@@ -125,7 +125,7 @@ void ASTDumper::visit_VectorLiteral(VectorLiteral& vec_lit) {
     dec_indent();
 }
 
-void ASTDumper::visit_MatrixLiteral(MatrixLiteral& mat_lit) {
+void SIRDumper::visit_MatrixLiteral(MatrixLiteral& mat_lit) {
     out << indent() << "MatrixLiteral (" << type_str(mat_lit.type()) << "):\n";
 
     auto [rows, cols, comp_type] = MatrixTD::get_info(mat_lit.type(), ctx.type_pool);
@@ -143,7 +143,7 @@ void ASTDumper::visit_MatrixLiteral(MatrixLiteral& mat_lit) {
     }
 }
 
-void ASTDumper::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+void SIRDumper::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
     out << indent() << "ArrayLiteral (" << type_str(arr_lit.type()) << "):\n";
 
     inc_indent();
@@ -152,7 +152,7 @@ void ASTDumper::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
     dec_indent();
 }
 
-void ASTDumper::visit_StructInstantiationLiteral(StructInstantiationLiteral& si_lit) {
+void SIRDumper::visit_StructInstantiationLiteral(StructInstantiationLiteral& si_lit) {
     out << indent() << "StructInstantiationLiteral (" << type_str(si_lit.type()) << "):\n";
 
     assert(ctx.type_pool.is_type_of<StructTD>(si_lit.type()));
@@ -172,7 +172,7 @@ void ASTDumper::visit_StructInstantiationLiteral(StructInstantiationLiteral& si_
     }
 }
 
-void ASTDumper::visit_ScopedExpr(ScopedExpr& scoped_expr) {
+void SIRDumper::visit_ScopedExpr(ScopedExpr& scoped_expr) {
     out << "ScopedExpr:\n";
 
     inc_indent();
@@ -180,7 +180,7 @@ void ASTDumper::visit_ScopedExpr(ScopedExpr& scoped_expr) {
     dec_indent();
 }
 
-void ASTDumper::visit_BinaryOp(BinaryOp& bin_op) {
+void SIRDumper::visit_BinaryOp(BinaryOp& bin_op) {
     out << indent() << "BinaryOp (" << op_str(bin_op.op()) << "):\n";
 
     out << indent() << label("lhs");
@@ -194,7 +194,7 @@ void ASTDumper::visit_BinaryOp(BinaryOp& bin_op) {
     dec_indent();
 }
 
-void ASTDumper::visit_ExplicitCast(ExplicitCast& expl_cast) {
+void SIRDumper::visit_ExplicitCast(ExplicitCast& expl_cast) {
     out << indent() << "ExplicitCast to '" << type_str(expl_cast.type()) << "':\n";
 
     inc_indent();
@@ -202,7 +202,7 @@ void ASTDumper::visit_ExplicitCast(ExplicitCast& expl_cast) {
     dec_indent();
 }
 
-void ASTDumper::visit_DeclRefExpr(DeclRefExpr& decl_ref) {
+void SIRDumper::visit_DeclRefExpr(DeclRefExpr& decl_ref) {
     NodeBase* node = ctx.get_node(decl_ref.decl);
 
     Decl* decl = dyn_cast<Decl>(node);
@@ -211,14 +211,14 @@ void ASTDumper::visit_DeclRefExpr(DeclRefExpr& decl_ref) {
     out << indent() << "DeclRefExpr to '" << decl->identifier << "'\n";
 }
 
-void ASTDumper::visit_ScopedStmt(ScopedStmt& scoped_stmt) {
+void SIRDumper::visit_ScopedStmt(ScopedStmt& scoped_stmt) {
     out << "ScopedStmt:\n";
     inc_indent();
     visit(scoped_stmt.inner_stmt);
     dec_indent();
 }
 
-void ASTDumper::visit_CompoundStmt(CompoundStmt& cmpd_stmt) {
+void SIRDumper::visit_CompoundStmt(CompoundStmt& cmpd_stmt) {
     out << indent() << "CompoundStmt:";
 
     if (cmpd_stmt.body.empty()) {
@@ -233,7 +233,7 @@ void ASTDumper::visit_CompoundStmt(CompoundStmt& cmpd_stmt) {
     }
 }
 
-void ASTDumper::visit_IfStmt(IfStmt& if_stmt) {
+void SIRDumper::visit_IfStmt(IfStmt& if_stmt) {
     out << indent() << "IfStmt:\n";
     out << indent() << label("condition");
     inc_indent();
@@ -251,7 +251,7 @@ void ASTDumper::visit_IfStmt(IfStmt& if_stmt) {
     dec_indent();
 }
 
-void ASTDumper::visit_ReturnStmt(ReturnStmt& return_stmt) {
+void SIRDumper::visit_ReturnStmt(ReturnStmt& return_stmt) {
     out << indent() << "ReturnStmt:\n";
 
     inc_indent();
