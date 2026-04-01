@@ -21,14 +21,44 @@ void report(const SrcFile& file, SrcLocation location, std::string_view msg,
     return report(msg, prefix, out);
 }
 
+void report(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+            std::string_view prefix, std::ostream& out) {
+
+    auto [loc, file] = pool.get_loc_and_file(loc_id);
+    return report(file, loc, msg, prefix, out);
+}
+
 void error(const SrcFile& file, SrcLocation location, std::string_view msg, std::ostream& out) {
     print_locinfo(file, location, out);
     return error(msg, out);
 }
 
+void error(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg, std::ostream& out) {
+    auto [loc, file] = pool.get_loc_and_file(loc_id);
+    return error(file, loc, msg, out);
+}
+
 void warning(const SrcFile& file, SrcLocation location, std::string_view msg, std::ostream& out) {
     print_locinfo(file, location, out);
     return warning(msg, out);
+}
+
+void warning(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+             std::ostream& out) {
+    auto [loc, file] = pool.get_loc_and_file(loc_id);
+    return warning(file, loc, msg, out);
+}
+
+void internal_error(const SrcFile& file, SrcLocation location, std::string_view msg,
+                    std::ostream& out) {
+    print_locinfo(file, location, out);
+    return internal_error(msg, out);
+}
+
+void internal_error(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+                    std::ostream& out) {
+    auto [loc, file] = pool.get_loc_and_file(loc_id);
+    return internal_error(file, loc, msg, out);
 }
 
 SrcInfoPool::SrcInfoPool(SizeTy initial_location_capacity, size_t initial_file_capacity)

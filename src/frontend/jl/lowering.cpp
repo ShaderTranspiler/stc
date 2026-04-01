@@ -25,9 +25,8 @@ SIRNodeId JLLoweringVisitor::fail(std::string_view msg) {
 SIRNodeId JLLoweringVisitor::visit_and_check(NodeId id) {
     SIRNodeId result = visit(id);
 
-    if (result.is_null()) {
+    if (result.is_null())
         return fail("null_id returned by a node in the Julia -> SIR lowering visitor.");
-    }
 
     return result;
 }
@@ -40,26 +39,36 @@ SIRNodeId JLLoweringVisitor::visit_VarDecl(VarDecl& var) {
     SIRNodeId init =
         !var.initializer.is_null() ? visit_and_check(var.initializer) : SIRNodeId::null_id();
 
-    return emplace_node<sir::VarDecl>(var.location, var.identifier, var.type, init);
+    return emplace_decl<sir::VarDecl>(&var, var.location, var.identifier, var.type, init);
+}
+
+SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
+    std::vector<SIRNodeId> params;
+    params.reserve(method.param_decls.size());
+
+    for (NodeId param : method.param_decls)
+        params.push_back(visit_and_check(param));
+
+    SIRNodeId body = visit_and_check(method.body);
+
+    return emplace_decl<sir::FunctionDecl>(&method, method.location, method.identifier,
+                                           method.ret_type, std::move(params), body);
 }
 
 SIRNodeId JLLoweringVisitor::visit_FunctionDecl(FunctionDecl& fn) {
-    std::vector<SIRNodeId> params;
-    params.reserve(fn.param_decls.size());
+    std::vector<SIRNodeId> methods;
+    methods.reserve(fn.methods.size());
 
-    for (NodeId param : fn.param_decls)
-        params.push_back(visit_and_check(param));
+    for (NodeId method : fn.methods)
+        methods.push_back(visit_and_check(method));
 
-    SIRNodeId body = visit_and_check(fn.body);
-
-    return emplace_node<sir::FunctionDecl>(fn.location, fn.identifier, fn.ret_type,
-                                           std::move(params), body);
+    return emplace_decl<sir::CompoundStmt>(&fn, fn.location, std::move(methods));
 }
 
 SIRNodeId JLLoweringVisitor::visit_ParamDecl(ParamDecl& param) {
     assert(param.default_initializer.is_null() && "param with default value not caught by sema");
 
-    return emplace_node<sir::ParamDecl>(param.location, param.identifier, param.type);
+    return emplace_decl<sir::ParamDecl>(&param, param.location, param.identifier, param.type);
 }
 
 SIRNodeId JLLoweringVisitor::visit_StructDecl(StructDecl& struct_) {
@@ -69,11 +78,12 @@ SIRNodeId JLLoweringVisitor::visit_StructDecl(StructDecl& struct_) {
     for (NodeId field : struct_.field_decls)
         fields.push_back(visit_and_check(field));
 
-    return emplace_node<sir::StructDecl>(struct_.location, struct_.identifier, std::move(fields));
+    return emplace_decl<sir::StructDecl>(&struct_, struct_.location, struct_.identifier,
+                                         std::move(fields));
 }
 
 SIRNodeId JLLoweringVisitor::visit_FieldDecl(FieldDecl& field) {
-    return emplace_node<sir::FieldDecl>(field.location, field.identifier, field.type);
+    return emplace_decl<sir::FieldDecl>(&field, field.location, field.identifier, field.type);
 }
 
 SIRNodeId JLLoweringVisitor::visit_CompoundExpr(CompoundExpr& cmpd) {
@@ -132,19 +142,33 @@ SIRNodeId JLLoweringVisitor::visit_SymbolLiteral([[maybe_unused]] SymbolLiteral&
     throw std::logic_error{"using unimplemented feature: decl lookup"};
 }
 
-SIRNodeId JLLoweringVisitor::visit_OpaqueValue([[maybe_unused]] OpaqueValue& opaq) {
-    internal_error("OpaqueValue node not caught by sema");
-    success = false;
-    return SIRNodeId::null_id();
+SIRNodeId JLLoweringVisitor::visit_NothingLiteral([[maybe_unused]] NothingLiteral& lit) {
+    throw std::logic_error{"using nothing literal outside of a return stmt"};
+}
+
+SIRNodeId JLLoweringVisitor::visit_OpaqueNode([[maybe_unused]] OpaqueNode& opaq) {
+    return fail("OpaqueNode node not caught by sema");
 }
 
 SIRNodeId JLLoweringVisitor::visit_GlobalRef([[maybe_unused]] GlobalRef& gref) {
     throw std::logic_error{"using unimplemented feature: global refs"};
 }
 
-SIRNodeId JLLoweringVisitor::visit_DeclRefExpr([[maybe_unused]] DeclRefExpr& dre) {
-    // TODO
-    throw std::logic_error{"using unimplemented feature: decl lookup"};
+SIRNodeId JLLoweringVisitor::visit_DeclRefExpr(DeclRefExpr& dre) {
+    assert(ctx.isa<Decl>(dre.decl));
+
+    Decl* decl        = ctx.get_and_dyn_cast<Decl>(dre.decl);
+    SIRNodeId decl_id = SIRNodeId::null_id();
+
+    auto it = decl_map.find(decl);
+    if (it != decl_map.end())
+        decl_id = it->second;
+    else
+        decl_id = visit_and_check(dre.decl);
+
+    assert(!decl_id.is_null());
+
+    return emplace_node<sir::DeclRefExpr>(dre.location, decl_id);
 }
 
 SIRNodeId JLLoweringVisitor::visit_Assignment(Assignment& assign) {
@@ -166,9 +190,9 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
     if (fn_call.args.size() == 2) {
         if (sym_lit->value == sym_plus)
             return make_binop(sir::BinaryOp::OpKind::add);
-        else if (sym_lit->value == sym_minus)
+        if (sym_lit->value == sym_minus)
             return make_binop(sir::BinaryOp::OpKind::sub);
-        else if (sym_lit->value == sym_asterisk)
+        if (sym_lit->value == sym_asterisk)
             return make_binop(sir::BinaryOp::OpKind::mul);
     }
 
@@ -181,20 +205,32 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
     return emplace_node<sir::FunctionCall>(fn_call.location, sym_lit->value, std::move(args));
 }
 
-SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_expr) {
-    SIRNodeId lo_cond = visit_and_check(if_expr.condition);
+SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
+    SIRNodeId lo_cond = visit_and_check(if_.condition);
 
     SIRNodeId lo_true =
-        emplace_node<sir::ScopedStmt>(if_expr.location, visit_and_check(if_expr.true_branch));
+        emplace_node<sir::ScopedStmt>(if_.location, visit_and_check(if_.true_branch));
 
-    SIRNodeId lo_false = visit_and_check(if_expr.false_branch);
-    if (!lo_false.is_null())
-        lo_false = emplace_node<sir::ScopedStmt>(if_expr.location, lo_false);
+    SIRNodeId lo_false = SIRNodeId::null_id();
+    if (!if_.false_branch.is_null())
+        lo_false = emplace_node<sir::ScopedStmt>(if_.location, visit_and_check(if_.false_branch));
 
-    return emplace_node<sir::IfStmt>(if_expr.location, lo_cond, lo_true, lo_false);
+    return emplace_node<sir::IfStmt>(if_.location, lo_cond, lo_true, lo_false);
+}
+
+SIRNodeId JLLoweringVisitor::visit_WhileExpr(WhileExpr& while_) {
+    SIRNodeId lo_cond = visit_and_check(while_.condition);
+
+    SIRNodeId lo_body =
+        emplace_node<sir::ScopedStmt>(while_.location, visit_and_check(while_.body));
+
+    return emplace_node<sir::WhileStmt>(while_.location, lo_cond, lo_body);
 }
 
 SIRNodeId JLLoweringVisitor::visit_ReturnStmt(ReturnStmt& return_stmt) {
+    if (return_stmt.inner.is_null() || ctx.isa<NothingLiteral>(return_stmt.inner))
+        return emplace_node<sir::ReturnStmt>(return_stmt.location);
+
     SIRNodeId lo_inner = visit_and_check(return_stmt.inner);
 
     return emplace_node<sir::ReturnStmt>(return_stmt.location, lo_inner);

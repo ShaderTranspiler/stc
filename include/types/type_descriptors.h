@@ -121,6 +121,28 @@ struct StructTD {
     bool operator==(const StructTD& other) const;
 };
 
+// FunctionTD and MethotTD are reserved for function/method decls and refs to them, should not be
+// used in any other part of an AST, e.g. the type of a variable
+
+struct MethodSig {
+    const TypeId ret_type;
+    const std::vector<TypeId> param_types;
+
+    constexpr bool operator==(const MethodSig&) const = default;
+};
+
+struct MethodTD {
+    const MethodSig* sig;
+
+    bool operator==(const MethodTD& other) const;
+};
+
+struct FunctionTD {
+    SymbolId identifier;
+
+    bool operator==(const FunctionTD& other) const = default;
+};
+
 struct BuiltinTD {
     const uint8_t kind;
 
@@ -134,15 +156,16 @@ struct BuiltinTD {
     bool operator==(const BuiltinTD& other) const { return kind == other.kind; }
 };
 
-using TDVariantType =
-    std::variant<VoidTD, BoolTD, IntTD, FloatTD, VectorTD, MatrixTD, ArrayTD, StructTD, BuiltinTD>;
+using TDVariantType = std::variant<VoidTD, BoolTD, IntTD, FloatTD, VectorTD, MatrixTD, ArrayTD,
+                                   StructTD, BuiltinTD, MethodTD, FunctionTD>;
 
 // CLEANUP: use a variadic template instead
 template <typename T>
 concept CTypeDescriptorTy =
     std::is_same_v<T, VoidTD> || std::is_same_v<T, BoolTD> || std::is_same_v<T, IntTD> ||
     std::is_same_v<T, FloatTD> || std::is_same_v<T, VectorTD> || std::is_same_v<T, MatrixTD> ||
-    std::is_same_v<T, ArrayTD> || std::is_same_v<T, StructTD> || std::is_same_v<T, BuiltinTD>;
+    std::is_same_v<T, ArrayTD> || std::is_same_v<T, StructTD> || std::is_same_v<T, MethodTD> ||
+    std::is_same_v<T, FunctionTD> || std::is_same_v<T, BuiltinTD>;
 
 struct TypeDescriptor {
     TypeDescriptor(const TypeDescriptor&)                      = delete;
@@ -163,6 +186,8 @@ struct TypeDescriptor {
     constexpr bool is_matrix() const { return is<MatrixTD>(); }
     constexpr bool is_array() const { return is<ArrayTD>(); }
     constexpr bool is_struct() const { return is<StructTD>(); }
+    constexpr bool is_method() const { return is<MethodTD>(); }
+    constexpr bool is_function() const { return is<FunctionTD>(); }
     constexpr bool is_builtin() const { return is<BuiltinTD>(); }
 
     template <CTypeDescriptorTy T>
@@ -247,9 +272,8 @@ struct std::hash<stc::types::StructData> {
     size_t operator()(const stc::types::StructData& x) const noexcept {
         size_t h = std::hash<stc::SymbolId>{}(x.name);
 
-        for (const auto& field : x.fields) {
+        for (const auto& field : x.fields)
             h = stc::hash_combine(h, field);
-        }
 
         return h;
     }
@@ -262,6 +286,35 @@ struct std::hash<stc::types::StructTD> {
             x.data != nullptr ? *x.data : stc::types::StructData{stc::SymbolId::null_id(), {}};
 
         return std::hash<stc::types::StructData>{}(data);
+    }
+};
+
+template <>
+struct std::hash<stc::types::MethodSig> {
+    size_t operator()(const stc::types::MethodSig& x) const noexcept {
+        size_t h = std::hash<stc::types::TypeId>{}(x.ret_type);
+
+        for (auto pt : x.param_types)
+            h = stc::hash_combine(h, pt);
+
+        return h;
+    }
+};
+
+template <>
+struct std::hash<stc::types::MethodTD> {
+    size_t operator()(const stc::types::MethodTD& x) const noexcept {
+        if (x.sig == nullptr)
+            return 0U;
+
+        return std::hash<stc::types::MethodSig>{}(*x.sig);
+    }
+};
+
+template <>
+struct std::hash<stc::types::FunctionTD> {
+    size_t operator()(const stc::types::FunctionTD& x) const noexcept {
+        return std::hash<stc::SymbolId>{}(x.identifier);
     }
 };
 

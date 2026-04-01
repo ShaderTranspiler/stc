@@ -2,21 +2,33 @@
 
 namespace {
 
-using VDeclScope = stc::jl::VarDecl::VDeclScope;
+using namespace stc;
+using namespace stc::jl;
 
-std::string scope_str(VDeclScope scope) {
+std::string scope_str(ScopeType scope) {
     switch (scope) {
-        case VDeclScope::global:
+        case ScopeType::Global:
             return "global";
 
-        case VDeclScope::local:
+        case ScopeType::Local:
             return "local";
-
-        case VDeclScope::unspec:
-            return "unspecified scope";
     }
 
-    throw std::logic_error{"Unaccounted VarDecl scope in switch"};
+    throw std::logic_error{"Unaccounted ScopeType in switch"};
+}
+
+std::string decl_type_str(Decl* decl) {
+    // clang-format off
+    #define X(type, kind)                                                                              \
+        if (isa<type>(decl)) {                                                                         \
+            return #type;                                                                              \
+        }
+
+        #include "frontend/jl/node_defs/decl.def"
+    #undef X
+    // clang-format on
+
+    throw std::logic_error{"Unaccounted declaration type in decl_type_str"};
 }
 
 } // namespace
@@ -90,19 +102,29 @@ void JLDumper::visit_VarDecl(VarDecl& var) {
     }
 }
 
-void JLDumper::visit_FunctionDecl(FunctionDecl& fn) {
-    out << indent() << "FunctionDecl: " << sym(fn.identifier) << " -> " << type_str(fn.ret_type)
+void JLDumper::visit_MethodDecl(MethodDecl& mdecl) {
+    out << indent() << "MethodDecl: " << sym(mdecl.identifier) << " -> " << type_str(mdecl.ret_type)
         << '\n';
 
     out << indent() << dump_label("args");
     inc_indent();
-    for (NodeId param : fn.param_decls)
+    for (NodeId param : mdecl.param_decls)
         visit(param);
     dec_indent();
 
     out << indent() << dump_label("body");
     inc_indent();
-    visit(fn.body);
+    visit(mdecl.body);
+    dec_indent();
+}
+
+void JLDumper::visit_FunctionDecl(FunctionDecl& fn) {
+    out << indent() << "FunctionDecl: " << sym(fn.identifier) << '\n';
+
+    out << indent() << dump_label("methods");
+    inc_indent();
+    for (NodeId method : fn.methods)
+        visit(method);
     dec_indent();
 }
 
@@ -185,8 +207,12 @@ void JLDumper::visit_SymbolLiteral(SymbolLiteral& lit) {
     out << indent() << "SymbolLiteral: :(" << sym(lit.value) << ")\n";
 }
 
-void JLDumper::visit_OpaqueValue(OpaqueValue& opaq) {
-    out << indent() << "OpaqueValue: " << opaq.jl_value << " (" << sym(opaq.jl_type_name) << ")\n";
+void JLDumper::visit_NothingLiteral([[maybe_unused]] NothingLiteral& lit) {
+    out << indent() << "nothing\n";
+}
+
+void JLDumper::visit_OpaqueNode(OpaqueNode& opaq) {
+    out << indent() << "OpaqueNode: " << opaq.jl_value << " (" << sym(opaq.jl_type_name) << ")\n";
 }
 
 void JLDumper::visit_GlobalRef(GlobalRef& ref) {
@@ -197,12 +223,14 @@ void JLDumper::visit_GlobalRef(GlobalRef& ref) {
 void JLDumper::visit_DeclRefExpr(DeclRefExpr& dre) {
     out << indent() << "DeclRefExpr: ";
 
-    if (Decl* decl = ctx.get_and_dyn_cast<Decl>(dre.decl))
-        out << "resolved, '" << sym(decl->identifier) << "'\n";
-    else if (SymbolLiteral* sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(dre.decl))
-        out << "unresolved, :" << sym(sym_lit->value) << '\n';
-
-    assert("decl ref expr pointing to non-decl, non-symbol node type");
+    Expr* node = ctx.get_node(dre.decl);
+    if (auto* decl = dyn_cast<Decl>(node))
+        out << "resolved, '" << sym(decl->identifier) << "' (" << decl_type_str(decl) << ", "
+            << type_str(decl->type) << ")\n";
+    else if (auto* sym_lit = dyn_cast<SymbolLiteral>(node))
+        out << "unresolved, :(" << sym(sym_lit->value) << ")\n";
+    else
+        assert(false && "decl ref expr pointing to non-decl, non-symbol node type");
 }
 
 void JLDumper::visit_Assignment(Assignment& assign) {
@@ -235,22 +263,36 @@ void JLDumper::visit_FunctionCall(FunctionCall& fn_call) {
     dec_indent();
 }
 
-void JLDumper::visit_IfExpr(IfExpr& if_expr) {
+void JLDumper::visit_IfExpr(IfExpr& if_) {
     out << indent() << "IfExpr:\n";
 
     out << indent() << dump_label("condition");
     inc_indent();
-    visit(if_expr.condition);
+    visit(if_.condition);
     dec_indent();
 
     out << indent() << dump_label("true branch");
     inc_indent();
-    visit(if_expr.true_branch);
+    visit(if_.true_branch);
     dec_indent();
 
     out << indent() << dump_label("false branch");
     inc_indent();
-    visit(if_expr.false_branch);
+    visit(if_.false_branch);
+    dec_indent();
+}
+
+void JLDumper::visit_WhileExpr(WhileExpr& while_) {
+    out << indent() << "WhileExpr:\n";
+
+    out << indent() << dump_label("condition");
+    inc_indent();
+    visit(while_.condition);
+    dec_indent();
+
+    out << indent() << dump_label("body");
+    inc_indent();
+    visit(while_.body);
     dec_indent();
 }
 

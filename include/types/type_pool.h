@@ -70,6 +70,8 @@ public:
     [[nodiscard]] TypeId vector_td(TypeId component_type_id, uint32_t component_count);
     [[nodiscard]] TypeId matrix_td(TypeId column_type_id, uint32_t column_count);
     [[nodiscard]] TypeId array_td(TypeId element_type_id, uint32_t length);
+    [[nodiscard]] TypeId method_td(TypeId ret_type, std::vector<TypeId> param_types);
+    [[nodiscard]] TypeId func_td(SymbolId fn_name);
 
     [[nodiscard]] TypeId builtin_td(uint8_t kind);
 

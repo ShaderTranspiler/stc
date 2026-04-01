@@ -368,18 +368,27 @@ struct ScopedStmt : public Stmt {
 };
 
 struct IfStmt : public Stmt {
-    NodeId condition_expr;
+    NodeId condition;
     NodeId true_block;
     NodeId false_block;
 
-    explicit IfStmt(SrcLocationId location, NodeId condition_expr, NodeId true_block,
-                    NodeId false_block)
+    explicit IfStmt(SrcLocationId location, NodeId condition, NodeId true_block, NodeId false_block)
         : Stmt{location, NodeKind::If},
-          condition_expr{condition_expr},
+          condition{condition},
           true_block{true_block},
           false_block{false_block} {}
 
     SAME_NODE_KIND_DEF(NodeKind::If)
+};
+
+struct WhileStmt : public Stmt {
+    NodeId condition;
+    NodeId body;
+
+    explicit WhileStmt(SrcLocationId location, NodeId condition, NodeId body)
+        : Stmt{location, NodeKind::While}, condition{condition}, body{body} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::While)
 };
 
 struct ReturnStmt : public Stmt {
@@ -387,6 +396,9 @@ struct ReturnStmt : public Stmt {
 
     explicit ReturnStmt(SrcLocationId location, NodeId inner)
         : Stmt{location, NodeKind::Return}, inner{inner} {}
+
+    explicit ReturnStmt(SrcLocationId location)
+        : ReturnStmt{location, NodeId::null_id()} {}
 
     SAME_NODE_KIND_DEF(NodeKind::Return)
 };

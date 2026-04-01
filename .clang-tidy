@@ -16,7 +16,11 @@ Checks: >
   -readability-redundant-member-init,
   -cppcoreguidelines-avoid-do-while,
   -readability-avoid-return-with-void-value,
-  -modernize-use-ranges
+  -modernize-use-ranges,
+  -readability-function-cognitive-complexity,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -readability-isolate-declaration,
+  -readability-avoid-nested-conditional-operator
 
 CheckOptions:
   readability-magic-numbers.IgnorePowersOf2IntegerValues: true

@@ -357,6 +357,7 @@ foreach (SBOX_FILE ${SANDBOX_SOURCES})
     add_executable(${FNAME} ${SBOX_FILE})
 
     target_link_libraries(${FNAME} PRIVATE ${LIB_TARGET} CommonConfig)
+    target_link_libraries(${FNAME} PRIVATE ${JULIA_LIB})
 
     target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sandbox)
     target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -218,6 +218,7 @@ void GLSLCodeGenVisitor::visit_ExplicitCast(ExplicitCast& cast) {
 }
 
 void GLSLCodeGenVisitor::visit_Assignment(Assignment& assign) {
+    out << indent();
     visit(assign.target);
     out << " = ";
     visit(assign.value);
@@ -271,19 +272,35 @@ void GLSLCodeGenVisitor::visit_CompoundStmt(CompoundStmt& cmpd_stmt) {
 
 void GLSLCodeGenVisitor::visit_IfStmt(IfStmt& if_stmt) {
     out << indent() << "if (";
-    visit(if_stmt.condition_expr);
+    visit(if_stmt.condition);
     out << ")\n";
 
     assert(ctx.isa<ScopedStmt>(if_stmt.true_block) &&
            (if_stmt.false_block.is_null() || ctx.isa<ScopedStmt>(if_stmt.false_block)) &&
            "invalid if child not caught by sema");
 
+    indent_level++;
     visit(if_stmt.true_block);
+    indent_level--;
 
     if (!if_stmt.false_block.is_null()) {
         out << '\n' << indent() << "else\n";
+        indent_level++;
         visit(if_stmt.false_block);
+        indent_level--;
     }
+}
+
+void GLSLCodeGenVisitor::visit_WhileStmt(WhileStmt& while_stmt) {
+    out << indent() << "while (";
+    visit(while_stmt.condition);
+    out << ")\n";
+
+    assert(ctx.isa<ScopedStmt>(while_stmt.body) && "non-scoped while body not caught by sema");
+
+    indent_level++;
+    visit(while_stmt.body);
+    indent_level--;
 }
 
 void GLSLCodeGenVisitor::visit_ReturnStmt(ReturnStmt& return_stmt) {

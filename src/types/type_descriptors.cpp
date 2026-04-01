@@ -70,6 +70,16 @@ bool StructTD::operator==(const StructTD& other) const {
     return *data == *other.data;
 }
 
+bool MethodTD::operator==(const MethodTD& other) const {
+    if (sig == other.sig)
+        return true;
+
+    if (sig == nullptr || other.sig == nullptr)
+        return false;
+
+    return *sig == *other.sig;
+}
+
 bool TypeDescriptor::operator==(const TypeDescriptor& other) const {
     return _type_data.index() == other._type_data.index() && _type_data == other._type_data;
 }
@@ -84,7 +94,7 @@ std::string to_string(const TypeDescriptor& type, const TypePool& type_pool,
         } else if constexpr (std::is_same_v<T, BoolTD>) {
             return "bool";
         } else if constexpr (std::is_same_v<T, IntTD>) {
-            return std::format("{}i{}", arg.is_signed ? "s" : "u", arg.width);
+            return std::format("{}i{}", arg.is_signed ? "" : "u", arg.width);
         } else if constexpr (std::is_same_v<T, FloatTD>) {
             return std::format("f{}{}{}", arg.width, FloatTD::required_width(arg.enc) ? "!" : "",
                                arg.enc == FloatTD::Encoding::ieee754
@@ -105,8 +115,23 @@ std::string to_string(const TypeDescriptor& type, const TypePool& type_pool,
                                    ? std::format("({})", to_string(el_type, type_pool, sym_pool))
                                    : to_string(el_type, type_pool, sym_pool));
         } else if constexpr (std::is_same_v<T, StructTD>) {
-            // TODO: list of fields
             return std::format("struct {}", sym_pool.get_symbol(arg.data->name));
+        } else if constexpr (std::is_same_v<T, MethodTD>) {
+            if (arg.sig == nullptr)
+                return "fn ? -> ?";
+
+            std::string param_list{};
+            for (size_t i = 0; i < arg.sig->param_types.size(); i++) {
+                if (i > 0)
+                    param_list += ", ";
+
+                param_list += to_string(arg.sig->param_types[i], type_pool, sym_pool);
+            }
+
+            return std::format("method ({}) -> {}", param_list, "asd");
+        } else if constexpr (std::is_same_v<T, FunctionTD>) {
+            auto sym = sym_pool.get_symbol_maybe(arg.identifier);
+            return std::format("fn '{}'", sym.value_or("invalid symbol id"));
         } else if constexpr (std::is_same_v<T, BuiltinTD>) {
             // TODO
             return "?";
@@ -120,7 +145,7 @@ std::string to_string(const TypeDescriptor& type, const TypePool& type_pool,
 
 std::string to_string(TypeId type_id, const TypePool& type_pool, const SymbolPool& sym_pool) {
     if (type_id.is_null())
-        return "?";
+        return "unknown type";
 
     return to_string(type_pool.get_td(type_id), type_pool, sym_pool);
 }

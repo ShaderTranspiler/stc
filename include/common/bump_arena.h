@@ -196,6 +196,31 @@ public:
         return static_cast<T*>(get_ptr(offset));
     }
 
+    // ! only use with pointers that originated from the arena
+    // ! assumes ptr points to the beginning of an object in memory
+    [[nodiscard]] SizeTy get_offset(const void* ptr) const {
+        if (ptr == nullptr)
+            return 0U;
+
+        const auto& last_accessed = slabs[last_slab_hint];
+        assert(last_accessed != nullptr);
+
+        if (last_accessed->contains_ptr(ptr))
+            return last_accessed->ptr_to_offset(ptr);
+
+        // CLEANUP: use binary search
+        for (size_t i = 0; i < slabs.size(); i++) {
+            const auto& slab = slabs[i];
+
+            if (slab->contains_ptr(ptr)) {
+                last_slab_hint = static_cast<SizeTy>(i);
+                return slab->ptr_to_offset(ptr);
+            }
+        }
+
+        return 0U;
+    }
+
     [[nodiscard]] SizeTy get_current_offset() const { return cur_offset; }
 
 private:
@@ -230,6 +255,20 @@ private:
         void* offset_to_ptr(SizeTy offset) const {
             assert(contains_offset(offset) && "offset outside slab's buffer");
             return buffer.get() + SizeT_sub(offset, start_offset);
+        }
+
+        bool contains_ptr(const void* ptr) const {
+            return ptr != nullptr && buffer.get() <= ptr && ptr < get_end_ptr();
+        }
+
+        // ! only use with pointers that originated from the arena
+        // ! assumes ptr points to the beginning of an object in memory
+        SizeTy ptr_to_offset(const void* ptr) const {
+            assert(contains_ptr(ptr) && "ptr outside slab's buffer");
+
+            SizeTy internal_offset =
+                static_cast<SizeTy>(static_cast<const std::byte*>(ptr) - buffer.get());
+            return SizeT_add(start_offset, internal_offset);
         }
     };
 

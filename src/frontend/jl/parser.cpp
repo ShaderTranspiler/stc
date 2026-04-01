@@ -1,6 +1,7 @@
 #include "frontend/jl/parser.h"
 #include <algorithm>
 #include <bit>
+#include <utility>
 
 // struct layouts were taken from:
 // https://github.com/JuliaLang/julia/blob/master/base/boot.jl
@@ -38,12 +39,13 @@ concept CSafeCastable = requires (jl_value_t* value) {
 // performs extra assumption checks in debug builds, same as jl_fieldref in release builds
 // field_name is only used for debug assertions
 [[nodiscard]]
-STC_FORCE_INLINE jl_value_t* safe_fieldref(jl_value_t* node, size_t index, const char* field_name) {
+STC_FORCE_INLINE jl_value_t* safe_fieldref(jl_value_t* node, size_t index,
+                                           [[maybe_unused]] const char* field_name) {
 #ifndef NDEBUG
     auto* dt         = reinterpret_cast<jl_datatype_t*>(jl_typeof(node));
     int actual_index = jl_field_index(dt, jl_symbol(field_name), 0);
 
-    assert(actual_index >= 0 && static_cast<size_t>(actual_index) == index &&
+    assert(actual_index >= 0 && std::cmp_equal(actual_index, index) &&
            "invalid libjulia C API assumption");
     assert(index < jl_datatype_nfields(dt) && "invalid julia C API fieldref index");
 #endif
@@ -92,6 +94,7 @@ public:
 namespace stc::jl {
 
 // TODO
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 TypeId JLParser::resolve_type([[maybe_unused]] jl_value_t* type) {
     return TypeId::null_id();
 }
@@ -105,8 +108,8 @@ NodeId JLParser::parse(jl_value_t* node) {
         jl_value_t* file_val = safe_fieldref(node, 1, "file");
 
         if (jl_is_symbol(file_val)) {
-            jl_sym_t* file_sym = reinterpret_cast<jl_sym_t*>(file_val);
-            std::ignore        = ctx.src_info_pool.get_file(jl_symbol_name(file_sym));
+            auto* file_sym = reinterpret_cast<jl_sym_t*>(file_val);
+            std::ignore    = ctx.src_info_pool.get_file(jl_symbol_name(file_sym));
         } else {
             std::ignore = ctx.src_info_pool.get_file("<unknown>");
         }
@@ -119,7 +122,10 @@ NodeId JLParser::parse(jl_value_t* node) {
     // parsed symbols are treated as declaration references, with the symbol as the target
     // the actual decl it points to will be resolved by sema
     if (jl_is_symbol(node)) {
-        jl_sym_t* sym = reinterpret_cast<jl_sym_t*>(node);
+        auto* sym = reinterpret_cast<jl_sym_t*>(node);
+
+        if (sym == sym_cache.nothing)
+            return emplace_node<NothingLiteral>(cur_loc);
 
         SymbolId sym_id = ctx.sym_pool.get_id(jl_symbol_name(sym));
         NodeId sym_lit  = emplace_node<SymbolLiteral>(cur_loc, sym_id);
@@ -130,9 +136,9 @@ NodeId JLParser::parse(jl_value_t* node) {
     // global refs are handled similarly to symbols, but with a module name symbol included
     if (jl_is_globalref(node)) {
         // ! mod::Module
-        jl_module_t* module = safe_cast<jl_module_t>(safe_fieldref(node, 0, "mod"));
+        auto* module = safe_cast<jl_module_t>(safe_fieldref(node, 0, "mod"));
         // ! name::Symbol
-        jl_sym_t* name      = safe_cast<jl_sym_t>(safe_fieldref(node, 1, "name"));
+        auto* name   = safe_cast<jl_sym_t>(safe_fieldref(node, 1, "name"));
 
         ModuleId mod_id  = ctx.module_pool.get_id(module);
         SymbolId name_id = ctx.sym_pool.get_id(jl_symbol_name(name));
@@ -178,8 +184,8 @@ NodeId JLParser::parse(jl_value_t* node) {
 
     // TODO: TEST ON SOME BE VM!!
     if (jl_typeis(node, type_cache.uint128)) {
-        auto* data = reinterpret_cast<const uint64_t*>(node);
-        uint64_t hi, lo;
+        const auto* data = reinterpret_cast<const uint64_t*>(node);
+        uint64_t hi, lo; // NOLINT(cppcoreguidelines-init-variables)
 
         if constexpr (std::endian::native == std::endian::little) {
             lo = data[0];
@@ -224,7 +230,50 @@ NodeId JLParser::parse(jl_value_t* node) {
     auto* type_name    = jl_symbol_name(datatype->name->name);
     SymbolId tname_sid = ctx.sym_pool.get_id(type_name);
 
-    return emplace_node<OpaqueValue>(cur_loc, tname_sid, node);
+    return emplace_node<OpaqueNode>(cur_loc, tname_sid, node);
+}
+
+// parses the code argument using Julia's Meta.parse and invokes the regular parsing pipeline on it
+NodeId JLParser::parse_code(std::string_view code) {
+    jl_value_t* code_jl_str = nullptr;
+    jl_value_t* parsed_expr = nullptr;
+    JL_GC_PUSH2(&code_jl_str, &parsed_expr);
+
+    jl_value_t* meta_mod_val = jl_get_global(jl_base_module, jl_symbol("Meta"));
+    if (meta_mod_val == nullptr || !jl_is_module(meta_mod_val)) {
+        JL_GC_POP();
+        throw std::logic_error{"Failed to look up Meta module inside Base"};
+    }
+    jl_module_t* meta_mod = reinterpret_cast<jl_module_t*>(meta_mod_val);
+
+    jl_function_t* parse_fn = jl_get_global(meta_mod, jl_symbol("parse"));
+    if (parse_fn == nullptr) {
+        JL_GC_POP();
+        throw std::logic_error{"Failed to look up parse function inside the Meta module"};
+    }
+
+    // implemented as a simple memcpy in libjulia, avoids strlen (==> null termination agnostic)
+    code_jl_str = jl_pchar_to_string(code.data(), code.size());
+
+    parsed_expr = jl_call1(parse_fn, code_jl_str);
+
+    jl_value_t* ex = jl_exception_occurred();
+    if (ex != nullptr) {
+        const char* ex_type_str = jl_typeof_str(ex);
+        jl_static_show(jl_stderr_stream(), ex);
+        jl_exception_clear();
+
+        JL_GC_POP();
+
+        throw std::runtime_error{std::format(
+            "Julia exception while trying to parse code string using Meta.parse: {}", ex_type_str)};
+    }
+
+    NodeId parser_result = parse(parsed_expr);
+
+    JL_GC_POP();
+
+    return parser_result;
 }
 
 NodeId JLParser::parse_expr(jl_expr_t* expr) {
@@ -240,6 +289,9 @@ NodeId JLParser::parse_expr(jl_expr_t* expr) {
     if (head == sym_cache.if_)
         return parse_if(expr, nargs);
 
+    if (head == sym_cache.while_)
+        return parse_while(expr, nargs);
+
     if (head == sym_cache.eq)
         return parse_assignment(expr, nargs);
 
@@ -252,14 +304,13 @@ NodeId JLParser::parse_expr(jl_expr_t* expr) {
     if (head == sym_cache.continue_)
         return emplace_node<ContinueStmt>(cur_loc);
 
-    return NodeId::null_id();
+    // TODO: print cur_loc and julia dump node
+    throw jl_parse_error{"Unrecognized Expr node encountered in Julia source code"};
 }
 
 NodeId JLParser::parse_var_decl(jl_expr_t* expr, size_t nargs) {
-    using Scope = VarDecl::VDeclScope;
-
     assert(expr->head == sym_cache.global || expr->head == sym_cache.local);
-    auto scope = expr->head == sym_cache.global ? Scope::global : Scope::local;
+    auto scope = expr->head == sym_cache.global ? ScopeType::Global : ScopeType::Local;
 
     SrcLocationId decl_loc = cur_loc;
 
@@ -271,16 +322,12 @@ NodeId JLParser::parse_var_decl(jl_expr_t* expr, size_t nargs) {
     jl_value_t* type  = nullptr;
     jl_value_t* init  = nullptr;
 
-    if (jl_is_symbol(inner)) {
-        id = inner;
-    }
-
     if (auto* assignment_expr = is_expr(inner, sym_cache.eq)) {
         if (jl_expr_nargs(assignment_expr) != 2)
             throw jl_parse_error{"Assignment expression with more/less than two args"};
 
-        init  = jl_exprarg(assignment_expr, 1);
         inner = jl_exprarg(assignment_expr, 0);
+        init  = jl_exprarg(assignment_expr, 1);
     }
 
     if (auto* typed_expr = is_expr(inner, sym_cache.double_col)) {
@@ -289,6 +336,10 @@ NodeId JLParser::parse_var_decl(jl_expr_t* expr, size_t nargs) {
 
         id   = jl_exprarg(typed_expr, 0);
         type = jl_exprarg(typed_expr, 1);
+    }
+
+    if (jl_is_symbol(inner)) {
+        id = inner;
     }
 
     if (id == nullptr || !jl_is_symbol(id))
@@ -395,6 +446,20 @@ NodeId JLParser::parse_if(jl_expr_t* expr, size_t nargs) {
     }
 
     return emplace_node<IfExpr>(if_loc, parsed_cond, parsed_true, parsed_false);
+}
+
+NodeId JLParser::parse_while(jl_expr_t* expr, size_t nargs) {
+    assert(expr->head == sym_cache.while_);
+
+    if (nargs != 2)
+        throw jl_parse_error{"Unexpected while expr arg count"};
+
+    SrcLocationId while_loc = cur_loc;
+
+    NodeId parsed_cond = parse(jl_exprarg(expr, 0));
+    NodeId parsed_body = parse(jl_exprarg(expr, 1));
+
+    return emplace_node<WhileExpr>(while_loc, parsed_cond, parsed_body);
 }
 
 NodeId JLParser::parse_return(jl_expr_t* expr, size_t nargs) {

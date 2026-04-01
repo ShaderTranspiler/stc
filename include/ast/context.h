@@ -53,6 +53,11 @@ public:
     ASTCtx(ASTCtx&&) noexcept              = default;
     ASTCtx& operator=(ASTCtx&&) noexcept   = default;
 
+    // ! use with caution
+    NodeIdTy calculate_node_id(const void* ptr, node_kind_type kind) const {
+        return NodeIdTy{node_arena.get_offset(ptr), static_cast<uint8_t>(kind)};
+    }
+
 protected:
     // "partial" move ctor, moving the type and src info pools, and empty initializing node arena
     // protected to allow derived classes to use as a starting point, but publicly only accessible
@@ -92,7 +97,7 @@ public:
     }
 
     template <typename T>
-    requires CDynCastable<T, NodeBaseTy, node_kind_type>
+    requires CDynCastable<T, NodeBaseTy>
     [[nodiscard]] T* get_and_dyn_cast(NodeIdTy id) const {
         // below is essentially the same as: return dyn_cast<T*>(get_node(id));
         // but skips the round-trip to NodeBaseTy* for non-castable cases
@@ -103,13 +108,13 @@ public:
         return static_cast<T*>(get_node(id));
     }
 
-    template <typename T>
-    requires CDynCastable<T, NodeBaseTy, node_kind_type>
+    template <typename... T>
+    requires (CDynCastable<T, NodeBaseTy> && ...)
     bool isa(NodeIdTy id) const {
         if (id.is_null())
             return false;
 
-        return T::same_node_kind(static_cast<node_kind_type>(id.kind_value()));
+        return (T::same_node_kind(static_cast<node_kind_type>(id.kind_value())) || ...);
     }
 
     [[nodiscard]] std::string_view get_sym(SymbolId sym_id) const {

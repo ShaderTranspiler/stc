@@ -54,6 +54,8 @@ void error(const SrcFile& file, SrcLocation location, std::string_view msg,
            std::ostream& out = std::cerr);
 void warning(const SrcFile& file, SrcLocation location, std::string_view msg,
              std::ostream& out = std::cerr);
+void internal_error(const SrcFile& file, SrcLocation location, std::string_view msg,
+                    std::ostream& out = std::cerr);
 
 class SrcInfoPool {
 private:
@@ -87,5 +89,14 @@ private:
 
     SrcLocationId last_loc_id;
 };
+
+void report(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+            std::string_view prefix = ""sv, std::ostream& out = std::cerr);
+void error(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+           std::ostream& out = std::cerr);
+void warning(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+             std::ostream& out = std::cerr);
+void internal_error(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_view msg,
+                    std::ostream& out = std::cerr);
 
 } // namespace stc

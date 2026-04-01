@@ -9,15 +9,15 @@ void report(std::string_view msg, std::string_view prefix, std::ostream& out) {
 }
 
 void error(std::string_view msg, std::ostream& out) {
-    report(msg, "error: ", out);
+    report(msg, "Error: ", out);
 }
 
 void warning(std::string_view msg, std::ostream& out) {
-    report(msg, "warning: ", out);
+    report(msg, "Warning: ", out);
 }
 
 void internal_error(std::string_view msg, std::ostream& out) {
-    report(msg, "internal transpiler error: ", out);
+    report(msg, "Internal transpiler error: ", out);
 }
 
 } // namespace stc

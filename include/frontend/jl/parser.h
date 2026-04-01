@@ -21,12 +21,14 @@ public:
 
     NodeId parse(jl_value_t* node);
     NodeId parse_expr(jl_expr_t* expr);
+    NodeId parse_code(std::string_view code);
 
     PARSER_DECL(var_decl);
     PARSER_DECL(assignment);
     PARSER_DECL(block);
     PARSER_DECL(call);
     PARSER_DECL(if);
+    PARSER_DECL(while);
     PARSER_DECL(return);
 
     [[nodiscard]] JLCtx&& steal_ctx() { return std::move(ctx); }

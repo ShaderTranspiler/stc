@@ -23,10 +23,12 @@ requires requires (CtxTy ctx, CtxTy::node_id_type id) {
     typename CtxTy::node_base_type;
     typename CtxTy::node_kind_type;
     { ctx.get_node(id) } -> std::convertible_to<typename CtxTy::node_base_type*>;
-}
+} && CNullableStrongId<typename CtxTy::node_id_type>
 class ASTVisitor {
     using NodeIdTy   = CtxTy::node_id_type;
     using NodeBaseTy = CtxTy::node_base_type;
+
+    NodeIdTy current_id = NodeIdTy::null_id();
 
 public:
     CtxTy& ctx;

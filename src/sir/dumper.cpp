@@ -67,8 +67,8 @@ bool SIRDumper::pre_visit_id(NodeId node_id) {
 }
 
 void SIRDumper::visit_VarDecl(VarDecl& var_decl) {
-    out << indent() << "VarDecl: '" << ctx.get_sym(var_decl.identifier)
-        << "' <: " << type_str(var_decl.type) << '\n';
+    out << indent() << "VarDecl: '" << ctx.get_sym(var_decl.identifier) << "' ("
+        << type_str(var_decl.type) << ")\n";
 
     if (!var_decl.initializer.is_null()) {
         out << indent() << dump_label("initializer");
@@ -97,8 +97,8 @@ void SIRDumper::visit_FunctionDecl(FunctionDecl& fn_decl) {
 }
 
 void SIRDumper::visit_ParamDecl(ParamDecl& param_decl) {
-    out << indent() << "ParamDecl: " << ctx.get_sym(param_decl.identifier)
-        << " <: " << type_str(param_decl.param_type) << '\n';
+    out << indent() << "ParamDecl: " << ctx.get_sym(param_decl.identifier) << " ("
+        << type_str(param_decl.param_type) << ")\n";
 }
 
 void SIRDumper::visit_StructDecl(StructDecl& struct_decl) {
@@ -111,8 +111,8 @@ void SIRDumper::visit_StructDecl(StructDecl& struct_decl) {
 }
 
 void SIRDumper::visit_FieldDecl(FieldDecl& field_decl) {
-    out << indent() << "FieldDecl: " << ctx.get_sym(field_decl.identifier)
-        << " <: " << type_str(field_decl.field_type) << '\n';
+    out << indent() << "FieldDecl: " << ctx.get_sym(field_decl.identifier) << " ("
+        << type_str(field_decl.field_type) << ")\n";
 }
 
 void SIRDumper::visit_BoolLiteral(BoolLiteral& bool_lit) {
@@ -225,7 +225,7 @@ void SIRDumper::visit_Assignment(Assignment& assign) {
 
     out << indent() << dump_label("value");
     inc_indent();
-    visit(assign.target);
+    visit(assign.value);
     dec_indent();
 }
 
@@ -273,7 +273,7 @@ void SIRDumper::visit_IfStmt(IfStmt& if_stmt) {
     out << indent() << "IfStmt:\n";
     out << indent() << dump_label("condition");
     inc_indent();
-    visit(if_stmt.condition_expr);
+    visit(if_stmt.condition);
     dec_indent();
 
     out << indent() << dump_label("true branch");
@@ -284,6 +284,20 @@ void SIRDumper::visit_IfStmt(IfStmt& if_stmt) {
     out << indent() << dump_label("false branch");
     inc_indent();
     visit(if_stmt.false_block);
+    dec_indent();
+}
+
+void SIRDumper::visit_WhileStmt(WhileStmt& while_stmt) {
+    out << indent() << "WhileStmt:\n";
+
+    out << indent() << dump_label("condition");
+    inc_indent();
+    visit(while_stmt.condition);
+    dec_indent();
+
+    out << indent() << dump_label("body");
+    inc_indent();
+    visit(while_stmt.body);
     dec_indent();
 }
 

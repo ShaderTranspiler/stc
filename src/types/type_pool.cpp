@@ -91,6 +91,24 @@ TypeId TypePool::array_td(TypeId element_type_id, uint32_t length) {
     return insert_or_get(ArrayTD{.element_type_id = element_type_id, .length = length});
 }
 
+TypeId TypePool::method_td(TypeId ret_type, std::vector<TypeId> param_types) {
+    MethodSig sig{.ret_type = ret_type, .param_types = std::move(param_types)};
+    TypeId lookup = get(MethodTD{&sig});
+
+    if (!lookup.is_null())
+        return lookup;
+
+    auto* arena_sig = arena.emplace<MethodSig>(ret_type, sig.param_types).second;
+    return arena.emplace<MethodTD>(arena_sig).first;
+}
+
+TypeId TypePool::func_td(SymbolId fn_name) {
+    if (fn_name.is_null())
+        throw std::logic_error{"Cannot create function type with null as the identifier symbol"};
+
+    return insert_or_get(FunctionTD{fn_name});
+}
+
 TypeId TypePool::builtin_td(uint8_t kind) {
     TypeId id = get(BuiltinTD{kind});
     assert(!id.is_null() && "built-in type not found in pool");

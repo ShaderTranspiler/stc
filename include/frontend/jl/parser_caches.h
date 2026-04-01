@@ -17,6 +17,8 @@ struct JLParserSymbolCache {
     jl_sym_t* continue_  = jl_symbol("continue");
     jl_sym_t* parameters = jl_symbol("parameters");
     jl_sym_t* double_col = jl_symbol("::");
+    jl_sym_t* nothing    = jl_symbol("nothing");
+    jl_sym_t* while_     = jl_symbol("while");
 };
 
 struct JLParserTypeCache {

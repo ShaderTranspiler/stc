@@ -4,6 +4,7 @@
 
 STC_X_FIRST(CompoundStmt, Compound)
 STC_X(IfStmt, If)
+STC_X(WhileStmt, While)
 STC_X(ScopedStmt, ScopedStmt)
 STC_X(ReturnStmt, Return)
 STC_X(ContinueStmt, Continue)

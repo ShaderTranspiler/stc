@@ -177,6 +177,7 @@ template <typename... Args>
 constexpr bool no_nullptrs(Args*... args) {
     return ((args != nullptr) && ...);
 }
+
 } // namespace stc
 
 // hash impl for all id types derived from StrongId that "forwards" to the underlying value type

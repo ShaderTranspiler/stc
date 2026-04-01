@@ -37,8 +37,6 @@ end
 # ))
 
 @time cpp_dump(quote
-    some_fn(2)
-    some_fn(3)
     a = 4
 
     global x::Int = 2

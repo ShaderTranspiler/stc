@@ -319,14 +319,22 @@ void SIRSemaVisitor::visit_CompoundStmt(CompoundStmt& cmpd_stmt) {
 }
 
 void SIRSemaVisitor::visit_IfStmt(IfStmt& if_stmt) {
-    visit(if_stmt.condition_expr);
+    visit(if_stmt.condition);
     visit(if_stmt.true_block);
 
     if (!if_stmt.false_block.is_null())
         visit(if_stmt.false_block);
 
-    if (!has_type(if_stmt.condition_expr, ctx.type_pool.bool_td()))
-        return error(if_stmt, "invalid IfStmt, condition's type is non-bool");
+    if (!has_type(if_stmt.condition, ctx.type_pool.bool_td()))
+        return error(if_stmt, "invalid IfStmt, condition's type must be bool");
+}
+
+void SIRSemaVisitor::visit_WhileStmt(WhileStmt& while_stmt) {
+    visit(while_stmt.condition);
+    visit(while_stmt.body);
+
+    if (!has_type(while_stmt.condition, ctx.type_pool.bool_td()))
+        return error(while_stmt, "invalid WhileStmt, condition's type must be bool");
 }
 
 void SIRSemaVisitor::visit_ReturnStmt(ReturnStmt& return_stmt) {
@@ -339,6 +347,9 @@ void SIRSemaVisitor::visit_ReturnStmt(ReturnStmt& return_stmt) {
         return error(return_stmt, "invalid return stmt, inner node is not an expression");
 
     visit(return_stmt.inner);
+
+    assert(expected_ret_type.has_value() &&
+           "expected_ret_type invalidated by visiting inner expression");
 
     if (*expected_ret_type != inner_expr->type())
         return error(return_stmt, "invalid return stmt, type mismatch between expected return type "

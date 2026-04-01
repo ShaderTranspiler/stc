@@ -2,6 +2,7 @@
 
 STC_X_FIRST(VarDecl, VarDecl)
 STC_X(ParamDecl, ParamDecl)
+STC_X(MethodDecl, MethodDecl)
 STC_X(FunctionDecl, FnDecl)
 STC_X(StructDecl, StructDecl)
 STC_X_LAST(FieldDecl, FieldDecl)
