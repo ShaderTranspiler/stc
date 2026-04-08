@@ -9,9 +9,11 @@ namespace stc::jl {
 class SymbolRes : public JLVisitor<SymbolRes, JLCtx, void> {
     enum class ScopeInferSrc : uint8_t { Access = 0, Assign, Decl };
 
+    using ScopeInferTableEntry = std::pair<std::reference_wrapper<Expr>, ScopeInferSrc>;
+    using ScopeInferTable      = std::unordered_map<SymbolId, ScopeInferTableEntry>;
+
     std::vector<JLScope>& scopes;
-    std::unordered_map<SymbolId, std::pair<std::reference_wrapper<Expr>, ScopeInferSrc>>
-        scope_infer_table{};
+    ScopeInferTable scope_infer_table{};
     bool in_interactive_ctx;
     bool _success = true;
 
@@ -28,13 +30,14 @@ public:
 
     bool try_register(SymbolId sym, Expr& node, ScopeInferSrc infer_src) {
         auto it = scope_infer_table.find(sym);
-        if (it != scope_infer_table.end() &&
-            static_cast<uint8_t>(infer_src) <= static_cast<uint8_t>(it->second.second)) {
+        bool has_stronger_src =
+            it != scope_infer_table.end() &&
+            static_cast<uint8_t>(infer_src) <= static_cast<uint8_t>(it->second.second);
 
+        if (has_stronger_src)
             return false;
-        }
 
-        scope_infer_table.try_emplace(sym, node, infer_src);
+        scope_infer_table.insert_or_assign(sym, ScopeInferTableEntry{node, infer_src});
         return true;
     }
 

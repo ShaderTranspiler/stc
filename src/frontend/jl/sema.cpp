@@ -151,10 +151,26 @@ bool JLSema::check(Expr& expr, TypeId expected_type, bool allow_pretyped) {
         internal_error("type check function called with an expression whose type has "
                        "already been determined, while the allow_pretyped argument is false",
                        expr);
+
         return false;
     }
     auto prev_expected  = this->expected_type;
     this->expected_type = expected_type;
+
+    const ScopeGuard exp_type_scope_guard{[&]() {
+        this->expected_type  = prev_expected;
+        allow_pretyped_nodes = old_pretyped_value;
+    }};
+
+    // delegate type checking for returns to their visitor-only
+    // this is because they're checked against the current fn return type instead of an expected
+    // type, given that they always should resolve to the void type (or null on failure)
+    if (isa<ReturnStmt>(expr)) {
+        expr.type = impl_this()->visit(&expr);
+        assert(expr.type.is_null() || expr.type == tpool.void_td());
+
+        return !expr.type.is_null();
+    }
 
     TypeId actual_type = expr.type.is_null() ? impl_this()->visit(&expr) : expr.type;
 
@@ -163,15 +179,11 @@ bool JLSema::check(Expr& expr, TypeId expected_type, bool allow_pretyped) {
                          type_str(expected_type), type_str(actual_type)),
              expr);
 
-        this->expected_type  = prev_expected;
-        allow_pretyped_nodes = old_pretyped_value;
         return false;
     }
 
     expr.type = expected_type;
 
-    this->expected_type  = prev_expected;
-    allow_pretyped_nodes = old_pretyped_value;
     return true;
 }
 
@@ -191,21 +203,20 @@ TypeId JLSema::infer(Expr& expr, bool allow_pretyped) {
     auto prev_expected = expected_type;
     expected_type      = TypeId::null_id();
 
-    TypeId inferred = visit(&expr);
-
-    if (inferred.is_null()) {
+    const ScopeGuard exp_type_scope_guard{[&]() {
         expected_type        = prev_expected;
         allow_pretyped_nodes = old_pretyped_value;
+    }};
 
-        // only report infer failure, if the source of the error hasn't been reported yet
+    TypeId inferred = visit(&expr);
+
+    // only report infer failure, if the source of the error hasn't been reported yet
+    if (inferred.is_null())
         return _success ? fail("couldn't infer type for node during type checking", expr)
                         : TypeId::null_id();
-    }
 
     expr.type = inferred;
 
-    expected_type        = prev_expected;
-    allow_pretyped_nodes = old_pretyped_value;
     return inferred;
 }
 
@@ -816,15 +827,14 @@ TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
         return ctx.jl_Nothing_t();
     }
 
-    // stop visiting method body from propagating further (e.g. nested compound exprs)
+    // stop visiting_method_body flag from propagating further (e.g. nested compound exprs)
     bool is_method_body = visiting_method_body;
     if (is_method_body)
         visiting_method_body = false;
 
     TypeId result_type = TypeId::null_id();
 
-    // infers up to the penultimate expression to preserve the
-    // "everything is inferred or checked only once" logic of sema
+    // last expression of body is inferred/checked separately
     for (size_t i = 0; i < cmpd.body.size() - 1; i++)
         infer(cmpd.body[i]);
 
@@ -867,11 +877,10 @@ TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
 
         if (ret == nullptr) {
             // if the last expression isn't a return (and we're in a method body), insert an
-            // explicit return
+            // explicit return for consistency
 
             NodeId inner =
                 current_fn_ret != ctx.jl_Nothing_t() ? cmpd.body.back() : NodeId::null_id();
-
             NodeId gen_ret = ctx.emplace_node<ReturnStmt>(last_expr->location, inner).first;
 
             cmpd.body[cmpd.body.size() - 1] = gen_ret;
@@ -1076,8 +1085,7 @@ TypeId JLSema::ret_type_of_call(jl_function_t* fn, const std::vector<TypeId>& ar
     jl_value_t* res_jl_type = nullptr;
     JL_GC_PUSH2(&type_tuple, &res_jl_type);
 
-    // TODO: test
-    ScopeGuard jl_gc_pop_guard{[&]() { JL_GC_POP(); }};
+    const ScopeGuard jl_gc_pop_guard{[&]() { JL_GC_POP(); }};
 
     jl_function_t* ret_type_fn = ctx.jl_env.module_cache.comp_mod.get_fn("return_type");
 

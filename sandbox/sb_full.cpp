@@ -189,12 +189,17 @@ int main(int argc, char* argv[]) {
     }
 
     // ! TODO: remove
-    std::ifstream file(argc > 1 ? argv[1] : "C:\\Users\\szucs\\szakdoga\\stc\\test.jl");
+    std::ifstream file(argc > 1 ? argv[1] : "C:\\Users\\szucs\\szakdoga\\stc\\tmp.jl");
     std::stringstream code_stream;
     code_stream << file.rdbuf();
     std::string code{code_stream.str()};
 
     jl_init();
+
+    // ! TODO: remove (purpose: jl cache warmup + "precompile" return_type)
+    jl_eval_string("sin(0.5f0) + 1; Core.Compiler.return_type(sin, Tuple{Float32})");
+
+    const ScopeGuard jl_guard{[&]() { jl_atexit_hook(0); }};
 
     for (size_t i = 0; i < ite_count; i++) {
         std::cout << std::format("\n======================\n"
@@ -207,11 +212,9 @@ int main(int argc, char* argv[]) {
         if (result != 0) {
             std::cout << "\nAn error occured during transpilation";
             std::cout.flush();
-            jl_atexit_hook(0);
             return result;
         }
     }
 
-    jl_atexit_hook(0);
     return 0;
 }

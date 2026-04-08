@@ -25,15 +25,19 @@ struct JuliaTypeCache {
     jl_unionall_t* array_ua = jl_array_type;
 
     explicit JuliaTypeCache(JuliaModuleCache& mod_cache) {
-        jl_module_t* jl_core = mod_cache.core_mod.mod_ptr();
+        auto get_from_core = [&mod_cache](const char* sym_name) {
+            static jl_module_t* jl_core = mod_cache.core_mod.mod_ptr();
 
-        uint128 = safe_cast<jl_datatype_t>(jl_get_global(jl_core, jl_symbol("UInt128")));
-        assert(uint128 != nullptr &&
-               "failed to load uint128 datatype from julia through the core module");
+            auto* result = safe_cast<jl_datatype_t>(jl_get_global(jl_core, jl_symbol(sym_name)));
+            if (result == nullptr)
+                throw std::logic_error{std::format(
+                    "failed to load datatype '{}' from Julia through the Core module", sym_name)};
 
-        int128 = safe_cast<jl_datatype_t>(jl_get_global(jl_core, jl_symbol("UInt128")));
-        assert(int128 != nullptr &&
-               "failed to load int128 datatype from julia through the core module");
+            return result;
+        };
+
+        uint128 = get_from_core("UInt128");
+        int128  = get_from_core("Int128");
     }
 
     // FEATURE: internal caching for applied types (would require smart GC rooting)

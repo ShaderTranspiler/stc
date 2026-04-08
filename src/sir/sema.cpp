@@ -344,19 +344,24 @@ void SIRSemaVisitor::visit_ReturnStmt(ReturnStmt& return_stmt) {
     if (!expected_ret_type.has_value())
         return error(return_stmt, "unexpected return stmt");
 
-    Expr* inner_expr = ctx.get_and_dyn_cast<Expr>(return_stmt.inner);
+    if (!return_stmt.inner.is_null()) {
+        Expr* inner_expr = ctx.get_and_dyn_cast<Expr>(return_stmt.inner);
 
-    if (inner_expr == nullptr)
-        return error(return_stmt, "invalid return stmt, inner node is not an expression");
+        if (inner_expr == nullptr)
+            return error(return_stmt, "invalid return stmt, inner node is not an expression");
 
-    visit(return_stmt.inner);
+        visit(return_stmt.inner);
 
-    assert(expected_ret_type.has_value() &&
-           "expected_ret_type invalidated by visiting inner expression");
+        assert(expected_ret_type.has_value() &&
+               "expected_ret_type invalidated by visiting inner expression");
 
-    if (*expected_ret_type != inner_expr->type())
-        return error(return_stmt, "invalid return stmt, type mismatch between expected return type "
-                                  "and inner expression's type");
+        if (*expected_ret_type != inner_expr->type())
+            return error(return_stmt,
+                         "invalid return stmt, type mismatch between expected return type "
+                         "and inner expression's type");
+    } else if (expected_ret_type != ctx.type_pool.void_td()) {
+        return error(return_stmt, "invalid empty return in non-void returning context");
+    }
 }
 
 void SIRSemaVisitor::visit_ContinueStmt([[maybe_unused]] ContinueStmt& continue_stmt) {}

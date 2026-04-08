@@ -13,8 +13,20 @@ concept CDynCastable = std::derived_from<To, From> && requires (From from) {
 
 template <typename To, typename From>
 requires CDynCastable<To, From>
+bool isa(const From& ptr) {
+    return To::same_node_kind(ptr.kind());
+}
+
+template <typename... To, typename From>
+requires (sizeof...(To) > 1) && (CDynCastable<To, From> && ...) && (!std::same_as<To, From> && ...)
+bool isa(const From& ptr) {
+    return (isa<To, From>(ptr) || ...);
+}
+
+template <typename To, typename From>
+requires CDynCastable<To, From>
 bool isa(From* ptr) {
-    return ptr != nullptr && To::same_node_kind(ptr->kind());
+    return ptr != nullptr && isa<To>(*ptr);
 }
 
 template <typename... To, typename From>

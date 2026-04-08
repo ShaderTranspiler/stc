@@ -260,15 +260,16 @@ public:
     }
 };
 
-template <typename DtorFn>
-requires std::invocable<DtorFn>
+// defers the execution of a Callable until the object's destruction
+template <typename DeferredFn>
+requires std::invocable<DeferredFn>
 struct ScopeGuard {
-    DtorFn fn;
+    DeferredFn deferred_fn;
 
-    explicit ScopeGuard(DtorFn fn)
-        : fn{fn} {}
+    explicit ScopeGuard(DeferredFn fn)
+        : deferred_fn{fn} {}
 
-    ~ScopeGuard() { fn(); }
+    ~ScopeGuard() { deferred_fn(); }
 
     ScopeGuard(const ScopeGuard&)            = delete;
     ScopeGuard& operator=(const ScopeGuard&) = delete;

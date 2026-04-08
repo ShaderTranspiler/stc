@@ -19,7 +19,7 @@ Here is a (very) rough overview of the development timeline and its current prog
 - [x] Symbol interning
 - [x] Julia parsing
 - [ ] Qualified types [mostly done, not yet integrated]
-- [x] Julia type inference (bidirectional typing) [WIP]
+- [x] Julia type inference (bidirectional typing)
 - [ ] Julia Pkg API [cpp-side mostly done]
 - [ ] Expand supported Julia and GLSL language subsets
 - [ ] Configuration API

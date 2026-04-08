@@ -90,15 +90,28 @@ TypeId TypePool::array_td(TypeId element_type_id, uint32_t length) {
     return insert_or_get(ArrayTD{element_type_id, length});
 }
 
-TypeId TypePool::method_td(TypeId ret_type, std::vector<TypeId> param_types) {
-    MethodSig sig{.ret_type = ret_type, .param_types = std::move(param_types)};
-    TypeId lookup = get(MethodTD{&sig});
+TypeId TypePool::method_td(TypeId ret_type, const std::vector<TypeId>& param_types) {
+    MethodSig sig{ret_type, param_types};
 
+    // stack alloced sig can be used for lookup
+    TypeId lookup = get(MethodTD{&sig});
     if (!lookup.is_null())
         return lookup;
 
-    auto* arena_sig = arena.emplace<MethodSig>(ret_type, sig.param_types).second;
-    return arena.emplace<MethodTD>(arena_sig).first;
+    if (ret_type.is_null())
+        throw std::logic_error{"Cannot create method type with null as return type"};
+
+    if (std::ranges::any_of(param_types, [](TypeId ptype) { return ptype.is_null(); }))
+        throw std::logic_error{"Cannot create method type with null as a parameter's type"};
+
+    // but when creating the interned instance, heap (arena) alloc is required
+    // has separate allocs, because most invocations are expected to be returned from the pool
+
+    MethodSig* sig_ptr             = nullptr;
+    std::tie(std::ignore, sig_ptr) = arena.emplace<MethodSig>(ret_type, param_types);
+    assert(sig_ptr != nullptr);
+
+    return insert_or_get(MethodTD{sig_ptr}, true);
 }
 
 TypeId TypePool::func_td(SymbolId fn_name) {
@@ -163,8 +176,11 @@ TypeId TypePool::make_struct_td(SymbolId name, std::vector<StructData::FieldInfo
     if (struct_map.contains(name))
         throw std::logic_error{"Cannot create two structs with identical names"};
 
-    auto [_, data_ptr] = arena.emplace<StructData>(name, std::move(fields));
-    TypeId t_id        = insert_or_get(StructTD{data_ptr}, true);
+    StructData* data_ptr            = nullptr;
+    std::tie(std::ignore, data_ptr) = arena.emplace<StructData>(name, std::move(fields));
+    assert(data_ptr != nullptr);
+
+    TypeId t_id = insert_or_get(StructTD{data_ptr}, true);
 
     struct_map[data_ptr->name] = t_id;
 
