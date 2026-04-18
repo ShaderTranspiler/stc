@@ -121,6 +121,29 @@ jl_datatype_t* JLSema::to_jl_type(TypeId type) {
     return type_to_jl.dispatch(type);
 }
 
+NodeId JLSema::try_unwrap_cmpd(NodeId cmpd_id) {
+    auto cmpd = ctx.get_and_dyn_cast<CompoundExpr>(cmpd_id);
+
+    if (cmpd == nullptr)
+        return cmpd_id;
+
+    if (cmpd->body.empty()) {
+        fail("empty compound expression in position where a single expression is expected", *cmpd);
+        return NodeId::null_id();
+    }
+
+    if (cmpd->body.size() > 1) {
+        fail("multi-expression compound expression in position where a single expression is "
+             "expected",
+             *cmpd);
+        return NodeId::null_id();
+    }
+
+    assert(cmpd->body.size() == 1);
+
+    return cmpd->body[0];
+}
+
 TypeId JLSema::visit_default_case() {
     _success = false;
     stc::internal_error("unexpected null id node found in the AST");
@@ -225,16 +248,16 @@ void JLSema::pop_scope(bool is_global, bool skip_mangle) {
     scopes.pop_back();
 }
 
-bool JLSema::check_type_against(TypeId actual_type, TypeId expected_type) const {
+bool JLSema::check_type_against(TypeId actual_type, TypeId checked_type) const {
     if (actual_type.is_null()) {
         // TODO: custom error
         return false;
     }
 
-    if (actual_type == expected_type)
+    if (actual_type == checked_type)
         return true;
 
-    const auto& expected_td = tpool.get_td(expected_type);
+    const auto& expected_td = tpool.get_td(checked_type);
     auto actual_td = LazyInit{[&]() -> const TypeDescriptor& { return tpool.get_td(actual_type); }};
 
     // TODO: subsumption, promotion
@@ -248,10 +271,56 @@ bool JLSema::check_type_against(TypeId actual_type, TypeId expected_type) const 
                expected_fn.identifier == actual_td.get().as<FunctionTD>().identifier;
     }
 
+    if (expected_td.is_array() && actual_td.get().is_array()) {
+        ArrayTD expected_arr_ty = expected_td.as<ArrayTD>();
+        ArrayTD actual_arr_ty   = actual_td.get().as<ArrayTD>();
+
+        if (!check_type_against(actual_arr_ty.element_type_id, expected_arr_ty.element_type_id))
+            return false;
+
+        if (tpool.is_array_any_size(checked_type))
+            return true;
+
+        return actual_arr_ty.length == expected_arr_ty.length;
+    }
+
+    if (expected_td.is_vector() && actual_td.get().is_vector()) {
+        VectorTD expected_vec_ty = expected_td.as<VectorTD>();
+        VectorTD actual_vec_ty   = actual_td.get().as<VectorTD>();
+
+        if (!check_type_against(actual_vec_ty.component_type_id, expected_vec_ty.component_type_id))
+            return false;
+
+        if (tpool.is_vec_any_size(checked_type))
+            return true;
+
+        return actual_vec_ty.component_count == expected_vec_ty.component_count;
+    }
+
+    if (expected_td.is_matrix() && actual_td.get().is_matrix()) {
+        MatrixTD expected_mat_ty = expected_td.as<MatrixTD>();
+        MatrixTD actual_mat_ty   = actual_td.get().as<MatrixTD>();
+
+        assert(tpool.is_type_of<VectorTD>(actual_mat_ty.column_type_id));
+        assert(tpool.is_type_of<VectorTD>(expected_mat_ty.column_type_id));
+
+        VectorTD actual_col_ty   = tpool.get_td(actual_mat_ty.column_type_id).as<VectorTD>();
+        VectorTD expected_col_ty = tpool.get_td(expected_mat_ty.column_type_id).as<VectorTD>();
+
+        if (!check_type_against(actual_col_ty.component_type_id, expected_col_ty.component_type_id))
+            return false;
+
+        if (tpool.is_mat_any_size(checked_type))
+            return true;
+
+        return actual_mat_ty.column_count == expected_mat_ty.column_count &&
+               actual_col_ty.component_count == expected_col_ty.component_count;
+    }
+
     return false;
 }
 
-bool JLSema::check(Expr& expr, TypeId expected_type, bool allow_pretyped) {
+bool JLSema::check(Expr& expr, TypeId checked_type, bool allow_pretyped) {
     bool old_pretyped_value = allow_pretyped_nodes;
     if (allow_pretyped)
         allow_pretyped_nodes = true;
@@ -265,7 +334,7 @@ bool JLSema::check(Expr& expr, TypeId expected_type, bool allow_pretyped) {
         return false;
     }
     auto prev_expected  = this->expected_type;
-    this->expected_type = expected_type;
+    this->expected_type = checked_type;
 
     const ScopeGuard exp_type_scope_guard{[&]() {
         this->expected_type  = prev_expected;
@@ -284,15 +353,22 @@ bool JLSema::check(Expr& expr, TypeId expected_type, bool allow_pretyped) {
 
     TypeId actual_type = expr.type.is_null() ? impl_this()->visit(&expr) : expr.type;
 
-    if (!check_type_against(actual_type, expected_type)) {
+    if (_success && !actual_type.is_null() &&
+        tpool.get_td(actual_type).is_builtin(BuiltinTypeKind::String))
+        fail("nodes representing strings are not allowed", expr);
+
+    if (!check_type_against(actual_type, checked_type)) {
         fail(std::format("type mismatch during type checking: expected {}, got {}",
-                         type_str(expected_type), type_str(actual_type)),
+                         type_str(checked_type), type_str(actual_type)),
              expr);
 
         return false;
     }
 
-    expr.type = expected_type;
+    // TODO
+    // maybe it would be wiser to use expected_type here, and do manual case-by-case rewriting (e.g.
+    // for any-sized-array or any func)
+    expr.type = actual_type;
 
     return true;
 }
@@ -324,6 +400,9 @@ TypeId JLSema::infer(Expr& expr, bool allow_pretyped) {
     if (inferred.is_null())
         return _success ? fail("couldn't infer type for node during type checking", expr)
                         : TypeId::null_id();
+
+    if (_success && tpool.get_td(inferred).is_builtin(BuiltinTypeKind::String))
+        fail("nodes representing strings are not allowed", expr);
 
     expr.type = inferred;
 
@@ -389,6 +468,9 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
             // AST subtree (to reduce number of errors propagated from the same source)
             if (!valid_init)
                 return TypeId::null_id();
+
+            if (tpool.is_array_any_size(vdecl.annot_type))
+                vdecl.annot_type = ctx.get_node(vdecl.initializer)->type;
         }
 
         result_type = vdecl.annot_type;
@@ -946,6 +1028,7 @@ void JLSema::visit_method_body(MethodDecl& method) {
     current_method = prev_method;
     current_fn_ret = prev_ret;
 }
+
 // TODO: structs
 
 TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
@@ -1022,9 +1105,36 @@ TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
 
             NodeId inner =
                 current_fn_ret != ctx.jl_Nothing_t() ? cmpd.body.back() : NodeId::null_id();
+            bool in_place = true;
+
+            if (inner != NodeId::null_id()) {
+                NodeId target_inner = cmpd.body.back();
+
+                if (auto* last_assign = ctx.get_and_dyn_cast<Assignment>(target_inner)) {
+                    if (last_assign->is_implicit_decl()) {
+                        in_place     = false;
+                        target_inner = ctx.get_and_dyn_cast<DeclRefExpr>(last_assign->target)->decl;
+                    }
+                }
+
+                if (auto* last_decl = ctx.get_and_dyn_cast<Decl>(target_inner)) {
+                    in_place = false;
+
+                    NodeId sym_lit =
+                        ctx.emplace_node<SymbolLiteral>(last_decl->location, last_decl->identifier)
+                            .first;
+
+                    inner = ctx.emplace_node<DeclRefExpr>(last_decl->location, sym_lit).first;
+                    infer(inner);
+                }
+            }
+
             NodeId gen_ret = ctx.emplace_node<ReturnStmt>(last_expr->location, inner).first;
 
-            cmpd.body[cmpd.body.size() - 1] = gen_ret;
+            if (in_place)
+                cmpd.body[cmpd.body.size() - 1] = gen_ret;
+            else
+                cmpd.body.emplace_back(gen_ret);
 
             infer(gen_ret, true);
         }
@@ -1051,9 +1161,108 @@ DEFINE_LIT(UInt64)
 DEFINE_LIT(UInt128)
 DEFINE_LIT(Float32)
 DEFINE_LIT(Float64)
-DEFINE_LIT(String)
 
 #undef DEFINE_LIT
+
+TypeId JLSema::visit_StringLiteral(StringLiteral& str_lit) {
+    fail("string literals are not allowed", str_lit);
+    return ctx.jl_String_t();
+}
+
+TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    if (arr_lit.members.size() >= std::numeric_limits<uint32_t>::max()) {
+        return fail("array length exceeds upper limit (largest index needs to be storable in a "
+                    "u32, excluding its maximum)",
+                    arr_lit);
+    }
+
+    uint32_t len = static_cast<uint32_t>(arr_lit.members.size());
+
+    TypeId checked_el_type = TypeId::null_id();
+    if (is_checking()) {
+        assert(!expected_type.is_null());
+        const auto& arr_td = tpool.get_td(expected_type);
+        ArrayTD arr_ty     = arr_td.as<ArrayTD>();
+
+        if (arr_td.is_array())
+            checked_el_type = arr_ty.element_type_id;
+    }
+
+    if (!checked_el_type.is_null()) {
+        for (NodeId member : arr_lit.members)
+            check(member, checked_el_type);
+
+        return tpool.array_td(checked_el_type, len);
+    }
+
+    if (arr_lit.members.empty())
+        return fail("cannot infer element type for empty array literal", arr_lit);
+
+    TypeId inferred_el_type = infer(arr_lit.members[0]);
+
+    if (inferred_el_type.is_null())
+        return fail("failed to infer element type for first element of array literal", arr_lit);
+
+    bool any_check_failed = false;
+    for (size_t i = 1; i < arr_lit.members.size(); i++)
+        any_check_failed = any_check_failed || !check(arr_lit.members[i], inferred_el_type);
+
+    if (any_check_failed)
+        return fail("array literal with varying element type is not allowed", arr_lit);
+
+    return tpool.array_td(inferred_el_type, len);
+}
+
+TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
+    for (auto& idx : idx_expr.indexers)
+        infer(idx);
+
+    infer(idx_expr.target);
+    TypeId coll_type = ctx.get_node(idx_expr.target)->type;
+
+    if (coll_type.is_null())
+        return fail("failed to infer type for target of an indexer expression", idx_expr);
+
+    if (is_checking()) {
+        bool any_coll_match = check_type_against(coll_type, tpool.any_vec_td(expected_type)) ||
+                              (tpool.get_td(expected_type).is_scalar() &&
+                               (check_type_against(coll_type, tpool.any_mat_td(expected_type)) ||
+                                check_type_against(coll_type, tpool.any_array_td(expected_type))));
+
+        if (!any_coll_match) {
+            return fail(std::format("target of an indexer expression could not be checked to hold "
+                                    "a collection of the expected '{}' type",
+                                    type_str(expected_type)),
+                        idx_expr);
+        }
+    }
+
+    const auto& coll_td = tpool.get_td(coll_type);
+
+    TypeId el_type = tpool.el_type_of(coll_td);
+    if (el_type.is_null())
+        return fail("cannot use an indexer expression on a non-collection-type", idx_expr);
+
+    if (coll_td.is_vector()) {
+        if (idx_expr.indexers.size() != 1)
+            return fail("vector types only support one indexer value", idx_expr);
+    }
+
+    if (coll_td.is_matrix()) {
+        if (idx_expr.indexers.size() == 1)
+            return coll_td.as<MatrixTD>().column_type_id;
+
+        if (idx_expr.indexers.size() != 2)
+            return fail("matrix types only support one or two indexer values", idx_expr);
+    }
+
+    if (coll_td.is_array()) {
+        if (idx_expr.indexers.size() != 1)
+            return fail("vector types only support one indexer value", idx_expr);
+    }
+
+    return el_type;
+}
 
 TypeId JLSema::visit_SymbolLiteral(SymbolLiteral& sym) {
     return internal_error("sema pass reached a symbol literal leaf node, which should never happen",
@@ -1160,13 +1369,22 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
 
     bool is_fn_ref = *maybe_bt == BindingType::Global && tpool.is_any_func(expected_type);
     if (is_fn_ref) {
-        jl_function_t* jl_fn = find_jl_function(ctx.get_sym(sym->value), ctx.jl_env);
+        // try to resolve in JuliaGLM first
+        jl_function_t* jl_fn =
+            ctx.jl_env.module_cache.glm_mod.get_fn(ctx.get_sym(sym->value), false);
+
+        if (jl_fn == nullptr)
+            jl_fn = find_jl_function(ctx.get_sym(sym->value), ctx.jl_env, false);
 
         if (jl_fn == nullptr) {
             return fail(std::format("couldn't find function '{}' in the symbol table, or in the "
                                     "root julia module",
                                     ctx.get_sym(sym->value)),
                         dre);
+        }
+
+        if (jl_is_type(jl_fn)) {
+            // TODO: ctors
         }
 
         SymbolId fn_name = ctx.sym_pool.get_id(get_jl_fn_name(jl_fn));
@@ -1337,6 +1555,11 @@ TypeId JLSema::ret_type_of_call(jl_function_t* fn, const std::vector<TypeId>& ar
     }
 
     if (!jl_is_datatype(res_jl_type) || !jl_is_concrete_type(res_jl_type)) {
+        std::cerr << "Inferred signature: ";
+        jl_static_show(jl_stderr_stream(), type_tuple);
+        std::cerr << "\nInferred return type: ";
+        jl_static_show(jl_stderr_stream(), res_jl_type);
+        std::cerr << '\n';
         return fail(
             std::format("Julia could only infer a non-concrete return type {}", error_suffix.get()),
             base_expr);
@@ -1429,6 +1652,10 @@ std::optional<MethodDecl*> JLSema::find_sig_match(const FunctionDecl& fn_decl,
 }
 
 TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
+    fn_call.target_fn = try_unwrap_cmpd(fn_call.target_fn);
+    if (fn_call.target_fn.is_null())
+        return TypeId::null_id();
+
     bool is_valid_fn = check(fn_call.target_fn, tpool.any_func_td());
     if (!is_valid_fn)
         return fail("call expression's target couldn't be checked to have function type", fn_call);
@@ -1505,6 +1732,10 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 }
 
 TypeId JLSema::visit_IfExpr(IfExpr& if_) {
+    if_.condition = try_unwrap_cmpd(if_.condition);
+    if (if_.condition.is_null())
+        return TypeId::null_id();
+
     check(if_.condition, ctx.jl_Bool_t());
 
     if (if_.false_branch.is_null()) {
@@ -1533,6 +1764,10 @@ TypeId JLSema::visit_WhileExpr(WhileExpr& while_) {
     if (while_.condition.is_null())
         return fail("empty condition in while expression", while_);
 
+    while_.condition = try_unwrap_cmpd(while_.condition);
+    if (while_.condition.is_null())
+        return TypeId::null_id();
+
     auto* cmpd = ctx.get_and_dyn_cast<CompoundExpr>(while_.body);
     if (cmpd == nullptr)
         return fail("non-compound-expression node used as a while expression's body", while_);
@@ -1556,6 +1791,13 @@ TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
         return fail("return statement outside of method body", ret);
 
     bool has_inner = !ret.inner.is_null();
+
+    if (has_inner) {
+        ret.inner = try_unwrap_cmpd(ret.inner);
+
+        if (ret.inner.is_null())
+            return TypeId::null_id();
+    }
 
     // first return in body
     if (current_fn_ret.is_null()) {

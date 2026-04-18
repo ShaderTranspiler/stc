@@ -30,6 +30,11 @@ struct jl_cast_trait<jl_datatype_t> {
     static bool is_type_of(jl_value_t* value) { return jl_is_datatype(value); }
 };
 
+template <>
+struct jl_cast_trait<jl_unionall_t> {
+    static bool is_type_of(jl_value_t* value) { return jl_is_unionall(value); }
+};
+
 template <typename T>
 concept CSafeCastable = requires (jl_value_t* value) {
     { jl_cast_trait<T>::is_type_of(value) } -> std::same_as<bool>;
@@ -98,6 +103,19 @@ inline std::string get_jl_fn_name(jl_function_t* fn) {
     }
 
     return jl_symbol_name(safe_cast<jl_sym_t>(fn_sym_val));
+}
+
+[[nodiscard]]
+inline bool is_spec_of(jl_datatype_t* dt, jl_unionall_t* ua) {
+    jl_value_t* unwrapped_ua = nullptr;
+    JL_GC_PUSH1(&unwrapped_ua);
+    const ScopeGuard jl_gc_pop_sg{[]() { JL_GC_POP(); }};
+
+    unwrapped_ua = jl_unwrap_unionall(reinterpret_cast<jl_value_t*>(ua));
+
+    jl_datatype_t* unwrapped_ua_dt = safe_cast<jl_datatype_t>(unwrapped_ua);
+
+    return dt->name == unwrapped_ua_dt->name;
 }
 
 } // namespace stc::jl

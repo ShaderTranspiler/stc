@@ -208,6 +208,35 @@ void JLDumper::visit_UInt128Literal(UInt128Literal& lit) {
         << std::format("{:034x}", lit.lo) << '\n';
 }
 
+void JLDumper::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    out << indent() << "ArrayLiteral (size: " << std::to_string(arr_lit.members.size()) << "):\n";
+
+    out << indent() << dump_label("members");
+    inc_indent();
+    for (size_t i = 0; i < arr_lit.members.size(); i++) {
+        out << indent() << '[' << std::to_string(i) << "]:\n";
+        visit(arr_lit.members[i]);
+    }
+    dec_indent();
+}
+
+void JLDumper::visit_IndexerExpr(IndexerExpr& idx_expr) {
+    out << indent() << "IndexerExpr:\n";
+
+    out << indent() << dump_label("target");
+    inc_indent();
+    visit(idx_expr.target);
+    dec_indent();
+
+    out << indent() << dump_label("indexers");
+    inc_indent();
+    for (size_t i = 0; i < idx_expr.indexers.size(); i++) {
+        out << indent() << '[' << std::to_string(i) << "]:\n";
+        visit(idx_expr.indexers[i]);
+    }
+    dec_indent();
+}
+
 // CLEANUP: prettier printing for long/multiline literals with wrapping
 void JLDumper::visit_StringLiteral(StringLiteral& lit) {
     out << indent() << "StringLiteral:\n";

@@ -25,6 +25,6 @@ private:
     STC_TYPE_VISITOR_DECLS(jl_datatype_t*)
 };
 
-TypeId parse_jl_type(jl_datatype_t* dt, const JLCtx& ctx);
+TypeId parse_jl_type(jl_datatype_t* dt, JLCtx& ctx);
 
 } // namespace stc::jl

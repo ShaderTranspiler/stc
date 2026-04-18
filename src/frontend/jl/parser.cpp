@@ -64,7 +64,37 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
     }
 
     if (is_expr(type, sym_cache.curly)) {
-        error("parametric types are currently not supported");
+        jl_expr_t* type_expr = safe_cast<jl_expr_t>(type);
+        size_t type_nargs    = jl_expr_nargs(type_expr);
+
+        if (type_nargs == 0) {
+            internal_error("unexpected parametric type layout (zero arg)");
+            return TypeId::null_id();
+        }
+
+        jl_value_t* type_base = jl_exprarg(type_expr, 0);
+        if (!jl_is_symbol(type_base)) {
+            internal_error("unexpected parametric type layout (first arg is not a symbol)");
+            return TypeId::null_id();
+        }
+
+        jl_sym_t* type_base_sym = safe_cast<jl_sym_t>(type_base);
+
+        if (type_base_sym == sym_cache.Vector) {
+            if (type_nargs != 2) {
+                error("invalid Vector type, it must be in the form Vector{T}");
+                return TypeId::null_id();
+            }
+
+            jl_value_t* el_type = jl_exprarg(type_expr, 1);
+            TypeId res_el_type  = resolve_type(el_type);
+            if (res_el_type.is_null())
+                return TypeId::null_id();
+
+            return ctx.type_pool.any_array_td(res_el_type);
+        }
+
+        error("general parametric types are currently not supported");
         return TypeId::null_id();
     }
 
@@ -282,6 +312,12 @@ NodeId JLParser::parse_expr(jl_expr_t* expr) {
 
     if (head == sym_cache.dot)
         return parse_dot_chain(expr, nargs);
+
+    if (head == sym_cache.vect)
+        return parse_vect(expr, nargs);
+
+    if (head == sym_cache.ref)
+        return parse_ref(expr, nargs);
 
     if (head == sym_cache.break_)
         return emplace_node<BreakStmt>(cur_loc);
@@ -685,6 +721,47 @@ NodeId JLParser::parse_dot_chain(jl_expr_t* expr, size_t nargs) {
 
     NodeId mod_lookup = emplace_node<ModuleLookup>(cur_loc, std::move(lookup_chain));
     return emplace_node<DeclRefExpr>(cur_loc, mod_lookup);
+}
+
+NodeId JLParser::parse_vect(jl_expr_t* expr, size_t nargs) {
+    assert(expr->head == sym_cache.vect);
+
+    SrcLocationId base_loc = cur_loc;
+
+    std::vector<NodeId> members{};
+    members.reserve(nargs);
+
+    for (size_t i = 0; i < nargs; i++)
+        members.emplace_back(parse(jl_exprarg(expr, i)));
+
+    return emplace_node<ArrayLiteral>(base_loc, std::move(members));
+}
+
+NodeId JLParser::parse_ref(jl_expr_t* expr, size_t nargs) {
+    assert(expr->head == sym_cache.ref);
+
+    SrcLocationId base_loc = cur_loc;
+
+    if (nargs < 2)
+        return internal_error("unexpected ref expression layout (less than two args)");
+
+    NodeId target = parse(jl_exprarg(expr, 0));
+    if (target.is_null())
+        return NodeId::null_id();
+
+    std::vector<NodeId> indexers{};
+    indexers.reserve(nargs - 1);
+
+    for (size_t i = 1; i < nargs; i++) {
+        NodeId parsed_indexer = parse(jl_exprarg(expr, i));
+
+        if (parsed_indexer.is_null())
+            return NodeId::null_id();
+
+        indexers.emplace_back(parsed_indexer);
+    }
+
+    return emplace_node<IndexerExpr>(base_loc, target, std::move(indexers));
 }
 
 NodeId JLParser::error(std::string_view msg, SrcLocationId loc_id) {

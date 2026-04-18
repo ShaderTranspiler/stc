@@ -217,6 +217,13 @@ void GLSLCodeGenVisitor::visit_ExplicitCast(ExplicitCast& cast) {
     out << ')';
 }
 
+void GLSLCodeGenVisitor::visit_IndexerExpr(IndexerExpr& arr_mem) {
+    visit(arr_mem.target_arr);
+    out << '[';
+    visit(arr_mem.indexer);
+    out << ']';
+}
+
 void GLSLCodeGenVisitor::visit_Assignment(Assignment& assign) {
     visit(assign.target);
     out << " = ";

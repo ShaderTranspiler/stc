@@ -224,6 +224,19 @@ EMPTY_VISITOR_DEF(UInt64Literal)
 EMPTY_VISITOR_DEF(UInt128Literal)
 EMPTY_VISITOR_DEF(Float32Literal)
 EMPTY_VISITOR_DEF(Float64Literal)
+
+void SymbolRes::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    for (NodeId member : arr_lit.members)
+        visit(member);
+}
+
+void SymbolRes::visit_IndexerExpr(IndexerExpr& idx_expr) {
+    visit(idx_expr.target);
+
+    for (NodeId idx : idx_expr.indexers)
+        visit(idx);
+}
+
 EMPTY_VISITOR_DEF(StringLiteral)
 
 void SymbolRes::visit_SymbolLiteral(SymbolLiteral& sym_lit) {

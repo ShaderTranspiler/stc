@@ -341,6 +341,15 @@ struct Float64Literal : public Expr {
     SAME_NODE_KIND_DEF(NodeKind::F64Lit)
 };
 
+struct ArrayLiteral : public Expr {
+    std::vector<NodeId> members;
+
+    explicit ArrayLiteral(SrcLocationId location, std::vector<NodeId> literals)
+        : Expr{location, NodeKind::ArrLit}, members{std::move(literals)} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::ArrLit)
+};
+
 struct StringLiteral : public Expr {
     std::string value;
 
@@ -444,9 +453,19 @@ struct Assignment : public Expr {
     }
 
     bool is_implicit_decl() const { return static_cast<bool>(node_storage()); }
-    void set_is_implicit_decl(bool value) { _node_storage = static_cast<uint8_t>(value); }
+    void set_is_implicit_decl(bool new_value) { _node_storage = static_cast<uint8_t>(new_value); }
 
     SAME_NODE_KIND_DEF(NodeKind::Assignment)
+};
+
+struct IndexerExpr : public Expr {
+    NodeId target;
+    std::vector<NodeId> indexers;
+
+    explicit IndexerExpr(SrcLocationId location, NodeId target, std::vector<NodeId> indexers)
+        : Expr{location, NodeKind::IdxExpr}, target{target}, indexers{std::move(indexers)} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::IdxExpr)
 };
 
 struct FunctionCall : public Expr {

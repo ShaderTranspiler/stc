@@ -216,6 +216,20 @@ void SIRDumper::visit_ExplicitCast(ExplicitCast& expl_cast) {
     dec_indent();
 }
 
+void SIRDumper::visit_IndexerExpr(IndexerExpr& arr_mem) {
+    out << indent() << "IndexerExpr: \n";
+
+    out << indent() << dump_label("target array");
+    inc_indent();
+    visit(arr_mem.target_arr);
+    dec_indent();
+
+    out << indent() << dump_label("indexer");
+    inc_indent();
+    visit(arr_mem.indexer);
+    dec_indent();
+}
+
 void SIRDumper::visit_Assignment(Assignment& assign) {
     out << indent() << "Assignment: \n";
 

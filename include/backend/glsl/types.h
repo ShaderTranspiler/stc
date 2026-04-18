@@ -17,7 +17,7 @@ inline std::string type_prefix(const TypeDescriptor& td) {
         return td.as<IntTD>().is_signed ? "i" : "u";
 
     if (td.is<FloatTD>())
-        return td.as<FloatTD>().width == 32 ? "f" : "d";
+        return td.as<FloatTD>().width == 32 ? "" : "d";
 
     return "?";
 }

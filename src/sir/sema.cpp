@@ -280,6 +280,11 @@ void SIRSemaVisitor::visit_ExplicitCast(ExplicitCast& expl_cast) {
     visit(expl_cast.inner);
 }
 
+void SIRSemaVisitor::visit_IndexerExpr(IndexerExpr& arr_mem) {
+    visit(arr_mem.target_arr);
+    visit(arr_mem.indexer);
+}
+
 void SIRSemaVisitor::visit_Assignment(Assignment& assignment) {
     // TODO: l-value, r-value
     visit(assignment.target);

@@ -47,9 +47,28 @@ jl_datatype_t* TypeToJLVisitor::visit(FloatTD float_td) {
     return nullptr;
 }
 
-jl_datatype_t* TypeToJLVisitor::visit([[maybe_unused]] VectorTD vec_td) {
-    // TODO
-    return nullptr;
+jl_datatype_t* TypeToJLVisitor::visit(VectorTD vec_td) {
+    const auto& comp_td = type_pool.get_td(vec_td.component_type_id);
+    if (comp_td.is<FloatTD>()) {
+        FloatTD comp_ty = comp_td.as<FloatTD>();
+
+        if (comp_ty.width == 32 && comp_ty.enc == FloatTD::Encoding::ieee754) {
+            if (vec_td.component_count == 2)
+                return type_cache.vec2;
+            if (vec_td.component_count == 3)
+                return type_cache.vec3;
+            if (vec_td.component_count == 4)
+                return type_cache.vec4;
+        }
+    }
+
+    jl_value_t* n_tp = jl_box_long(vec_td.component_count);
+    jl_value_t* t_tp = reinterpret_cast<jl_value_t*>(dispatch(vec_td.component_type_id));
+
+    jl_value_t* dt_v =
+        jl_apply_type2(reinterpret_cast<jl_value_t*>(type_cache.vec_nt_ua), n_tp, t_tp);
+
+    return safe_cast<jl_datatype_t>(dt_v);
 }
 
 jl_datatype_t* TypeToJLVisitor::visit([[maybe_unused]] MatrixTD mat_td) {
@@ -104,7 +123,7 @@ jl_datatype_t* TypeToJLVisitor::visit(BuiltinTD builtin_td) {
     return nullptr;
 }
 
-TypeId parse_jl_type(jl_datatype_t* dt, const JLCtx& ctx) {
+TypeId parse_jl_type(jl_datatype_t* dt, JLCtx& ctx) {
     if (dt == nullptr)
         return TypeId::null_id();
 
@@ -114,8 +133,10 @@ TypeId parse_jl_type(jl_datatype_t* dt, const JLCtx& ctx) {
     const auto& type_cache = ctx.jl_env.type_cache;
 
     // clang-format off
+    if (dt == jl_nothing_type)    return ctx.jl_Nothing_t();
+
     if (dt == type_cache.bool_)   return ctx.jl_Bool_t();
-    
+
     if (dt == type_cache.int8)    return ctx.jl_Int8_t();
     if (dt == type_cache.uint8)   return ctx.jl_UInt8_t();
     if (dt == type_cache.int16)   return ctx.jl_Int16_t();
@@ -126,11 +147,73 @@ TypeId parse_jl_type(jl_datatype_t* dt, const JLCtx& ctx) {
     if (dt == type_cache.uint64)  return ctx.jl_UInt64_t();
     if (dt == type_cache.int128)  return ctx.jl_Int128_t();
     if (dt == type_cache.uint128) return ctx.jl_UInt128_t();
-    
+
     if (dt == type_cache.float16) return ctx.jl_Float16_t();
     if (dt == type_cache.float32) return ctx.jl_Float32_t();
     if (dt == type_cache.float64) return ctx.jl_Float64_t();
     // clang-format on
+
+    if (jl_is_array_type(dt)) {
+        jl_value_t* eltype_tp = jl_tparam0(dt);
+        jl_value_t* dim_tp    = jl_tparam1(dt);
+
+        if (jl_is_long(dim_tp) && jl_is_datatype(eltype_tp) && jl_unbox_long(dim_tp) == 1) {
+            TypeId el_type = parse_jl_type(safe_cast<jl_datatype_t>(eltype_tp), ctx);
+            return ctx.type_pool.any_array_td(el_type);
+        }
+    }
+
+    bool is_vec_nt = is_spec_of(dt, type_cache.vec_nt_ua),
+         is_vec_2t = is_spec_of(dt, type_cache.vec_2t_ua),
+         is_vec_3t = is_spec_of(dt, type_cache.vec_3t_ua),
+         is_vec_4t = is_spec_of(dt, type_cache.vec_4t_ua),
+         is_vec    = is_vec_nt || is_vec_2t || is_vec_3t || is_vec_4t;
+
+    // TODO: 32/64 bit env handling
+    if (is_vec) {
+        size_t n = 0;
+
+        jl_value_t* t_tp = nullptr;
+        if (is_vec_nt) {
+            jl_value_t* n_tp = jl_tparam0(dt);
+            t_tp             = jl_tparam1(dt);
+
+            if (!jl_is_int64(n_tp))
+                throw std::logic_error{"unexpected non-int64 type param in VecNT type's N"};
+
+            int64_t n_i64 = jl_unbox_uint64(n_tp);
+
+            if (n_i64 < 1)
+                throw std::runtime_error{"non-positive N value for VecNT's N type param"};
+
+            if (n_i64 > std::numeric_limits<uint32_t>::max())
+                throw std::runtime_error{"N value for VecNT's N type param is too large"};
+
+            n = static_cast<uint32_t>(n_i64);
+        } else {
+            t_tp = jl_tparam0(dt);
+
+            if (is_vec_2t)
+                n = 2;
+            else if (is_vec_3t)
+                n = 3;
+            else if (is_vec_4t)
+                n = 4;
+        }
+
+        assert(t_tp != nullptr);
+        assert(n != 0);
+
+        if (!jl_is_datatype(t_tp))
+            throw std::logic_error{"unexpected non-datatype type param in VecNT type's T"};
+
+        TypeId el_type = parse_jl_type(safe_cast<jl_datatype_t>(t_tp), ctx);
+
+        if (!ctx.type_pool.get_td(el_type).is_scalar())
+            throw std::logic_error{"non-scalar type in VecNT's T type param"};
+
+        return ctx.type_pool.vector_td(el_type, static_cast<uint32_t>(n));
+    }
 
     return TypeId::null_id();
 }

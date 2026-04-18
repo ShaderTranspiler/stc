@@ -1,4 +1,4 @@
-#include <julia.h>
+#include <julia_guard.h>
 JULIA_DEFINE_FAST_TLS
 
 #include <backend/glsl/code_gen.h>
@@ -13,6 +13,17 @@ JULIA_DEFINE_FAST_TLS
 #include <fstream>
 #include <iostream>
 #include <sstream>
+
+std::string format_duration(std::chrono::nanoseconds dur) {
+    using namespace std::chrono;
+
+    duration<double, std::milli> exact_ms = dur;
+    duration<double, std::micro> exact_us = dur;
+
+    return duration_cast<milliseconds>(dur).count() > 0
+               ? std::format("{:.3f} ms", exact_ms.count())
+               : std::format("{:.0f} us", exact_us.count());
+}
 
 int transpile(std::string_view code, stc::TranspilerConfig config, bool dump_parsed, bool dump_sema,
               bool dump_lowered, bool write_to_file) {
@@ -121,21 +132,12 @@ int transpile(std::string_view code, stc::TranspilerConfig config, bool dump_par
         }
     }
 
-    auto parser_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(parser_done - start);
-    auto sema_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(sema_done - sema_start);
-    auto lowering_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(lowering_done - lowering_start);
-    auto codegen_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(end - codegen_start);
-    auto overall_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-
-    std::cout << std::format("\nParser finished in {}\n", parser_duration);
-    std::cout << std::format("Sema finished in {}\n", sema_duration);
-    std::cout << std::format("Lowering finished in {}\n", lowering_duration);
-    std::cout << std::format("Codegen finished in {}\n", codegen_duration);
-    std::cout << std::format("\nEntire transpilation pipeline finished in {}\n", overall_duration);
+    std::cout << "\nParser finished in " << format_duration(parser_done - start) << '\n';
+    std::cout << "Sema finished in " << format_duration(sema_done - sema_start) << '\n';
+    std::cout << "Lowering finished in " << format_duration(lowering_done - lowering_start) << '\n';
+    std::cout << "Codegen finished in " << format_duration(end - codegen_start) << '\n';
+    std::cout << "\nEntire transpilation pipeline finished in " << format_duration(end - start)
+              << '\n';
 
     std::cout.flush();
     return 0;
@@ -179,7 +181,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--errdump-verbose")
             err_dump = DumpVerbosity::Verbose;
         else if (arg == "--it") {
-            if (i + 1 == argc) {
+            if (i + 1 >= argc) {
                 std::cerr << "--it must be followed by the number of iterations";
                 return 1;
             }
@@ -202,15 +204,24 @@ int main(int argc, char* argv[]) {
     config.err_dump_verbosity = err_dump;
 
     // ! TODO: remove
-    std::ifstream file(argc > 1 ? argv[1] : "C:\\Users\\szucs\\szakdoga\\stc\\tmp.jl");
+    std::ifstream file(argc > 1 ? argv[1] : "C:\\Users\\szucs\\szakdoga\\stc\\test.jl");
     std::stringstream code_stream;
     code_stream << file.rdbuf();
     std::string code{code_stream.str()};
 
+    std::cout << "Initializing Julia context...\n";
     jl_init();
 
-    // ! TODO: remove (purpose: jl cache warmup + "precompile" return_type)
-    jl_eval_string("sin(0.5f0) + 1; Core.Compiler.return_type(sin, Tuple{Float32})");
+    jl_eval_string("using Pkg");
+    jl_eval_string("Pkg.develop(\"C:\\Users\\szucs\\szakdoga\\juliagebra\")");
+    jl_eval_string("import JuliaGLM");
+
+    // ! TODO: remove (current purpose: jl cache warmup + force compile return_type)
+    jl_eval_string("sin(0.5f0) + 1");
+    jl_eval_string("Core.Compiler.return_type(sin, Tuple{Float32})");
+    jl_eval_string("Core.Compiler.return_type(JuliaGLM.sin, Tuple{Vec3})");
+
+    std::cout << "Starting transpilation...\n";
 
     const ScopeGuard jl_guard{[&]() { jl_atexit_hook(0); }};
 

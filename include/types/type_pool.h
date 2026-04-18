@@ -75,9 +75,31 @@ public:
     [[nodiscard]] TypeId method_td(TypeId ret_type, const std::vector<TypeId>& param_types);
     [[nodiscard]] TypeId func_td(SymbolId fn_name);
     [[nodiscard]] TypeId any_func_td();
+
     [[nodiscard]] bool is_any_func(TypeId type) const;
     // compares based on pointer equality
     [[nodiscard]] bool is_any_func(const TypeDescriptor* fn_td) const;
+
+    [[nodiscard]] TypeId any_array_td(TypeId el_type);
+    [[nodiscard]] TypeId any_vec_td(TypeId el_type);
+    [[nodiscard]] TypeId any_mat_td(TypeId el_type);
+
+    [[nodiscard]] bool is_array_any_size(TypeId type) const {
+        const auto& td = get_td(type);
+        return td.is_array() && td.as<ArrayTD>().length == std::numeric_limits<uint32_t>::max();
+    }
+
+    [[nodiscard]] bool is_vec_any_size(TypeId type) const {
+        const auto& td = get_td(type);
+        return td.is_vector() &&
+               td.as<VectorTD>().component_count == std::numeric_limits<uint32_t>::max();
+    }
+
+    [[nodiscard]] bool is_mat_any_size(TypeId type) const {
+        const auto& td = get_td(type);
+        return td.is_matrix() &&
+               td.as<MatrixTD>().column_count == std::numeric_limits<uint32_t>::max();
+    }
 
     [[nodiscard]] TypeId builtin_td(BuiltinKind kind);
 
@@ -89,6 +111,10 @@ public:
     [[nodiscard]] TypeId get_struct_td(SymbolId name);
     TypeId make_struct_td(SymbolId name, std::vector<StructData::FieldInfo> fields,
                           const SymbolPool& sym_pool);
+
+    [[nodiscard]] TypeId el_type_of(const TypeDescriptor& td) const;
+
+    [[nodiscard]] TypeId el_type_of(TypeId id) const { return el_type_of(get_td(id)); }
 
     void register_builtin_str(BuiltinKind kind, std::string str);
     template <CEnumOf<BuiltinKind> T>

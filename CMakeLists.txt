@@ -3,6 +3,7 @@ project(ShaderTranspilerCore)
 option(FETCH_CATCH2 "Force fetching Catch2 from the github repo, even if it's installed locally" OFF)
 option(NO_CCACHE "Disable compiler caching through ccache, even if it's installed locally" OFF)
 option(NO_TIDY "Disable static analysis through clang-tidy, even if it's installed locally" OFF)
+option(NO_SAN "Disable address and undefined sanitizers (ASan and UBSan). Might be required with some versions of Julia")
 
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
     message(STATUS "No build type specified, defaulting to Debug")
@@ -30,13 +31,12 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-# on windows we can't link the dll itself
-# on linux and mac, the file pointed to by libjulia should work
-if (WIN32)
-    get_filename_component(JULIA_BINDIR ${JULIA_LIB} DIRECTORY)
-    set(JULIA_LIBDIR "${JULIA_BINDIR}/../lib")
-    get_filename_component(JULIA_LIBDIR ${JULIA_LIBDIR} ABSOLUTE)
+get_filename_component(JULIA_BINDIR ${JULIA_LIB} DIRECTORY)
+set(JULIA_LIBDIR "${JULIA_BINDIR}/../lib")
+get_filename_component(JULIA_LIBDIR ${JULIA_LIBDIR} ABSOLUTE)
 
+# on windows with msvc, we can't link the dll itself (because of reasons), we need the dll.a (or .lib)
+if (WIN32)
     set(JULIA_LIB "${JULIA_LIBDIR}/libjulia.dll.a")
     if (NOT EXISTS "${JULIA_LIB}")
         set(JULIA_LIB "${JULIA_LIBDIR}/julia.lib")
@@ -45,6 +45,14 @@ if (WIN32)
     if (NOT EXISTS "${JULIA_LIB}")
         message(FATAL_ERROR "Couldn't locate Julia library (libjulia.dll.a or julia.lib)")
     endif()
+endif()
+
+if (NOT EXISTS "${JULIA_LIB}")
+    message(FATAL_ERROR "Couldn't locate libjulia")
+endif()
+
+if (NOT EXISTS "${JULIA_INCLUDE_DIR}")
+    message(FATAL_ERROR "Couldn't locate libjulia's include directory")
 endif()
 
 message(STATUS "Found Julia include dir: ${JULIA_INCLUDE_DIR}")
@@ -141,15 +149,20 @@ add_library(CommonConfig INTERFACE)
 if (MSVC)
     # apparently MSVC preprocessor is not standard-confirming by default
     # /Zc:preprocessor needed for X-macro system (__VA_ARGS__ expansion)
-    target_compile_options(CommonConfig INTERFACE /W4 /Zc:preprocessor)
+    target_compile_options(CommonConfig INTERFACE /W4 /Zc:preprocessor /GR-)
 else()
     target_compile_options(CommonConfig INTERFACE
         -Wall -Wextra -Wpedantic -Wconversion -Wreorder
+        -fno-rtti
         # $<$<NOT:$<CONFIG:Debug>>:-fvisibility=hidden>
     )
+
+    if (MINGW)
+        target_link_options(CommonConfig INTERFACE -static-libgcc -static-libstdc++ -Wl,--allow-multiple-definition)
+    endif()
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT NO_SAN)
     # enable asan (and force disable incompatible options on MSVC)
     if (MSVC)
         target_compile_options(CommonConfig INTERFACE /fsanitize=address)
@@ -169,7 +182,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         )
 
         target_link_options(CommonConfig INTERFACE -fsanitize=address,undefined)
-        message(STATUS "ASan enabled for GCC/Clang/etc (detected ${CMAKE_SYSTEM_NAME})")
+        message(STATUS "ASan and UBSan enabled for GCC/Clang/etc (detected ${CMAKE_SYSTEM_NAME})")
     else()
         message(STATUS "ASan not supported on the host system (${CMAKE_SYSTEM_NAME})")
     endif()
@@ -373,4 +386,14 @@ foreach (SBOX_FILE ${SANDBOX_SOURCES})
         $<TARGET_FILE:${LIB_TARGET}>
         $<TARGET_FILE_DIR:${FNAME}>
     )
+
+    # create wrappers for executable, with Julia first in PATH
+    if (WIN32)
+        file(TO_NATIVE_PATH "${JULIA_BINDIR}" JULIA_BINDIR_NATIVE)
+        
+        file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/run_${FNAME}.bat"
+            CONTENT "@echo off\nset PATH=${JULIA_BINDIR_NATIVE};%PATH%\n\"$<TARGET_FILE:${FNAME}>\" %*"
+            CONDITION $<CONFIG:${CMAKE_BUILD_TYPE}>
+        )
+    endif()
 endforeach()

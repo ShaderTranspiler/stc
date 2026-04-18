@@ -30,12 +30,13 @@ inline jl_function_t* find_jl_function(std::string_view lookup_chain, rt::JuliaR
         }
     }
 
-    return mod.get_fn(lookup_chain.substr(last_dot_idx + 1));
+    return mod.get_fn(lookup_chain.substr(last_dot_idx + 1), throw_on_not_found);
 }
 
 [[nodiscard]]
-inline jl_function_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env) {
-    return find_jl_function(lookup_chain, env, env.module_cache.main_mod);
+inline jl_function_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
+                                       bool throw_on_not_found = true) {
+    return find_jl_function(lookup_chain, env, env.module_cache.main_mod, throw_on_not_found);
 }
 
 } // namespace stc::jl::rt

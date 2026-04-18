@@ -28,7 +28,7 @@ protected:
         : type_pool{type_pool} {}
 
     // TDVariantType dispatch is not public API, so that implementations can expect the visitor to
-    // be called at least at the TypeDescriptor-level, providing some type pool context
+    // be called at least at the TypeDescriptor-level, providing some type pool contextso
     RetTy dispatch(TDVariantType type) {
         if (type.valueless_by_exception()) {
             if constexpr (CHasValuelessTypeVisitor<ImplTy, RetTy>)
@@ -39,11 +39,11 @@ protected:
 
         return std::visit(
             [this](auto&& type_val) -> RetTy {
-                using T = std::decay_t<decltype(type_val)>;
+                // CLEANUP: this static assert would be nice but fails on msvc for access reasons
 
-                if constexpr (!CHasVisitorFor<ImplTy, RetTy, T>)
-                    static_assert(dependent_false_v<T>,
-                                  "missing visit overload in type visitor implementation");
+                // using T = std::decay_t<decltype(type_val)>;
+                // static_assert(CHasVisitorFor<ImplTy, RetTy, T>,
+                //               "missing visit overload in type visitor implementation");
 
                 return impl_this()->visit(type_val);
             },

@@ -24,11 +24,21 @@ struct JuliaTypeCache {
 
     jl_unionall_t* array_ua = jl_array_type;
 
-    explicit JuliaTypeCache(JuliaModuleCache& mod_cache) {
-        auto get_from_core = [&mod_cache](const char* sym_name) {
-            static jl_module_t* jl_core = mod_cache.core_mod.mod_ptr();
+    jl_datatype_t* vec2;
+    jl_datatype_t* vec3;
+    jl_datatype_t* vec4;
 
-            auto* result = safe_cast<jl_datatype_t>(jl_get_global(jl_core, jl_symbol(sym_name)));
+    jl_unionall_t* vec_nt_ua;
+    jl_unionall_t* vec_2t_ua;
+    jl_unionall_t* vec_3t_ua;
+    jl_unionall_t* vec_4t_ua;
+
+    jl_unionall_t* mat_nmt_ua;
+
+    explicit JuliaTypeCache(JuliaModuleCache& mod_cache) {
+        auto get_dt_from = [](JuliaModule& mod, const char* sym_name) {
+            auto* result =
+                safe_cast<jl_datatype_t>(jl_get_global(mod.mod_ptr(), jl_symbol(sym_name)));
             if (result == nullptr)
                 throw std::logic_error{std::format(
                     "failed to load datatype '{}' from Julia through the Core module", sym_name)};
@@ -36,8 +46,28 @@ struct JuliaTypeCache {
             return result;
         };
 
-        uint128 = get_from_core("UInt128");
-        int128  = get_from_core("Int128");
+        auto get_ua_from = [](JuliaModule& mod, const char* sym_name) {
+            auto* ua_val = jl_get_global(mod.mod_ptr(), jl_symbol(sym_name));
+            if (!jl_is_unionall(ua_val))
+                throw std::logic_error{std::format(
+                    "value for '{}' loaded from Julia is not a UnionAll type", sym_name)};
+
+            return safe_cast<jl_unionall_t>(ua_val);
+        };
+
+        uint128 = get_dt_from(mod_cache.core_mod, "UInt128");
+        int128  = get_dt_from(mod_cache.core_mod, "Int128");
+
+        vec2 = get_dt_from(mod_cache.glm_mod, "Vec2");
+        vec3 = get_dt_from(mod_cache.glm_mod, "Vec3");
+        vec4 = get_dt_from(mod_cache.glm_mod, "Vec4");
+
+        vec_nt_ua = get_ua_from(mod_cache.glm_mod, "VecNT");
+        vec_2t_ua = get_ua_from(mod_cache.glm_mod, "Vec2T");
+        vec_3t_ua = get_ua_from(mod_cache.glm_mod, "Vec3T");
+        vec_4t_ua = get_ua_from(mod_cache.glm_mod, "Vec4T");
+
+        mat_nmt_ua = get_ua_from(mod_cache.glm_mod, "MatNxMT");
     }
 
     // FEATURE: internal caching for applied types (would require smart GC rooting)

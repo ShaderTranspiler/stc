@@ -326,6 +326,16 @@ struct ExplicitCast : public Expr {
     SAME_NODE_KIND_DEF(NodeKind::ExplCast)
 };
 
+struct IndexerExpr : public Expr {
+    NodeId target_arr;
+    NodeId indexer;
+
+    explicit IndexerExpr(SrcLocationId location, NodeId target_arr, NodeId indexer)
+        : Expr{location, NodeKind::ArrMem}, target_arr{target_arr}, indexer{indexer} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::ArrMem)
+};
+
 struct FunctionCall : public Expr {
     SymbolId fn_name;
     std::vector<NodeId> args;

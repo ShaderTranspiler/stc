@@ -66,6 +66,10 @@ TypeId TypePool::vector_td(TypeId component_type_id, uint32_t component_count) {
     if (component_count < 2)
         throw std::logic_error{"Cannot create vector type with component count less than 2"};
 
+    if (component_count == std::numeric_limits<uint32_t>::max())
+        throw std::logic_error{
+            "Vector with component count of u32 max value is reserved for any-size-vector types"};
+
     return insert_or_get(VectorTD{component_type_id, component_count});
 }
 
@@ -78,6 +82,10 @@ TypeId TypePool::matrix_td(TypeId column_type_id, uint32_t column_count) {
     if (column_count < 2)
         throw std::logic_error{"Cannot create matrix type with column count less than 2"};
 
+    if (column_count == std::numeric_limits<uint32_t>::max())
+        throw std::logic_error{
+            "Matrix with column count of u32 max value is reserved for any-size-matrix types"};
+
     return insert_or_get(MatrixTD{column_type_id, column_count});
 }
 
@@ -86,6 +94,10 @@ TypeId TypePool::array_td(TypeId element_type_id, uint32_t length) {
 
     if (element_type.is_void())
         throw std::logic_error{"Cannot create array type with void as element type"};
+
+    if (length == std::numeric_limits<uint32_t>::max())
+        throw std::logic_error{
+            "Array with length of u32 max value is reserved for any-size-array types"};
 
     return insert_or_get(ArrayTD{element_type_id, length});
 }
@@ -134,6 +146,29 @@ TypeId TypePool::any_func_td() {
     }
 
     return any_func;
+}
+
+TypeId TypePool::any_array_td(TypeId el_type) {
+    if (el_type == TypeId::void_id())
+        throw std::logic_error{"Cannot create any-size-array type with void as element type"};
+
+    return insert_or_get(ArrayTD{el_type, std::numeric_limits<uint32_t>::max()});
+}
+
+TypeId TypePool::any_vec_td(TypeId el_type) {
+    if (!get_td(el_type).is_scalar())
+        throw std::logic_error{"Cannot create any-size-vector type with non-scalar component type"};
+
+    return insert_or_get(VectorTD{el_type, std::numeric_limits<uint32_t>::max()});
+}
+
+TypeId TypePool::any_mat_td(TypeId el_type) {
+    const auto& el_td = get_td(el_type);
+
+    if (!el_td.is_scalar())
+        throw std::logic_error{"Cannot create any-size-matrix type with non-scalar element type"};
+
+    return insert_or_get(MatrixTD{any_vec_td(el_type), std::numeric_limits<uint32_t>::max()});
 }
 
 bool TypePool::is_any_func(TypeId type) const {
@@ -185,6 +220,19 @@ TypeId TypePool::make_struct_td(SymbolId name, std::vector<StructData::FieldInfo
     struct_map[data_ptr->name] = t_id;
 
     return t_id;
+}
+
+TypeId TypePool::el_type_of(const TypeDescriptor& td) const {
+    if (td.is_vector())
+        return td.as<VectorTD>().component_type_id;
+
+    if (td.is_matrix())
+        return el_type_of(td.as<MatrixTD>().column_type_id);
+
+    if (td.is_array())
+        return td.as<ArrayTD>().element_type_id;
+
+    return TypeId::null_id();
 }
 
 void TypePool::register_builtin_str(BuiltinKind kind, std::string str) {

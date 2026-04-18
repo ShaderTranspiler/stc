@@ -42,13 +42,27 @@ end
     a = 4
 
     global x::Int = 2
-    local y
+    y = false
 
-    if x
-        println("true")
+    function f(x::Int)
+        function g()
+            z = 3
+        end
+
+
+        z = 3
+
+        g()
+
+        return 2
+
+    end
+
+    if true
+        f(1)
     elseif y
-        println("maybe")
+        f(2)
     else
-        println("false")
+        f(3)
     end
 end)

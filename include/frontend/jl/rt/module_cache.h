@@ -46,7 +46,8 @@ public:
           base_mod{register_mod("Base", jl_base_module)},
           core_mod{register_mod("Core", jl_core_module)},
           meta_mod{get_mod_or_throw("Base.Meta")},
-          comp_mod{get_mod_or_throw("Core.Compiler")} {}
+          comp_mod{get_mod_or_throw("Core.Compiler")},
+          glm_mod{get_mod_or_throw("Main.JuliaGLM")} {}
 
     // returns JuliaModule from cache, or retrieves it from julia, adds to cache and returns
     // mod_path format: X.Y.Z
@@ -79,6 +80,7 @@ public:
     JuliaModule& core_mod; // Core
     JuliaModule& meta_mod; // Base.Meta
     JuliaModule& comp_mod; // Core.Compiler
+    JuliaModule& glm_mod;
 
     // shorthands for common functions
     jl_function_t* meta_parse     = nullptr;

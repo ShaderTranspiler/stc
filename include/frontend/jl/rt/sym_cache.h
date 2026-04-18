@@ -28,6 +28,8 @@ struct JuliaSymbolCache {
     jl_sym_t* where      = jl_symbol("where");
     jl_sym_t* dot        = jl_symbol(".");
     jl_sym_t* dots       = jl_symbol("...");
+    jl_sym_t* vect       = jl_symbol("vect"); // [1, 2, 3]
+    jl_sym_t* ref        = jl_symbol("ref");  // arr[i]
 
     // types
     jl_sym_t* Bool    = jl_symbol("Bool");
@@ -49,6 +51,7 @@ struct JuliaSymbolCache {
     jl_sym_t* String  = jl_symbol("String");
     jl_sym_t* Symbol  = jl_symbol("Symbol");
     jl_sym_t* Nothing = jl_symbol("Nothing");
+    jl_sym_t* Vector  = jl_symbol("Vector");
 };
 
 } // namespace stc::jl::rt

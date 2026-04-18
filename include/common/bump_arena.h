@@ -146,6 +146,7 @@ public:
         // remains in a usable state even if the exception is caught and ignored
 
         void* dtor_mem = nullptr;
+        // in the trivially destructible case, dtor_call is unused
         [[maybe_unused]] void (*dtor_call)(void*);
 
         if constexpr (!std::is_trivially_destructible_v<T>) {

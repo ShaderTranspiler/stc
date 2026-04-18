@@ -58,6 +58,7 @@ SIRNodeId JLLoweringVisitor::visit_ptr(Expr* node) {
     return this->dispatch_wrapper(node);
 }
 
+// TODO: explicitly defined main
 SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
     auto* global_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(global_cmpd_id);
     if (global_cmpd == nullptr)
@@ -66,14 +67,15 @@ SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
 
     auto& body = global_cmpd->body;
 
-    // lift global var decls (including implicit ones) to the top
+    // lift global var decls (including implicit ones) and method decls to the top
     std::vector<NodeId> prepended_exprs{};
     bool encountered_real_body = false;
     for (size_t i = 0; i < body.size();) {
         NodeId expr = body[i];
 
-        auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(expr);
-        if (vdecl) {
+        // CLEANUP: cleanup this loop structure a bit
+
+        if (auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(expr)) {
             if (mst_to_st(vdecl->scope()) == ScopeType::Global) {
                 prepended_exprs.emplace_back(expr);
 
@@ -88,10 +90,9 @@ SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
                 body[i] = init_assign;
 
                 vdecl->initializer = NodeId::null_id();
-
-                i++;
             }
 
+            i++;
             continue;
         }
 
@@ -113,22 +114,23 @@ SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
             continue;
         }
 
-        if (!ctx.isa<MethodDecl>(expr))
-            encountered_real_body = true;
+        if (ctx.isa<MethodDecl>(expr)) {
+            prepended_exprs.emplace_back(expr);
+            body.erase(body.begin() + i);
 
+            continue;
+        }
+
+        encountered_real_body = true;
         i++;
     }
 
     body.insert(body.begin(), prepended_exprs.begin(), prepended_exprs.end());
 
-    // lift global method decls to underneath global var decls
-    std::stable_partition(body.begin() + prepended_exprs.size(), body.end(),
-                          [this](NodeId expr) -> bool { return ctx.isa<MethodDecl>(expr); });
-
     // wrap rest of body in a main function
     size_t body_first_idx = prepended_exprs.size();
-    while (body_first_idx < body.size() && ctx.isa<MethodDecl>(body[body_first_idx]))
-        body_first_idx++;
+    // while (body_first_idx < body.size() && ctx.isa<MethodDecl>(body[body_first_idx]))
+    //     body_first_idx++;
 
     // if (body_first_idx >= body.size())
     //     return visit(global_cmpd);
@@ -169,6 +171,14 @@ SIRNodeId JLLoweringVisitor::visit_VarDecl(VarDecl& var) {
 }
 
 SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
+    if (in_method)
+        return fail(
+            std::format("local functions are currently not supported (found local function: '{}')",
+                        sir_ctx.get_sym(method.identifier)));
+
+    bool prev_in_method = in_method;
+    in_method           = true;
+
     if (method.ret_type.is_null() ||
         !is_ret_type_allowed(sir_ctx.type_pool.get_td(method.ret_type))) {
 
@@ -187,6 +197,8 @@ SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
     SIRNodeId scoped_body = emplace_node<sir::ScopedStmt>(sir_ctx.get_node(body)->location, body);
 
     swap_lower_type(method.ret_type);
+
+    in_method = prev_in_method;
 
     return emplace_decl<sir::FunctionDecl>(&method, method.location, method.identifier,
                                            method.ret_type, std::move(params), scoped_body);
@@ -276,6 +288,108 @@ SIRNodeId JLLoweringVisitor::visit_Float32Literal(Float32Literal& lit) {
 SIRNodeId JLLoweringVisitor::visit_Float64Literal(Float64Literal& lit) {
     return emplace_node<sir::FloatLiteral>(lit.location, sir_ctx.type_pool.float_td(64),
                                            std::to_string(lit.value));
+}
+
+SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    std::vector<SIRNodeId> lowered_members{};
+    lowered_members.reserve(arr_lit.members.size());
+
+    for (NodeId member : arr_lit.members) {
+        SIRNodeId lowered_member = visit(member);
+        if (lowered_member.is_null()) {
+            if (success)
+                return fail("failed to lower member node in ArrayLiteral");
+
+            return SIRNodeId::null_id();
+        }
+
+        lowered_members.emplace_back(lowered_member);
+    }
+
+    const auto& td = sir_ctx.type_pool.get_td(arr_lit.type);
+
+    if (!td.is_array()) {
+        return internal_error(std::format("non-array type inferred for array literal node by sema",
+                                          type_to_string(arr_lit.type, sir_ctx, sir_ctx)));
+    }
+
+    auto arr_td       = td.as<ArrayTD>();
+    const auto& el_td = sir_ctx.type_pool.get_td(arr_td.element_type_id);
+
+    if (el_td.is_array())
+        return fail("multidimensional arrays are currently not supported");
+
+    if (!el_td.is_scalar())
+        return fail("arrays with non-scalar element types are currently not supported");
+
+    if (arr_td.length != lowered_members.size())
+        return internal_error("inferred array length mismatch in type of array literal node");
+
+    /*
+    if (td.is_vector()) {
+        if (td.as<VectorTD>().component_count == len)
+            return internal_error(
+                "inferred vector component count mismatch in type of collection literal node");
+    } else if (td.is_matrix()) {
+        auto mat_td       = td.as<MatrixTD>();
+        const auto& el_td = sir_ctx.type_pool.get_td(mat_td.column_type_id);
+        assert(el_td.is_vector()); // this should be guaranteed by the type pool
+
+        size_t cols = mat_td.column_count;
+        size_t rows = el_td.as<VectorTD>().component_count;
+
+        if (cols * rows != len)
+            return internal_error(
+                "inferred matrix dimensions mismatch in type of collection literal node");
+    }
+    */
+
+    return emplace_node<sir::ArrayLiteral>(arr_lit.location, arr_lit.type,
+                                           std::move(lowered_members));
+}
+
+SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
+    SIRNodeId lowered_target = visit(idx_expr.target);
+    if (lowered_target.is_null())
+        return SIRNodeId::null_id();
+
+    for (const auto& idx : idx_expr.indexers) {
+        if (idx.is_null())
+            return internal_error("null id in indexer list");
+
+        const Expr* idx_expr = ctx.get_node(idx);
+        assert(idx_expr != nullptr);
+
+        if (idx_expr->type.is_null())
+            return internal_error("indexer has null type");
+
+        const auto& idx_td = sir_ctx.type_pool.get_td(idx_expr->type);
+
+        if (!idx_td.is<IntTD>())
+            return fail("non-integer indexers are not allowed");
+    }
+
+    const auto& target_td = sir_ctx.type_pool.get_td(ctx.get_node(idx_expr.target)->type);
+
+    if (target_td.is_array() || target_td.is_vector()) {
+        if (idx_expr.indexers.size() != 1)
+            return fail("arrays and vectors only support single component indexers");
+
+        SIRNodeId base_idx = visit(idx_expr.indexers.front());
+        if (base_idx.is_null())
+            return SIRNodeId::null_id();
+
+        auto lit_one = emplace_node<sir::IntLiteral>(idx_expr.location,
+                                                     sir_ctx.type_pool.int_td(32, true), "1");
+
+        auto wrapped_idx = emplace_node<sir::BinaryOp>(
+            idx_expr.location, sir::BinaryOp::OpKind::sub, base_idx, lit_one);
+
+        return emplace_node<sir::IndexerExpr>(idx_expr.location, lowered_target, wrapped_idx);
+    }
+
+    return fail(std::format("indexers on type '{}' are not allowed",
+                            type_to_string(target_td, sir_ctx, sir_ctx)));
 }
 
 SIRNodeId JLLoweringVisitor::visit_StringLiteral([[maybe_unused]] StringLiteral& lit) {

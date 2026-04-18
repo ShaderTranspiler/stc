@@ -94,6 +94,8 @@ private:
 
     jl_datatype_t* to_jl_type(TypeId type);
 
+    NodeId try_unwrap_cmpd(NodeId cmpd_expr);
+
     bool is_method_sig_redecl(const MethodDecl& method_decl, const FunctionDecl& fn_decl);
 
     TypeId ret_type_of_call(jl_function_t* fn, const std::vector<TypeId>& arg_types,
@@ -112,8 +114,7 @@ private:
     }
 
     static SymbolId get_usym_for(SymbolId sym_id, SymbolPool& sym_pool) {
-        static size_t current_usym_id = 0U;
-        static constexpr std::string usym_infix{"_stc_usym_"};
+        static size_t current_usym_idx = 0U;
 
         if (sym_id.is_null())
             throw std::logic_error{"Trying to create usym for null symbol"};
@@ -122,10 +123,12 @@ private:
         if (!sym_str.has_value())
             throw std::logic_error{"Trying to create usym for symbol not in symbol pool"};
 
-        SymbolId id =
-            sym_pool.get_id(std::string{*sym_str} + usym_infix + std::to_string(current_usym_id));
+        std::string usym_str =
+            std::string{*sym_str} + "_stc_usym_" + std::to_string(current_usym_idx);
 
-        current_usym_id++;
+        SymbolId id = sym_pool.get_id(usym_str);
+
+        current_usym_idx++;
         return id;
     }
 
@@ -288,8 +291,8 @@ private:
         bool sym_res_successful() const { return _success; }
 
     private:
-        [[nodiscard]] CompoundExpr& unwrap_or_throw(JLSema& sema, NodeId id) {
-            CompoundExpr* cmpd = sema.ctx.get_and_dyn_cast<CompoundExpr>(id);
+        [[nodiscard]] CompoundExpr& unwrap_or_throw(JLSema& jl_sema, NodeId id) {
+            CompoundExpr* cmpd = jl_sema.ctx.get_and_dyn_cast<CompoundExpr>(id);
 
             if (cmpd == nullptr)
                 throw std::invalid_argument{
