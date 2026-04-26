@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.14)
+
+include(FetchContent)
 
 # Version info
 
@@ -8,16 +10,19 @@ set(STC_SOVERSION "0") # for lib ABI-compatibility
 
 set(STC_VERSION "${PROJECT_VERSION}${STC_VERSION_SUFFIX}")
 
-find_package(Git QUIET)
-if(GIT_FOUND)
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE STC_GIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-else()
-    set(STC_GIT_HASH "unknown")
+if (NOT DEFINED STC_GIT_HASH)
+    find_package(Git QUIET)
+
+    if(GIT_FOUND)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE STC_GIT_HASH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    else()
+        set(STC_GIT_HASH "unknown")
+    endif()
 endif()
 
 set(STC_FULL_VERSION "${STC_VERSION}+${STC_GIT_HASH}")
@@ -29,7 +34,10 @@ message(STATUS "Build version is ${STC_FULL_VERSION}")
 option(FETCH_CATCH2 "Force fetching Catch2 from the github repo, even if it's installed locally" OFF)
 option(NO_CCACHE "Disable compiler caching through ccache, even if it's installed locally" OFF)
 option(NO_TIDY "Disable static analysis through clang-tidy, even if it's installed locally" OFF)
-option(NO_SAN "Disable address and undefined sanitizers (ASan and UBSan). Might be required with some versions of Julia")
+option(NO_SANDBOX "Disable sandbox targets" OFF)
+option(NO_SAN "Disable address and undefined sanitizers (ASan and UBSan). Might be required with some versions of Julia" OFF)
+option(NO_DOCS "Disable any docs-related targets." OFF)
+option(NO_CLI "Disable CLI target (saves a bit of time in some cases, where it's enough to build the lib)" OFF)
 
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
     message(STATUS "No build type specified, defaulting to Debug")
@@ -40,44 +48,65 @@ message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
 
 # Julia lookup
 
-# make sure julia executable is available
-find_program(JULIA_EXEC julia)
-if (NOT JULIA_EXEC)
-    message(FATAL_ERROR "Couldn't locate Julia executable (needed for locating libjulia). Please ensure Julia is installed and added to PATH.")
+if (NOT DEFINED JULIA_INCLUDE_DIR OR NOT DEFINED JULIA_LIB_DIR)
+    # make sure julia executable is available
+    find_program(JULIA_EXEC julia)
+    if (NOT JULIA_EXEC)
+        message(FATAL_ERROR "Couldn't locate Julia executable (needed for locating libjulia). Please ensure Julia is installed and added to PATH.")
+    endif()
+
+    # find and include Julia lib and headers
+    execute_process(
+        COMMAND ${JULIA_EXEC} -e "print(normpath(joinpath(Sys.BINDIR, \"..\", \"include\", \"julia\")))"
+        OUTPUT_VARIABLE JULIA_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    execute_process(
+        COMMAND ${JULIA_EXEC} -e "using Libdl; print(Libdl.dlpath(\"libjulia\"))"
+        OUTPUT_VARIABLE JULIA_LIB
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    execute_process(
+        COMMAND ${JULIA_EXEC} -e "print(VERSION)"
+        OUTPUT_VARIABLE STC_JULIA_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    get_filename_component(JULIA_BIN_DIR ${JULIA_LIB} DIRECTORY)
+    set(JULIA_LIB_DIR "${JULIA_BIN_DIR}/../lib")
+    get_filename_component(JULIA_LIB_DIR ${JULIA_LIB_DIR} ABSOLUTE)
 endif()
 
-# find and include Julia lib and headers
-execute_process(
-    COMMAND ${JULIA_EXEC} -e "print(normpath(joinpath(Sys.BINDIR, \"..\", \"include\", \"julia\")))"
-    OUTPUT_VARIABLE JULIA_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+if (NOT EXISTS "${JULIA_LIB_DIR}")
+    message(FATAL_ERROR "Couldn't locate Julia's lib directory")
+endif()
 
-execute_process(
-    COMMAND ${JULIA_EXEC} -e "using Libdl; print(Libdl.dlpath(\"libjulia\"))"
-    OUTPUT_VARIABLE JULIA_LIB
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+if (NOT DEFINED STC_JULIA_VERSION)
+    message(FATAL_ERROR "STC_JULIA_VERSION is required. When bypassing include/lib directory resolution through the julia exectuable, pass -DSTC_JULIA_VERSION=x.y.z manually.")
+endif()
 
-execute_process(
-    COMMAND ${JULIA_EXEC} -e "print(VERSION)"
-    OUTPUT_VARIABLE STC_JULIA_VERSION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-get_filename_component(JULIA_BINDIR ${JULIA_LIB} DIRECTORY)
-set(JULIA_LIBDIR "${JULIA_BINDIR}/../lib")
-get_filename_component(JULIA_LIBDIR ${JULIA_LIBDIR} ABSOLUTE)
-
-# on windows with msvc, we can't link the dll itself (because of reasons), we need the dll.a (or .lib)
 if (WIN32)
-    set(JULIA_LIB "${JULIA_LIBDIR}/libjulia.dll.a")
+    # on windows with msvc, we can't link the dll itself (because of reasons), we need the dll.a (or .lib)
+    set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dll.a")
     if (NOT EXISTS "${JULIA_LIB}")
-        set(JULIA_LIB "${JULIA_LIBDIR}/julia.lib")
+        set(JULIA_LIB "${JULIA_LIB_DIR}/julia.lib")
     endif()
 
     if (NOT EXISTS "${JULIA_LIB}")
         message(FATAL_ERROR "Couldn't locate Julia library (libjulia.dll.a or julia.lib)")
+    endif()
+elseif (NOT DEFINED JULIA_LIB)
+    if (EXISTS "${JULIA_LIB_DIR}/libjulia.so")
+        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.so")
+    elseif (EXISTS "${JULIA_LIB_DIR}/libjulia.dylib")
+        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dylib")
+    else()
+        file(GLOB JULIA_LIB_MATCHES "${JULIA_LIB_DIR}/libjulia.*")
+        if (JULIA_LIB_MATCHES)
+            list(GET JULIA_LIB_MATCHES 0 JULIA_LIB)
+        endif()
     endif()
 endif()
 
@@ -91,6 +120,7 @@ endif()
 
 message(STATUS "Found Julia include dir: ${JULIA_INCLUDE_DIR}")
 message(STATUS "Found Julia library: ${JULIA_LIB}")
+message(STATUS "Julia version: ${STC_JULIA_VERSION}")
 
 # C++ building begins here
 
@@ -116,6 +146,33 @@ set(LIB_SOURCES ${ALL_SOURCES})
 list(FILTER LIB_SOURCES EXCLUDE REGEX "sandbox/.*")
 list(FILTER LIB_SOURCES EXCLUDE REGEX "test/.*")
 list(FILTER LIB_SOURCES EXCLUDE REGEX "cli/.*")
+
+# fmt
+
+find_package(fmt QUIET)
+
+if(NOT fmt_FOUND)
+    message(STATUS "fmt not found locally, it will be fetched through git...")
+    
+    FetchContent_Declare(
+        fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+        GIT_TAG        12.1.0
+    )
+    FetchContent_MakeAvailable(fmt)
+endif()
+
+get_target_property(FMT_INCLUDES fmt INTERFACE_INCLUDE_DIRECTORIES)
+if(FMT_INCLUDES)
+    set_target_properties(fmt PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${FMT_INCLUDES}")
+endif()
+
+if(TARGET fmt)
+    target_compile_options(fmt PRIVATE 
+        $<$<CXX_COMPILER_ID:MSVC>:/w>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
+    )
+endif()
 
 # ccache
 
@@ -250,14 +307,9 @@ target_include_directories(${LIB_TARGET} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
 
 target_link_libraries(${LIB_TARGET} PRIVATE CommonConfig)
 target_link_libraries(${LIB_TARGET} PRIVATE ${JULIA_LIB})
+target_link_libraries(${LIB_TARGET} PRIVATE fmt::fmt)
 
 target_compile_definitions(${LIB_TARGET} PRIVATE STC_BUILDING_DLL=1 JULIA_ENABLE_THREADING=1)
-
-target_sources(${LIB_TARGET} PUBLIC
-    FILE_SET HEADERS
-    BASE_DIRS include
-    FILES ${LIB_HEADERS}
-)
 
 set_target_properties(${LIB_TARGET} PROPERTIES
     VERSION                                 ${PROJECT_VERSION}
@@ -275,8 +327,6 @@ set_target_properties(${LIB_TARGET} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY_RELEASE        ${LIB_OUTPUT_DIR}
     ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO ${LIB_OUTPUT_DIR}
     ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     ${LIB_OUTPUT_DIR}
-
-    VERIFY_INTERFACE_HEADER_SETS            ON
 )
 
 if (DEFINED CLANG_TIDY_CMD AND NOT NO_TIDY)
@@ -285,36 +335,39 @@ endif()
 
 # CLI
 
-set(CLI_TARGET stc_cli)
+if (NOT NO_CLI)
+    set(CLI_TARGET stc_cli)
 
-add_executable(${CLI_TARGET} "cli/cli.cpp")
+    add_executable(${CLI_TARGET} "cli/cli.cpp")
 
-set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc")
+    set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc")
 
-set_target_properties(${CLI_TARGET} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${BIN_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${BIN_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${BIN_OUTPUT_DIR}
-)
-
-target_link_libraries(${CLI_TARGET} PRIVATE ${LIB_TARGET} CommonConfig ${JULIA_LIB})
-
-target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/cli)
-target_include_directories(${CLI_TARGET} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
-
-if (DEFINED CLANG_TIDY_CMD AND NOT NO_TIDY)
-    set_target_properties(${CLI_TARGET} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
-endif()
-
-if (WIN32)
-    add_custom_command(TARGET ${CLI_TARGET} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:${LIB_TARGET}>
-        $<TARGET_FILE_DIR:${CLI_TARGET}>
+    set_target_properties(${CLI_TARGET} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${BIN_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${BIN_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${BIN_OUTPUT_DIR}
     )
+
+    target_link_libraries(${CLI_TARGET} PRIVATE ${LIB_TARGET} CommonConfig ${JULIA_LIB})
+    target_link_libraries(${CLI_TARGET} PRIVATE fmt::fmt)
+
+    target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/cli)
+    target_include_directories(${CLI_TARGET} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
+
+    if (DEFINED CLANG_TIDY_CMD AND NOT NO_TIDY)
+        set_target_properties(${CLI_TARGET} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
+    endif()
+
+    if (WIN32)
+        add_custom_command(TARGET ${CLI_TARGET} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:${LIB_TARGET}>
+            $<TARGET_FILE_DIR:${CLI_TARGET}>
+        )
+    endif()
 endif()
 
 # Catch2 / testing
@@ -332,8 +385,6 @@ if (BUILD_TESTING)
 
     if (FETCH_CATCH2 OR NOT TARGET Catch2::Catch2WithMain)
         set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/_deps_${CMAKE_SYSTEM_NAME}")
-
-        include(FetchContent)
 
         FetchContent_Declare(
             Catch2
@@ -381,121 +432,128 @@ else()
 endif()
 
 # Doxygen (+ Graphviz)
-find_package(Doxygen COMPONENTS dot)
-if (Doxygen_FOUND)
-    set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
 
-    set(DOXYGEN_GENERATE_HTML YES)
+if (NOT NO_DOCS)
+    find_package(Doxygen COMPONENTS dot)
 
-    set(DOXYGEN_GENERATE_LATEX YES)
-    set(DOXYGEN_USE_PDFLATEX YES)
-    set(DOXYGEN_PDF_HYPERLINKS YES)
+    if (Doxygen_FOUND)
+        set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
 
-    set(DOXYGEN_RECURSIVE YES)
+        set(DOXYGEN_GENERATE_HTML YES)
 
-    # Graphviz
-    set(DOXYGEN_HAVE_DOT YES)
-    set(DOXYGEN_DOT_IMAGE_FORMAT svg)
-    set(DOXYGEN_DOT_TRANSPARENT YES)
-    set(DOXYGEN_CALL_GRAPH YES)
-    set(DOXYGEN_CALLER_GRAPH YES)
-    set(DOXYGEN_DIRECTORY_GRAPH YES)
+        set(DOXYGEN_GENERATE_LATEX YES)
+        set(DOXYGEN_USE_PDFLATEX YES)
+        set(DOXYGEN_PDF_HYPERLINKS YES)
 
-    set(DOXYGEN_UML_LOOK YES)
-    set(DOXYGEN_TEMPLATE_RELATIONS YES)
-    set(DOXYGEN_INCLUDE_GRAPH YES)
-    set(DOXYGEN_INTERACTIVE_SVG YES)
+        set(DOXYGEN_RECURSIVE YES)
 
-    set(DOXYGEN_EXTRACT_ALL YES)
-    set(DOXYGEN_EXTRACT_PRIVATE YES)
-    set(DOXYGEN_EXTRACT_STATIC YES)
+        # Graphviz
+        set(DOXYGEN_HAVE_DOT YES)
+        set(DOXYGEN_DOT_IMAGE_FORMAT svg)
+        set(DOXYGEN_DOT_TRANSPARENT YES)
+        set(DOXYGEN_CALL_GRAPH YES)
+        set(DOXYGEN_CALLER_GRAPH YES)
+        set(DOXYGEN_DIRECTORY_GRAPH YES)
 
-    doxygen_add_docs(
-        docs
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        COMMENT "Generating HTML and LaTeX docs with doxygen..."
-    )
+        set(DOXYGEN_UML_LOOK YES)
+        set(DOXYGEN_TEMPLATE_RELATIONS YES)
+        set(DOXYGEN_INCLUDE_GRAPH YES)
+        set(DOXYGEN_INTERACTIVE_SVG YES)
 
-    message(STATUS "doxygen and graphviz found, docs target enabled")
-
-    find_program(PDFLATEX_COMPILER pdflatex)
-
-    if (PDFLATEX_COMPILER)
-        if (WIN32)
-            set(MAKE_CMD "make.bat")
-        else()
-            set(MAKE_CMD "make")
-        endif()
+        set(DOXYGEN_EXTRACT_ALL YES)
+        set(DOXYGEN_EXTRACT_PRIVATE YES)
+        set(DOXYGEN_EXTRACT_STATIC YES)
 
         doxygen_add_docs(
-            docs_pdf
+            docs
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_SOURCE_DIR}/src
             COMMENT "Generating HTML and LaTeX docs with doxygen..."
         )
 
-        add_custom_command(TARGET docs_pdf POST_BUILD
-            COMMAND ${MAKE_CMD}
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs/latex"
-            COMMENT "Compiling LaTeX docs to PDF..."
-            VERBATIM
-        )
+        message(STATUS "doxygen and graphviz found, docs target enabled")
 
-        message(STATUS "pdflatex found, automatic LaTeX -> PDF docs generation enabled for docs_pdf target")
+        find_program(PDFLATEX_COMPILER pdflatex)
+
+        if (PDFLATEX_COMPILER)
+            if (WIN32)
+                set(MAKE_CMD "make.bat")
+            else()
+                set(MAKE_CMD "make")
+            endif()
+
+            doxygen_add_docs(
+                docs_pdf
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/src
+                COMMENT "Generating HTML and LaTeX docs with doxygen..."
+            )
+
+            add_custom_command(TARGET docs_pdf POST_BUILD
+                COMMAND ${MAKE_CMD}
+                WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs/latex"
+                COMMENT "Compiling LaTeX docs to PDF..."
+                VERBATIM
+            )
+
+            message(STATUS "pdflatex found, automatic LaTeX -> PDF docs generation enabled for docs_pdf target")
+        else()
+            message(STATUS "pdflatex could not be located, PDF generation from LaTeX docs won't be possible.")
+        endif()
     else()
-        message(STATUS "pdflatex could not be located, PDF generation from LaTeX docs won't be possible.")
+        message(STATUS "doxygen or graphviz could not be located, docs generation won't be possible.")
     endif()
-else()
-    message(STATUS "doxygen or graphviz could not be located, docs generation won't be possible.")
 endif()
 
-# sandbox targets
-# for trying out and playing around with the library
-# cpp files prefixed with sb_ are treated as separate targets
-# other cpp files can be used for includes and such
+if (NOT NO_SANDBOX)
+    # sandbox targets
+    # for trying out and playing around with the library
+    # cpp files prefixed with sb_ are treated as separate targets
+    # other cpp files can be used for includes and such
 
-file(GLOB SANDBOX_SOURCES "sandbox/sb_*.cpp")
+    file(GLOB SANDBOX_SOURCES "sandbox/sb_*.cpp")
 
-foreach (SBOX_FILE ${SANDBOX_SOURCES})
-    get_filename_component(FNAME ${SBOX_FILE} NAME_WE)
+    foreach (SBOX_FILE ${SANDBOX_SOURCES})
+        get_filename_component(FNAME ${SBOX_FILE} NAME_WE)
 
-    add_executable(${FNAME} ${SBOX_FILE})
+        add_executable(${FNAME} ${SBOX_FILE})
 
-    set_target_properties(${FNAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${BIN_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${BIN_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${BIN_OUTPUT_DIR}
-    )
-
-    target_link_libraries(${FNAME} PRIVATE ${LIB_TARGET} CommonConfig)
-    target_link_libraries(${FNAME} PRIVATE ${JULIA_LIB})
-
-    target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-    target_include_directories(${FNAME} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
-
-    if (DEFINED CLANG_TIDY_CMD AND NOT NO_TIDY)
-        set_target_properties(${FNAME} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
-    endif()
-
-    # copy lib next to sandbox executable
-    if (WIN32)
-        add_custom_command(TARGET ${FNAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:${LIB_TARGET}>
-            $<TARGET_FILE_DIR:${FNAME}>
+        set_target_properties(${FNAME} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${BIN_OUTPUT_DIR}
+            RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${BIN_OUTPUT_DIR}
+            RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${BIN_OUTPUT_DIR}
         )
-    endif()
 
-    # create wrappers for executable, with Julia first in PATH
-    if (WIN32)
-        file(TO_NATIVE_PATH "${JULIA_BINDIR}" JULIA_BINDIR_NATIVE)
-        
-        file(GENERATE OUTPUT "${BIN_OUTPUT_DIR}/run_${FNAME}.bat"
-            CONTENT "@echo off\nset PATH=${JULIA_BINDIR_NATIVE};%PATH%\n\"$<TARGET_FILE:${FNAME}>\" %*"
-            CONDITION $<CONFIG:${CMAKE_BUILD_TYPE}>
-        )
-    endif()
-endforeach()
+        target_link_libraries(${FNAME} PRIVATE ${LIB_TARGET} CommonConfig)
+        target_link_libraries(${FNAME} PRIVATE ${JULIA_LIB})
+        target_link_libraries(${FNAME} PRIVATE fmt::fmt)
+
+        target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+        target_include_directories(${FNAME} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
+
+        if (DEFINED CLANG_TIDY_CMD AND NOT NO_TIDY)
+            set_target_properties(${FNAME} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
+        endif()
+
+        # copy lib next to sandbox executable
+        if (WIN32)
+            add_custom_command(TARGET ${FNAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:${LIB_TARGET}>
+                $<TARGET_FILE_DIR:${FNAME}>
+            )
+        endif()
+
+        # create wrappers for executable, with Julia first in PATH
+        if (WIN32)
+            file(TO_NATIVE_PATH "${JULIA_BIN_DIR}" JULIA_BIN_DIR_NATIVE)
+            
+            file(GENERATE OUTPUT "${BIN_OUTPUT_DIR}/run_${FNAME}.bat"
+                CONTENT "@echo off\nset PATH=${JULIA_BIN_DIR_NATIVE};%PATH%\n\"$<TARGET_FILE:${FNAME}>\" %*"
+                CONDITION $<CONFIG:${CMAKE_BUILD_TYPE}>
+            )
+        endif()
+    endforeach()
+endif()

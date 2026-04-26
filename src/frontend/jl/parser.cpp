@@ -87,7 +87,7 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
                 return parsed;
         }
 
-        error(std::format("unsupported Julia type: {}", jl_symbol_name(tsym)));
+        error(fmt::format("unsupported Julia type: {}", jl_symbol_name(tsym)));
         return TypeId::null_id();
     }
 
@@ -389,17 +389,17 @@ jl_value_t* JLParser::unwrap_layout_qual(jl_expr_t* lq_expr, std::vector<QualKin
 
         auto qual = try_parse_qual(opt_name);
         if (!qual.has_value() || !is_layout_qual(*qual)) {
-            error(std::format("invalid layout qualifier option: {}", opt_name));
+            error(fmt::format("invalid layout qualifier option: {}", opt_name));
             return nullptr;
         }
 
         if (has_value && is_valueless_layout_qual(*qual)) {
-            error(std::format("layout option '{}' does not expect a value", opt_name));
+            error(fmt::format("layout option '{}' does not expect a value", opt_name));
             return nullptr;
         }
 
         if (!has_value && is_value_layout_qual(*qual)) {
-            error(std::format("layout option '{}' expects a value", opt_name));
+            error(fmt::format("layout option '{}' expects a value", opt_name));
             return nullptr;
         }
 
@@ -646,7 +646,7 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
 
     if (header->head != sym_cache.call)
         return internal_error(
-            std::format("unexpected function header Expr kind: {}", jl_symbol_name(header->head)));
+            fmt::format("unexpected function header Expr kind: {}", jl_symbol_name(header->head)));
 
     size_t header_nargs = jl_expr_nargs(header);
 
@@ -1031,7 +1031,7 @@ NodeId JLParser::parse_struct(jl_expr_t* expr, size_t nargs) {
     SymbolId struct_id_sym = ctx.sym_pool.get_id(struct_id);
 
     if (!ctx.type_pool.get_struct_td(struct_id_sym).is_null())
-        return error(std::format("multiple definitions found for type '{}'", struct_id));
+        return error(fmt::format("multiple definitions found for type '{}'", struct_id));
 
     if (!jl_is_expr(field_decls_arg))
         return internal_error("unexpected struct definition layout (third arg is non-expr)");

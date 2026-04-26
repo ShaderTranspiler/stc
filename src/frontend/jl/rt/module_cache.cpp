@@ -13,7 +13,7 @@ jl_function_t* JuliaModule::get_fn(std::string_view fn_name, bool throw_on_not_f
     if (fn == nullptr) {
         if (throw_on_not_found)
             throw std::logic_error{
-                std::format("couldn't find function with name {} in module", fn_name)};
+                fmt::format("couldn't find function with name {} in module", fn_name)};
 
         return nullptr;
     }
@@ -75,7 +75,7 @@ JuliaModule& JuliaModuleCache::register_mod(std::string_view mod_path, jl_module
     auto it = module_cache.find(mod_path);
     if (it != module_cache.end()) {
         if (it->second.mod_ptr() != mod)
-            throw std::logic_error{std::format(
+            throw std::logic_error{fmt::format(
                 "trying to overwrite already registered module at {} with a different target",
                 mod_path)};
 

@@ -48,7 +48,7 @@ bool SIRSemaVisitor::check_sym_decl(const NodeBase& node, SymbolId sym) {
     assert(!symbols.empty() && "no active scope in symbol table");
 
     if (symbols[symbols.size() - 1].contains(sym)) {
-        error(node, std::format("redeclaration of symbol '{}' in current scope", ctx.get_sym(sym)));
+        error(node, fmt::format("redeclaration of symbol '{}' in current scope", ctx.get_sym(sym)));
         return false;
     }
 
@@ -255,7 +255,7 @@ void SIRSemaVisitor::visit_StructInstantiation(StructInstantiation& s_inst) {
         if (!has_type(s_inst.field_values[i], s_data->fields[i].type))
             return error(
                 s_inst,
-                std::format("invalid struct instantiation node, type mismatch in initializer "
+                fmt::format("invalid struct instantiation node, type mismatch in initializer "
                             "expression of field '{}'",
                             ctx.get_sym(s_data->fields[i].name)));
     }

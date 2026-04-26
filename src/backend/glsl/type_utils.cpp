@@ -1,7 +1,7 @@
 #include "backend/glsl/type_utils.h"
 #include "ast/context.h"
 
-#include <format>
+#include <fmt/format.h>
 
 namespace stc::glsl {
 
@@ -44,7 +44,7 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
         const auto& comp_td            = type_pool.get_td(comp_type_id);
         assert(comp_td.template is<FloatTD>() && "non-floating point matrix component type");
 
-        return std::format("{}mat{}x{}", type_prefix(comp_td), col_count, row_count);
+        return fmt::format("{}mat{}x{}", type_prefix(comp_td), col_count, row_count);
     }
 
     if (td.is_array()) {
@@ -53,7 +53,7 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
 
         const TypeDescriptor* it_td = &td;
         do {
-            dims_str += std::format("[{}]", it_td->as<ArrayTD>().length);
+            dims_str += fmt::format("[{}]", it_td->as<ArrayTD>().length);
             auto [elem_type_id, dim_length] = it_td->as<ArrayTD>();
 
             it_td = &(type_pool.get_td(elem_type_id));

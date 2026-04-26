@@ -121,7 +121,7 @@ void SymbolRes::visit_VarDecl(VarDecl& vdecl) {
     if (auto* prev_vdecl = dyn_cast<VarDecl>(prev_decl)) {
         if (prev_vdecl->scope() != vdecl.scope()) {
             error(ctx.src_info_pool, vdecl.location,
-                  std::format("symbol '{}' declared both global and local",
+                  fmt::format("symbol '{}' declared both global and local",
                               ctx.get_sym(vdecl.identifier)));
             _success = false;
         }
@@ -133,7 +133,7 @@ void SymbolRes::visit_VarDecl(VarDecl& vdecl) {
     std::string_view prev_str = isa<MethodDecl>(prev_decl) ? "method" : "parameter";
 
     error(ctx.src_info_pool, vdecl.location,
-          std::format("symbol '{}' redeclared as a variable (previously declared as a {})",
+          fmt::format("symbol '{}' redeclared as a variable (previously declared as a {})",
                       ctx.get_sym(vdecl.identifier), prev_str));
     _success = false;
 }
@@ -146,7 +146,7 @@ void SymbolRes::visit_MethodDecl(MethodDecl& mdecl) {
 
         std::string_view prev_str = isa<VarDecl>(prev_decl) ? "variable" : "parameter";
         error(ctx.src_info_pool, mdecl.location,
-              std::format("symbol '{}' redeclared as a method (previously declared as a {})",
+              fmt::format("symbol '{}' redeclared as a method (previously declared as a {})",
                           ctx.get_sym(mdecl.identifier), prev_str));
 
         _success = false;
@@ -183,7 +183,7 @@ void SymbolRes::visit_ParamDecl(ParamDecl& pdecl) {
 
         if (!prev_str.empty()) {
             error(ctx.src_info_pool, pdecl.location,
-                  std::format("symbol '{}' redeclared as a param (previously declared as a {})",
+                  fmt::format("symbol '{}' redeclared as a param (previously declared as a {})",
                               ctx.get_sym(pdecl.identifier), prev_str));
 
             _success = false;

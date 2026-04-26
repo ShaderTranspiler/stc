@@ -209,7 +209,7 @@ void GLSLCodeGenVisitor::visit_FloatLiteral(FloatLiteral& float_lit) {
     }
 
     if (float_td.width != 32 && float_td.width != 64) {
-        error(std::format("The GLSL backend does not support floating point types with width {} "
+        error(fmt::format("The GLSL backend does not support floating point types with width {} "
                           "(allowed: 32 or 64)",
                           float_td.width));
         return;

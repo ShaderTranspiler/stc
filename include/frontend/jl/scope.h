@@ -68,7 +68,7 @@ public:
         auto it = binding_table.find(sym);
 
         if (it == binding_table.end())
-            throw std::logic_error{std::format(
+            throw std::logic_error{fmt::format(
                 "Trying to access binding type of symbol '{}', which was not resolved during "
                 "scope-level symbol resolution",
                 sym_pool.get_symbol(sym))};

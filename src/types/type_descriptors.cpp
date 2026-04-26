@@ -1,5 +1,5 @@
 #include <cassert>
-#include <format>
+#include <fmt/format.h>
 
 #include "ast/context.h"
 #include "types/type_descriptors.h"

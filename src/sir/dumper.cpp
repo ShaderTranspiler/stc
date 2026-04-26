@@ -1,4 +1,4 @@
-#include <format>
+#include <fmt/format.h>
 
 #include "sir/dumper.h"
 #include "types/type_descriptors.h"
@@ -76,7 +76,7 @@ void SIRDumper::dec_indent() {
 bool SIRDumper::pre_visit_id(NodeId node_id) {
     NodeBase* node = ctx.get_node(node_id);
 
-    out << indent() << '[' << std::format("{:p}", static_cast<void*>(ctx.get_node(node_id))) << "|"
+    out << indent() << '[' << fmt::format("{:p}", static_cast<void*>(ctx.get_node(node_id))) << "|"
         << node_id.id_value() << '|'
         << (node != nullptr ? std::to_string(static_cast<uint8_t>(node->kind())) : "?") << "]\n";
 
@@ -167,7 +167,7 @@ void SIRDumper::visit_MatrixLiteral(MatrixLiteral& mat_lit) {
            "invalid number of elements in matrix literal");
 
     for (size_t col_idx = 0; col_idx < cols; col_idx++) {
-        out << indent() << dump_label(std::format("column #{}", col_idx + 1));
+        out << indent() << dump_label(fmt::format("column #{}", col_idx + 1));
 
         inc_indent();
         for (size_t row_idx = 0; row_idx < rows; row_idx++) {
@@ -188,7 +188,7 @@ void SIRDumper::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
 
 void SIRDumper::visit_SwizzleLiteral(SwizzleLiteral& swizzle_lit) {
     out << indent()
-        << std::format("SwizzleLiteral: [{}, {}, {}, {}] (count: {})\n", swizzle_lit.comp1(),
+        << fmt::format("SwizzleLiteral: [{}, {}, {}, {}] (count: {})\n", swizzle_lit.comp1(),
                        swizzle_lit.comp2(), swizzle_lit.comp3(), swizzle_lit.comp4(),
                        swizzle_lit.count());
 }
@@ -203,7 +203,7 @@ void SIRDumper::visit_StructInstantiation(StructInstantiation& s_inst) {
     size_t f_idx = 0;
     for (NodeId f_value : s_inst.field_values) {
         out << indent()
-            << dump_label(std::format("field #{} <=> '{}'", f_idx + 1,
+            << dump_label(fmt::format("field #{} <=> '{}'", f_idx + 1,
                                       ctx.get_sym(s_data->fields[f_idx].name)));
 
         inc_indent();

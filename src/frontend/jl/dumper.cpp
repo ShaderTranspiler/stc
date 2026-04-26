@@ -75,7 +75,7 @@ void JLDumper::dec_indent() {
 bool JLDumper::pre_visit_id(NodeId node_id) {
     Expr* node = ctx.get_node(node_id);
 
-    out << indent() << '[' << std::format("{:p}|{}|", static_cast<void*>(node), node_id.id_value())
+    out << indent() << '[' << fmt::format("{:p}|{}|", static_cast<void*>(node), node_id.id_value())
         << (node != nullptr ? std::to_string(static_cast<uint8_t>(node->kind())) : "?") << "]\n";
 
     if (node != nullptr)
@@ -88,7 +88,7 @@ bool JLDumper::pre_visit_id(NodeId node_id) {
 }
 
 bool JLDumper::pre_visit_ptr(Expr* expr) {
-    out << indent() << '[' << std::format("{:p}", static_cast<void*>(expr)) << "|_|"
+    out << indent() << '[' << fmt::format("{:p}", static_cast<void*>(expr)) << "|_|"
         << (expr != nullptr ? std::to_string(static_cast<uint8_t>(expr->kind())) : "?") << "]\n";
 
     if (expr != nullptr)
@@ -197,7 +197,7 @@ void JLDumper::visit_BoolLiteral(BoolLiteral& bool_lit) {
 #define GEN_UINT_LITERAL_VISITOR(type, width)                                                      \
     /* NOLINTNEXTLINE(bugprone-macro-parentheses) */                                               \
     void JLDumper::visit_##type(type& lit) {                                                       \
-        out << indent() << #type << ": " << std::format("{:#0" #width "x}", lit.value) << '\n';    \
+        out << indent() << #type << ": " << fmt::format("{:#0" #width "x}", lit.value) << '\n';    \
     }
 
 GEN_LITERAL_VISITOR(Int32Literal, )
@@ -210,8 +210,8 @@ GEN_UINT_LITERAL_VISITOR(UInt32Literal, 10)
 GEN_UINT_LITERAL_VISITOR(UInt64Literal, 18)
 
 void JLDumper::visit_UInt128Literal(UInt128Literal& lit) {
-    out << indent() << "UInt128Literal: " << std::format("{:#034x}", lit.hi)
-        << std::format("{:034x}", lit.lo) << '\n';
+    out << indent() << "UInt128Literal: " << fmt::format("{:#034x}", lit.hi)
+        << fmt::format("{:034x}", lit.lo) << '\n';
 }
 
 void JLDumper::visit_ArrayLiteral(ArrayLiteral& arr_lit) {

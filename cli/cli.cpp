@@ -144,7 +144,7 @@ int run(int argc, char* argv[]) {
             config.target_version = std::string{argv[i + 1]};
             i++;
         } else {
-            std::cerr << std::format("unknown argument: {}\n", arg);
+            std::cerr << fmt::format("unknown argument: {}\n", arg);
             return 1;
         }
     }
@@ -183,7 +183,7 @@ int run(int argc, char* argv[]) {
 
     for (size_t i = 0; i < ite_count; i++) {
         if (ite_count != 1) {
-            std::cout << std::format("\n======================\n"
+            std::cout << fmt::format("\n======================\n"
                                      "Transpilation #{}\n"
                                      "======================\n",
                                      i + 1);

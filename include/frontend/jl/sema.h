@@ -293,12 +293,12 @@ private:
 
                 sema.pop_scope(scope.type() == ScopeType::Global, skip_mangle);
             } catch (std::exception& e) {
-                stc::internal_error(std::format(
+                stc::internal_error(fmt::format(
                     "exception thrown while popping scope at depth #{}, see message below:",
                     scope.depth()));
                 std::cerr << e.what() << '\n';
             } catch (...) {
-                stc::internal_error(std::format("exception thrown while popping scope at depth #{}",
+                stc::internal_error(fmt::format("exception thrown while popping scope at depth #{}",
                                                 scope.depth()));
             }
         }

@@ -195,7 +195,7 @@ SIRNodeId JLLoweringVisitor::visit_VarDecl(VarDecl& var) {
 SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
     if (in_method)
         return fail(
-            std::format("local functions are currently not supported (found local function: '{}')",
+            fmt::format("local functions are currently not supported (found local function: '{}')",
                         sir_ctx.get_sym(method.identifier)));
 
     bool prev_in_method = in_method;
@@ -204,7 +204,7 @@ SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
     if (method.ret_type.is_null() ||
         !is_ret_type_allowed(sir_ctx.type_pool.get_td(method.ret_type))) {
 
-        return fail(std::format("cannot lower function with return type '{}'",
+        return fail(fmt::format("cannot lower function with return type '{}'",
                                 type_to_string(method.ret_type, sir_ctx, sir_ctx)));
     }
 
@@ -248,24 +248,24 @@ SIRNodeId JLLoweringVisitor::visit_ParamDecl(ParamDecl& param) {
 }
 
 SIRNodeId JLLoweringVisitor::visit_OpaqueFunction(OpaqueFunction& opaq_fn) {
-    return fail(std::format("cannot transpile unknown Julia function '{}'",
+    return fail(fmt::format("cannot transpile unknown Julia function '{}'",
                             sir_ctx.get_sym(opaq_fn.fn_name())));
 }
 
 SIRNodeId JLLoweringVisitor::visit_BuiltinFunction(BuiltinFunction& builtin_fn) {
     return internal_error(
-        std::format("lowering reached a BuiltinFunction leaf node for '{}'. BuiltinFns should only "
+        fmt::format("lowering reached a BuiltinFunction leaf node for '{}'. BuiltinFns should only "
                     "appear as targets to function calls, and should not be separately visited.",
                     sir_ctx.get_sym(builtin_fn.fn_name())));
 }
 
 SIRNodeId JLLoweringVisitor::visit_StructDecl(StructDecl& struct_) {
     if (struct_.field_decls.empty())
-        return fail(std::format("empty structs are not allowed (in definition of struct '{}')",
+        return fail(fmt::format("empty structs are not allowed (in definition of struct '{}')",
                                 sir_ctx.get_sym(struct_.identifier)));
 
     if (!struct_.qualifiers.is_null())
-        return fail(std::format(
+        return fail(fmt::format(
             "qualifiers on struct definitions are not allowed (in definition of struct '{}')",
             sir_ctx.get_sym(struct_.identifier)));
 
@@ -324,13 +324,13 @@ SIRNodeId JLLoweringVisitor::visit_UInt128Literal([[maybe_unused]] UInt128Litera
 SIRNodeId JLLoweringVisitor::visit_Float32Literal(Float32Literal& lit) {
     return emplace_node<sir::FloatLiteral>(
         lit.location, sir_ctx.type_pool.float_td(32),
-        std::format("{:.{}f}", lit.value, std::numeric_limits<float>::max_digits10));
+        fmt::format("{:.{}f}", lit.value, std::numeric_limits<float>::max_digits10));
 }
 
 SIRNodeId JLLoweringVisitor::visit_Float64Literal(Float64Literal& lit) {
     return emplace_node<sir::FloatLiteral>(
         lit.location, sir_ctx.type_pool.float_td(64),
-        std::format("{:.{}f}", lit.value, std::numeric_limits<double>::max_digits10));
+        fmt::format("{:.{}f}", lit.value, std::numeric_limits<double>::max_digits10));
 }
 
 SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
@@ -352,7 +352,7 @@ SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
     const auto& td = sir_ctx.type_pool.get_td(arr_lit.type);
 
     if (!td.is_array()) {
-        return internal_error(std::format("non-array type inferred for array literal node by sema",
+        return internal_error(fmt::format("non-array type inferred for array literal node by sema",
                                           type_to_string(arr_lit.type, sir_ctx, sir_ctx)));
     }
 
@@ -494,7 +494,7 @@ SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
         }
     }
 
-    return fail(std::format("indexers on type '{}' are not allowed",
+    return fail(fmt::format("indexers on type '{}' are not allowed",
                             type_to_string(target_td, sir_ctx, sir_ctx)));
 }
 

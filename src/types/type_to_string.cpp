@@ -1,6 +1,6 @@
 #include "types/type_to_string.h"
 
-#include <format>
+#include <fmt/format.h>
 
 namespace {
 
@@ -53,35 +53,35 @@ std::string TypeToStringVisitor::visit([[maybe_unused]] BoolTD bool_td) {
 }
 
 std::string TypeToStringVisitor::visit(IntTD int_td) {
-    return std::format("{}i{}", int_td.is_signed ? "" : "u", int_td.width);
+    return fmt::format("{}i{}", int_td.is_signed ? "" : "u", int_td.width);
 }
 
 std::string TypeToStringVisitor::visit(FloatTD float_td) {
-    return std::format("f{}{}{}", float_td.width, FloatTD::required_width(float_td.enc) ? "!" : "",
+    return fmt::format("f{}{}{}", float_td.width, FloatTD::required_width(float_td.enc) ? "!" : "",
                        float_td.enc == FloatTD::Encoding::ieee754
                            ? ""
-                           : std::format(" ({})", enc_to_str(float_td.enc)));
+                           : fmt::format(" ({})", enc_to_str(float_td.enc)));
 }
 
 std::string TypeToStringVisitor::visit(VectorTD vec_td) {
-    return std::format("vec{}<{}>", vec_td.component_count, dispatch(vec_td.component_type_id));
+    return fmt::format("vec{}<{}>", vec_td.component_count, dispatch(vec_td.component_type_id));
 }
 
 std::string TypeToStringVisitor::visit(MatrixTD mat_td) {
-    return std::format("matrix ({}x {})", mat_td.column_count, dispatch(mat_td.column_type_id));
+    return fmt::format("matrix ({}x {})", mat_td.column_count, dispatch(mat_td.column_type_id));
 }
 
 std::string TypeToStringVisitor::visit(ArrayTD arr_td) {
-    return std::format("array[{}] of ({})", arr_td.length, dispatch(arr_td.element_type_id));
+    return fmt::format("array[{}] of ({})", arr_td.length, dispatch(arr_td.element_type_id));
 }
 
 std::string TypeToStringVisitor::visit(StructTD struct_td) {
-    return std::format("struct '{}'", sym_pool.get_symbol(struct_td.data->name));
+    return fmt::format("struct '{}'", sym_pool.get_symbol(struct_td.data->name));
 }
 
 std::string TypeToStringVisitor::visit(FunctionTD fn_td) {
     auto sym = sym_pool.get_symbol_maybe(fn_td.identifier);
-    return std::format("fn '{}'", sym.value_or("null symbol id"));
+    return fmt::format("fn '{}'", sym.value_or("null symbol id"));
 }
 
 std::string TypeToStringVisitor::visit(MethodTD method_td) {
@@ -96,7 +96,7 @@ std::string TypeToStringVisitor::visit(MethodTD method_td) {
         param_list += dispatch(method_td.sig->param_types[i]);
     }
 
-    return std::format("method ({}) -> {}", param_list, dispatch(method_td.sig->ret_type));
+    return fmt::format("method ({}) -> {}", param_list, dispatch(method_td.sig->ret_type));
 }
 
 std::string TypeToStringVisitor::visit(BuiltinTD builtin_td) {

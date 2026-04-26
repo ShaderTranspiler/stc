@@ -243,7 +243,7 @@ void TypePool::register_builtin_str(BuiltinKind kind, std::string str) {
 
     if (!inserted)
         throw std::logic_error{
-            std::format("Trying to reinsert builtin type string representation for kind {}", kind)};
+            fmt::format("Trying to reinsert builtin type string representation for kind {}", kind)};
 }
 
 void TypePool::clear_builtin_str_map() {

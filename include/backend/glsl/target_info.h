@@ -21,8 +21,8 @@ public:
 
     GLSLTargetInfo(const GLSLTargetInfo&)            = delete;
     GLSLTargetInfo& operator=(const GLSLTargetInfo&) = delete;
-    GLSLTargetInfo(GLSLTargetInfo&&)                 = default;
-    GLSLTargetInfo& operator=(GLSLTargetInfo&&)      = default;
+    GLSLTargetInfo(GLSLTargetInfo&&)                 = delete;
+    GLSLTargetInfo& operator=(GLSLTargetInfo&&)      = delete;
 
     bool valid_ctor_call(TypeId target, const TypeList& arg_types) const override;
     bool can_implicit_cast(TypeId src_ty, TypeId dest_ty) const override;

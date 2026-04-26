@@ -311,7 +311,7 @@ JLSema::TypeCheckResult JLSema::check_type_against(TypeId actual_type, TypeId ch
 
     if (is_jl_convertible(actual_type, checked_type, tpool)) {
         if (ctx.target_info == nullptr) {
-            warn(std::format("conversion from {} to {} has been allowed based on Julia semantics, "
+            warn(fmt::format("conversion from {} to {} has been allowed based on Julia semantics, "
                              "since target info is unavailable",
                              type_str(actual_type), type_str(checked_type)),
                  base_expr);
@@ -484,7 +484,7 @@ JLSema::TypeCheckResult JLSema::check(Expr& expr, TypeId checked_type, bool allo
                 }
             }
 
-            fail(std::format("type mismatch during type checking: cannot convert {} to the "
+            fail(fmt::format("type mismatch during type checking: cannot convert {} to the "
                              "expected {} type{}",
                              type_str(actual_type), type_str(checked_type), reason),
                  expr);
@@ -591,7 +591,7 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
     auto expected_bt = binding_of(vdecl.identifier);
 
     if (!expected_bt.has_value())
-        return internal_error(std::format("symbol resolution pass failed to infer binding type for "
+        return internal_error(fmt::format("symbol resolution pass failed to infer binding type for "
                                           "a variable declaration's symbol: '{}'",
                                           ctx.get_sym(vdecl.identifier)),
                               vdecl);
@@ -605,14 +605,14 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
     ScopeType actual_st   = mst_to_st(vdecl.scope());
 
     if (expected_st == ScopeType::Global && actual_st == ScopeType::Local) {
-        return fail(std::format("cannot declare symbol '{}' local in the global scope",
+        return fail(fmt::format("cannot declare symbol '{}' local in the global scope",
                                 ctx.get_sym(vdecl.identifier)),
                     vdecl);
     }
 
     if (actual_st != expected_st) {
         return internal_error(
-            std::format(
+            fmt::format(
                 "scope mismatch for target scope of variable declaration. inferred {}, found {}",
                 scope_str(expected_st), scope_str(actual_st)),
             vdecl);
@@ -646,7 +646,7 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
     NodeId decl_id = ctx.calculate_node_id(vdecl);
     bool added     = st_register(vdecl.identifier, decl_id);
     if (!added) {
-        return fail(std::format("redeclaration of symbol '{}' in the same scope (as a variable)",
+        return fail(fmt::format("redeclaration of symbol '{}' in the same scope (as a variable)",
                                 ctx.get_sym(vdecl.identifier)),
                     vdecl);
     }
@@ -664,14 +664,14 @@ TypeId JLSema::visit_ParamDecl(ParamDecl& pdecl) {
 
     if (!expected_bt.has_value())
         return internal_error(
-            std::format(
+            fmt::format(
                 "symbol resolution pass failed to infer binding type for parameter symbol '{}'",
                 ctx.get_sym(pdecl.identifier)),
             pdecl);
 
     if (*expected_bt != BindingType::Local)
         return internal_error(
-            std::format("wrongfully inferred non-local binding type for parameter symbol '{}'",
+            fmt::format("wrongfully inferred non-local binding type for parameter symbol '{}'",
                         ctx.get_sym(pdecl.identifier)),
             pdecl);
     */
@@ -707,7 +707,7 @@ TypeId JLSema::visit_ParamDecl(ParamDecl& pdecl) {
         // param-as-param redecl (duplicate param identifiers) is reported by method decl visitor
         if (!ctx.isa<ParamDecl>(prev_decl_id)) {
             return fail(
-                std::format("redeclaration of symbol '{}' in the same scope (as a parameter)",
+                fmt::format("redeclaration of symbol '{}' in the same scope (as a parameter)",
                             ctx.get_sym(pdecl.identifier)),
                 pdecl);
         }
@@ -788,7 +788,7 @@ bool JLSema::is_method_sig_redecl(const MethodDecl& method_decl, const FunctionD
         bool redecl = target_sigs.contains(sig);
 
         if (redecl) {
-            fail(std::format("Trying to overwrite the method definition for an already "
+            fail(fmt::format("Trying to overwrite the method definition for an already "
                              "defined signature of function '{}'",
                              ctx.get_sym(method_decl.identifier)),
                  method_decl);
@@ -851,13 +851,13 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
 
     auto expected_bt = binding_of(method.identifier);
     if (!expected_bt.has_value())
-        return internal_error(std::format("symbol resolution pass failed to infer binding type for "
+        return internal_error(fmt::format("symbol resolution pass failed to infer binding type for "
                                           "declaration of a method for '{}'",
                                           ctx.get_sym(method.identifier)),
                               method);
 
     if (*expected_bt == BindingType::Captured)
-        return internal_error(std::format("symbol resolution pass inferred binding type of "
+        return internal_error(fmt::format("symbol resolution pass inferred binding type of "
                                           "Captured for declaration of a method for '{}'",
                                           ctx.get_sym(method.identifier)),
                               method);
@@ -884,7 +884,7 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
         } else {
             fn_decl = ctx.get_and_dyn_cast<FunctionDecl>(fn_decl_id);
             if (fn_decl == nullptr)
-                return fail(std::format("trying to declare '{}' as a function, but it has already "
+                return fail(fmt::format("trying to declare '{}' as a function, but it has already "
                                         "been declared as a non-function symbol previously",
                                         ctx.get_sym(method.identifier)),
                             method);
@@ -893,7 +893,7 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
                 auto* decled_m = ctx.get_and_dyn_cast<MethodDecl>(decled_m_id);
 
                 if (decled_m == nullptr)
-                    return internal_error(std::format("nullptr found in method list of a function "
+                    return internal_error(fmt::format("nullptr found in method list of a function "
                                                       "declaration for symbol '{}'",
                                                       ctx.get_sym(fn_decl->identifier)),
                                           *fn_decl);
@@ -910,7 +910,7 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
         auto fn_entry_it = lft.find(method.identifier);
         if (fn_entry_it == lft.end())
             return internal_error(
-                std::format(
+                fmt::format(
                     "symbol resolution pass missed adding the locally defined function '{}' to the "
                     "local function table",
                     ctx.get_sym(method.identifier)),
@@ -937,7 +937,7 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
                         "time of the first method declaration's resolution",
                         method);
 
-                return fail(std::format("redeclaration of already declared symbol '{}' as a method",
+                return fail(fmt::format("redeclaration of already declared symbol '{}' as a method",
                                         ctx.get_sym(method.identifier)),
                             method);
             }
@@ -967,7 +967,7 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
             bool added = st_register(fn_decl->identifier, fn_decl_id);
             if (!added) {
                 return fail(
-                    std::format("redeclaration of symbol '{}' in the same scope (as a method)",
+                    fmt::format("redeclaration of symbol '{}' in the same scope (as a method)",
                                 ctx.get_sym(method.identifier)),
                     method);
             }
@@ -1066,7 +1066,7 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
                 // TODO: allow param type infer from body
                 if (param_types[j].is_null())
                     return fail(
-                        std::format(
+                        fmt::format(
                             "couldn't infer type for method parameter '{}'. "
                             "Currently, a parameter must either have an explicit type annotation, "
                             "or its type must be inferrable from its default initializer.",
@@ -1134,7 +1134,7 @@ void JLSema::visit_method_body(MethodDecl& method) {
 
         bool used_before = !used_param_ids.emplace(pdecl.identifier).second;
         if (used_before) {
-            fail(std::format("more than one parameter named '{}' in definition of function '{}'",
+            fail(fmt::format("more than one parameter named '{}' in definition of function '{}'",
                              ctx.get_sym(pdecl.identifier), ctx.get_sym(method.identifier)),
                  pdecl);
             any_failed = true;
@@ -1165,7 +1165,7 @@ void JLSema::visit_method_body(MethodDecl& method) {
     } else {
         if (!ctx.isa<CompoundExpr>(method.body)) {
             internal_error(
-                std::format("non-compound-expression as body of method definition for '{}'",
+                fmt::format("non-compound-expression as body of method definition for '{}'",
                             ctx.get_sym(method.identifier)),
                 method);
             return;
@@ -1176,7 +1176,7 @@ void JLSema::visit_method_body(MethodDecl& method) {
         visiting_method_body = false;
 
         if (current_fn_ret.is_null()) {
-            fail(std::format("couldn't infer return type from a method definition for '{}'. Try "
+            fail(fmt::format("couldn't infer return type from a method definition for '{}'. Try "
                              "adding an explicit return type to the function header.",
                              ctx.get_sym(method.identifier)),
                  method);
@@ -1185,7 +1185,7 @@ void JLSema::visit_method_body(MethodDecl& method) {
 
         if (current_fn_ret != body_inf) {
             internal_error(
-                std::format(
+                fmt::format(
                     "inferred return type based on return statements ({}) got desynchronized "
                     "from body's inferred type ({}) for a method of '{}'",
                     type_str(current_fn_ret), type_str(body_inf), ctx.get_sym(method.identifier)),
@@ -1211,7 +1211,7 @@ TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
 
     if (!valid_field_type) {
         return fail(
-            std::format("field declarations with type {} are not supported", type_str(fdecl.type)),
+            fmt::format("field declarations with type {} are not supported", type_str(fdecl.type)),
             fdecl);
     }
 
@@ -1225,14 +1225,14 @@ TypeId JLSema::visit_StructDecl(StructDecl& sdecl) {
         return internal_error("struct's type has not been registered by parser", sdecl);
 
     if (&current_scope() != &global_scope()) {
-        return fail(std::format("definition of struct '{}' in non-global scope is not allowed",
+        return fail(fmt::format("definition of struct '{}' in non-global scope is not allowed",
                                 ctx.get_sym(sdecl.identifier)),
                     sdecl);
     }
 
     bool added = st_register(sdecl.identifier, ctx.calculate_node_id(sdecl));
     if (!added) {
-        return fail(std::format("redefinition of struct '{}' is not allowed",
+        return fail(fmt::format("redefinition of struct '{}' is not allowed",
                                 ctx.get_sym(sdecl.identifier)),
                     sdecl);
     }
@@ -1446,7 +1446,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
         // this explicitly disallows casting on the target's type
         if (res != TypeCheckResult::Ok) {
-            return fail(std::format("target of an indexer expression could not be checked to hold "
+            return fail(fmt::format("target of an indexer expression could not be checked to hold "
                                     "a collection of the expected '{}' type",
                                     type_str(expected_type)),
                         idx_expr);
@@ -1469,7 +1469,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
             return el_type;
 
         if (idx->type != ctx.jl_String_t() && idx->type != ctx.jl_Symbol_t())
-            return fail(std::format("invalid vector indexer type '{}'",
+            return fail(fmt::format("invalid vector indexer type '{}'",
                                     type_to_string(idx->type, ctx, ctx)),
                         idx_expr);
 
@@ -1493,7 +1493,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
             size_t swizzle_n = swizzle.length();
             if (swizzle_n == 0 || swizzle_n > 4)
-                return fail(std::format("invalid swizzle expression length for '{}'", swizzle),
+                return fail(fmt::format("invalid swizzle expression length for '{}'", swizzle),
                             idx_expr);
 
             uint32_t vec_n = coll_td.as<VectorTD>().component_count;
@@ -1504,7 +1504,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
                 if (comp == INVALID_SWIZZLE)
                     return fail(
-                        std::format("invalid swizzle expression component '{}'", swizzle[i]),
+                        fmt::format("invalid swizzle expression component '{}'", swizzle[i]),
                         idx_expr);
 
                 if (cur_set == SwizzleSet::Invalid)
@@ -1515,14 +1515,14 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
                     set = cur_set;
                 else if (set != cur_set)
                     return fail(
-                        std::format(
+                        fmt::format(
                             "mixing components from different swizzle sets is not allowed ('{}')",
                             swizzle),
                         idx_expr);
 
                 assert(vec_n != 0);
                 if (comp > vec_n - 1)
-                    return fail(std::format("swizzle component '{}' points outside "
+                    return fail(fmt::format("swizzle component '{}' points outside "
                                             "vector bounds (vector component count is {})",
                                             swizzle[i], vec_n),
                                 idx_expr);
@@ -1570,7 +1570,7 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
 
     if (!target_td.is_struct())
         return fail(
-            std::format("field access into invalid or unsupported type {}", type_str(target_ty)),
+            fmt::format("field access into invalid or unsupported type {}", type_str(target_ty)),
             acc);
 
     const auto& s_td = target_td.as<StructTD>();
@@ -1580,7 +1580,7 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
 
     if (sdecl_id.is_null() || !ctx.isa<StructDecl>(sdecl_id))
         return internal_error(
-            std::format("couldn't find struct type declaration in global scope for {}",
+            fmt::format("couldn't find struct type declaration in global scope for {}",
                         type_str(target_ty)),
             acc);
 
@@ -1609,7 +1609,7 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
         }
     }
 
-    return fail(std::format("{} has no field with identifier '{}'", type_str(sdecl->type),
+    return fail(fmt::format("{} has no field with identifier '{}'", type_str(sdecl->type),
                             ctx.get_sym(target_sym_lit->value)),
                 acc);
 }
@@ -1629,7 +1629,7 @@ TypeId JLSema::visit_DotChain(DotChain& dc) {
         auto mod = ctx.jl_env.module_cache.get_mod(mod_path);
 
         if (!mod.has_value())
-            return fail(std::format("invalid dot chain, couldn't resolve module at '{}'", mod_path),
+            return fail(fmt::format("invalid dot chain, couldn't resolve module at '{}'", mod_path),
                         dc);
 
         const auto* sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(dc.chain.back());
@@ -1645,7 +1645,7 @@ TypeId JLSema::visit_DotChain(DotChain& dc) {
 
         jl_function_t* jl_fn = mod->get().get_fn(ctx.get_sym(sym_lit->value), false);
         if (jl_fn == nullptr)
-            return fail(std::format("no function with name '{}' was found in module '{}'",
+            return fail(fmt::format("no function with name '{}' was found in module '{}'",
                                     ctx.get_sym(sym_lit->value), mod_path),
                         dc);
 
@@ -1736,7 +1736,7 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
     auto maybe_bt = binding_of(sym->value);
 
     if (!maybe_bt.has_value())
-        return internal_error(std::format("symbol resolution pass failed to infer binding type for "
+        return internal_error(fmt::format("symbol resolution pass failed to infer binding type for "
                                           "symbol '{}' in a declaration",
                                           sym_str),
                               *sym);
@@ -1772,7 +1772,7 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
     }
 
     if (is_captured)
-        return fail(std::format("forward capture of symbol '{}' is not allowed", sym_str), dre);
+        return fail(fmt::format("forward capture of symbol '{}' is not allowed", sym_str), dre);
 
     bool is_fn_ref = *maybe_bt == BindingType::Global && tpool.is_any_func(expected_type);
     if (is_fn_ref) {
@@ -1794,7 +1794,7 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
             jl_fn = find_jl_function(sym_str, ctx.jl_env, false);
 
         if (jl_fn == nullptr) {
-            return fail(std::format("couldn't find function '{}' in the symbol table, or in the "
+            return fail(fmt::format("couldn't find function '{}' in the symbol table, or in the "
                                     "root julia module",
                                     sym_str),
                         dre);
@@ -1806,7 +1806,7 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
         infer(dre.decl);
 
         if (!rt::is_type(jl_fn) && ctx.config.warn_on_jl_sema_query)
-            warn(std::format("had to resolve function reference through julia for non-type "
+            warn(fmt::format("had to resolve function reference through julia for non-type "
                              "referring symbol '{}'",
                              sym_str),
                  dre);
@@ -1814,7 +1814,7 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
         return tpool.func_td(fn_name);
     }
 
-    return fail(std::format("use of undeclared or uninitialized symbol '{}' (binding type: {})",
+    return fail(fmt::format("use of undeclared or uninitialized symbol '{}' (binding type: {})",
                             ctx.get_sym(sym->value), bt_str(*maybe_bt)),
                 dre);
 }
@@ -1843,7 +1843,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
 
                 if (!maybe_bt.has_value())
                     return internal_error(
-                        std::format("symbol resolution pass failed to infer binding "
+                        fmt::format("symbol resolution pass failed to infer binding "
                                     "type for symbol '{}' in assignment lhs",
                                     ctx.get_sym(sym->value)),
                         assign);
@@ -1855,7 +1855,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
                     // build capture sema into MethodDecl, allow generating captures-as-args
                     // that could, in turn, allow this to be handled
                     return fail(
-                        std::format(
+                        fmt::format(
                             "assignment to captured symbol before definition for symbol '{}'. "
                             "Currently, all variables must be assigned before they can be captured "
                             "by an inner function.",
@@ -1909,7 +1909,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
             if (const auto* sdecl = dyn_cast<StructDecl>(target_decl)) {
                 if (!sdecl->is_mutable()) {
                     return fail(
-                        std::format(
+                        fmt::format(
                             "assignment to field of immutable struct type '{}' is not allowed",
                             ctx.get_sym(sdecl->identifier)),
                         assign);
@@ -1933,11 +1933,11 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
 
     // only actually alloc and init string if needed for an error msg
     LazyInit error_suffix{[&]() -> std::string {
-        return std::format("(in call to function '{}')", get_jl_fn_name(fn));
+        return fmt::format("(in call to function '{}')", get_jl_fn_name(fn));
     }};
 
     if (ctx.config.warn_on_jl_sema_query)
-        warn(std::format("had to resolve function call's return type through julia {}",
+        warn(fmt::format("had to resolve function call's return type through julia {}",
                          error_suffix.get()),
              base_expr);
 
@@ -1955,7 +1955,7 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
         jl_datatype_t* dt = to_jl_type(arg_type);
 
         if (dt == nullptr) {
-            return fail(std::format("argument of type '{}' cannot participate in function call "
+            return fail(fmt::format("argument of type '{}' cannot participate in function call "
                                     "return type resolution {}",
                                     type_str(arg_type), error_suffix.get()),
                         base_expr);
@@ -1971,7 +1971,7 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
         std::cerr << "the above julia exception occured while trying to resolve the return type of "
                      "a function call\n";
 
-        return fail(std::format("couldn't infer return type for call {}", error_suffix.get()),
+        return fail(fmt::format("couldn't infer return type for call {}", error_suffix.get()),
                     base_expr);
     }
 
@@ -1990,7 +1990,7 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
                          "has a specific signature\n";
 
             return internal_error(
-                std::format("couldn't retrieve call signature validity for function after return "
+                fmt::format("couldn't retrieve call signature validity for function after return "
                             "type has been inferred to be bottom {}",
                             error_suffix.get()),
                 base_expr);
@@ -1998,12 +1998,12 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
 
         if (has_method_val == jl_false) {
             return fail(
-                std::format("no method matching the signature inferred from the arguments {}",
+                fmt::format("no method matching the signature inferred from the arguments {}",
                             error_suffix.get()),
                 base_expr);
         }
 
-        return fail(std::format("Julia inferred bottom as the return type, meaning the function "
+        return fail(fmt::format("Julia inferred bottom as the return type, meaning the function "
                                 "execution never exits normally {}",
                                 error_suffix.get()),
                     base_expr);
@@ -2016,14 +2016,14 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
         jl_static_show(jl_stderr_stream(), res_jl_type);
         std::cerr << '\n';
         return fail(
-            std::format("Julia could only infer a non-concrete return type {}", error_suffix.get()),
+            fmt::format("Julia could only infer a non-concrete return type {}", error_suffix.get()),
             base_expr);
     }
 
     TypeId res_type = parse_jl_type(safe_cast<jl_datatype_t>(res_jl_type), ctx);
 
     if (res_type.is_null())
-        return fail(std::format("Julia inferred an unsupported return type {}", error_suffix.get()),
+        return fail(fmt::format("Julia inferred an unsupported return type {}", error_suffix.get()),
                     base_expr);
 
     return res_type;
@@ -2039,7 +2039,7 @@ std::optional<MethodDecl*> JLSema::find_sig_match(const FunctionDecl& fn_decl,
         auto* mdecl = ctx.get_and_dyn_cast<MethodDecl>(method_id);
 
         if (mdecl == nullptr) {
-            internal_error(std::format("non-method-declaration node in method list of "
+            internal_error(fmt::format("non-method-declaration node in method list of "
                                        "function declaration for symbol '{}'",
                                        ctx.get_sym(fn_decl.identifier)),
                            fn_decl);
@@ -2055,7 +2055,7 @@ std::optional<MethodDecl*> JLSema::find_sig_match(const FunctionDecl& fn_decl,
             auto* pdecl = ctx.get_and_dyn_cast<ParamDecl>(param_id);
 
             if (pdecl == nullptr) {
-                internal_error(std::format("non-parameter-declaration node in parameter list of "
+                internal_error(fmt::format("non-parameter-declaration node in parameter list of "
                                            "method declaration for symbol '{}'",
                                            ctx.get_sym(mdecl->identifier)),
                                *mdecl);
@@ -2082,7 +2082,7 @@ std::optional<MethodDecl*> JLSema::find_sig_match(const FunctionDecl& fn_decl,
         if (sig_match) {
             if (mdecl->ret_type.is_null()) {
                 if (mdecl == current_method) {
-                    fail(std::format("recursion on method with implicit return type is not "
+                    fail(fmt::format("recursion on method with implicit return type is not "
                                      "allowed (call to '{}')",
                                      ctx.get_sym(mdecl->identifier)),
                          base_expr);
@@ -2090,7 +2090,7 @@ std::optional<MethodDecl*> JLSema::find_sig_match(const FunctionDecl& fn_decl,
                     return std::nullopt;
                 }
 
-                fail(std::format(
+                fail(fmt::format(
                          "call to method '{}' with implicit return type, which has not been "
                          "inferred yet (this is most likely the result of mutually recursive "
                          "methods with implicit return types, which is not allowed)",
@@ -2167,7 +2167,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
     if (!resolved_fn) {
         return fail(
-            std::format("call to non-function symbol '{}'", ctx.get_sym(decl_base->identifier)),
+            fmt::format("call to non-function symbol '{}'", ctx.get_sym(decl_base->identifier)),
             fn_call);
     }
 
@@ -2206,7 +2206,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
         if (*target_method == nullptr) {
             return fail(
-                std::format("no method matches inferred argument types for function call to '{}'",
+                fmt::format("no method matches inferred argument types for function call to '{}'",
                             ctx.get_sym(fn_decl->identifier)),
                 fn_call);
         }
@@ -2222,7 +2222,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             ctx.target_info->builtin_fn_ret_ty_with_impl_cast(fn_name_str, arg_types).first;
 
         if (ret_ty.is_null()) {
-            return fail(std::format("builtin function does not have an overload for the inferred "
+            return fail(fmt::format("builtin function does not have an overload for the inferred "
                                     "argument types (in call to '{}')",
                                     fn_name_str),
                         fn_call);
@@ -2233,12 +2233,12 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
     if (struct_decl != nullptr) {
         if (struct_decl->field_decls.size() > arg_types.size())
-            return fail(std::format("not enough arguments in constructor call for struct '{}'",
+            return fail(fmt::format("not enough arguments in constructor call for struct '{}'",
                                     ctx.get_sym(struct_decl->identifier)),
                         fn_call);
 
         if (struct_decl->field_decls.size() < arg_types.size())
-            return fail(std::format("too many arguments in constructor call for struct '{}'",
+            return fail(fmt::format("too many arguments in constructor call for struct '{}'",
                                     ctx.get_sym(struct_decl->identifier)),
                         fn_call);
 
@@ -2252,7 +2252,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
         }
 
         if (!valid_call) {
-            return fail(std::format("invalid constructor argument types for {}",
+            return fail(fmt::format("invalid constructor argument types for {}",
                                     type_str(struct_decl->type)),
                         fn_call);
         }
@@ -2279,7 +2279,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
     if (!ctx.config.forward_fns) {
         return fail(
-            std::format("couldn't resolve call to '{}'. to use Julia queried information "
+            fmt::format("couldn't resolve call to '{}'. to use Julia queried information "
                         "and blindly pass it down the pipeline, enable function forwarding.",
                         ctx.get_sym(opaq_fn->fn_name())),
             fn_call);
@@ -2289,7 +2289,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
     TypeId ret_type = ret_type_of_jl_call(opaq_fn->jl_function, arg_types, fn_call);
 
     if (!ret_type.is_null() && ctx.config.warn_on_fn_forward) {
-        warn(std::format(
+        warn(fmt::format(
                  "sema could only resolve return type of call to function '{}' through Julia. "
                  "function forwarding is enabled, so the function call will appear with "
                  "identical typing in the final code.",
@@ -2387,7 +2387,7 @@ TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
         if (has_inner)
             check(ret.inner, current_fn_ret);
         else if (current_fn_ret != ctx.jl_Nothing_t())
-            return fail(std::format("empty return stmt in function expected to return {}",
+            return fail(fmt::format("empty return stmt in function expected to return {}",
                                     type_str(current_fn_ret)),
                         ret);
     }

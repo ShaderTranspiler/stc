@@ -62,20 +62,20 @@ void JLScope::dump(const JLCtx& ctx, std::ostream& out) const {
     out << "==============================\n";
     out << "scope snapshot debug dump\n\n";
 
-    out << std::format("kind: {}, depth: {}\n\n", scope_kind_str(kind), depth());
+    out << fmt::format("kind: {}, depth: {}\n\n", scope_kind_str(kind), depth());
 
     out << "binding table:\n";
 
     for (auto [sym_id, bt] : binding_table)
         out << single_indent
-            << std::format("{} -> {}\n", ctx.get_sym(sym_id), binding_type_str(bt));
+            << fmt::format("{} -> {}\n", ctx.get_sym(sym_id), binding_type_str(bt));
 
     out << "\n\nsymbol table:\n";
 
     JLDumper dumper{ctx, std::cout};
 
     for (auto [sym_id, decl_id] : symbol_table) {
-        out << single_indent << std::format("{} -> \n", ctx.get_sym(sym_id));
+        out << single_indent << fmt::format("{} -> \n", ctx.get_sym(sym_id));
         dumper.visit(decl_id);
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <fmt/format.h>
 #include <ostream>
 
 namespace stc::api::detail {
@@ -12,8 +13,8 @@ inline std::string format_bm_duration(std::chrono::nanoseconds dur) {
     duration<double, std::micro> exact_us = dur;
 
     return duration_cast<milliseconds>(dur).count() > 0
-               ? std::format("{:.3f} ms", exact_ms.count())
-               : std::format("{:.0f} us", exact_us.count());
+               ? fmt::format("{:.3f} ms", exact_ms.count())
+               : fmt::format("{:.0f} us", exact_us.count());
 }
 
 template <bool Enabled>

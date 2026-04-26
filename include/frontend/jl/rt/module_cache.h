@@ -65,7 +65,7 @@ public:
         auto result = get_mod(mod_path, root_mod);
 
         if (!result.has_value())
-            throw std::logic_error{std::format(
+            throw std::logic_error{fmt::format(
                 "module path doesn't point to a Module object in Julia (in {})", mod_path)};
 
         return *result;

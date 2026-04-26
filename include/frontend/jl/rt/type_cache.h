@@ -40,7 +40,7 @@ struct JuliaTypeCache {
             auto* result =
                 safe_cast<jl_datatype_t>(jl_get_global(mod.mod_ptr(), jl_symbol(sym_name)));
             if (result == nullptr)
-                throw std::logic_error{std::format(
+                throw std::logic_error{fmt::format(
                     "failed to load datatype '{}' from Julia through the Core module", sym_name)};
 
             return result;
@@ -49,7 +49,7 @@ struct JuliaTypeCache {
         auto get_ua_from = [](JuliaModule& mod, const char* sym_name) {
             auto* ua_val = jl_get_global(mod.mod_ptr(), jl_symbol(sym_name));
             if (!jl_is_unionall(ua_val))
-                throw std::logic_error{std::format(
+                throw std::logic_error{fmt::format(
                     "value for '{}' loaded from Julia is not a UnionAll type", sym_name)};
 
             return safe_cast<jl_unionall_t>(ua_val);

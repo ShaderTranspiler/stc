@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cassert>
-#include <format>
+#include <fmt/format.h>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -47,7 +47,7 @@ void warning(std::string_view msg, std::ostream& out = std::cerr);
 void internal_error(std::string_view msg, std::ostream& out = std::cerr);
 
 inline std::string dump_label(const std::string& label_str) {
-    return std::format("({}):\n", label_str);
+    return fmt::format("({}):\n", label_str);
 }
 
 template <typename T, typename Projection = std::identity>
