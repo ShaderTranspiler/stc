@@ -1,14 +1,15 @@
 #pragma once
 
 #include "frontend/jl/rt/env.h"
+#include "julia_guard.h"
 
 namespace stc::jl::rt {
 
 // lookup chain's expected format is: [ModuleA.ModuleB.(...).]fn_name
 // the chain is expected to start from root_mod
 [[nodiscard]]
-inline jl_function_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
-                                       JuliaModule& root_mod, bool throw_on_not_found = true) {
+inline jl_value_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
+                                    JuliaModule& root_mod, bool throw_on_not_found = true) {
 
     size_t last_dot_idx = lookup_chain.find_last_of('.');
 
@@ -34,8 +35,8 @@ inline jl_function_t* find_jl_function(std::string_view lookup_chain, rt::JuliaR
 }
 
 [[nodiscard]]
-inline jl_function_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
-                                       bool throw_on_not_found = true) {
+inline jl_value_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
+                                    bool throw_on_not_found = true) {
     return find_jl_function(lookup_chain, env, env.module_cache.main_mod, throw_on_not_found);
 }
 

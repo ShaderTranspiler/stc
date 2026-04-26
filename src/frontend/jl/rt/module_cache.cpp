@@ -2,13 +2,13 @@
 
 namespace stc::jl::rt {
 
-jl_function_t* JuliaModule::get_fn(std::string_view fn_name, bool throw_on_not_found) {
+jl_value_t* JuliaModule::get_fn(std::string_view fn_name, bool throw_on_not_found) {
     auto it = fn_cache.find(fn_name);
     if (it != fn_cache.end())
         return it->second;
 
     std::string fn_str{fn_name};
-    jl_function_t* fn = jl_get_function(_mod_ptr, fn_str.c_str());
+    jl_value_t* fn = jl_get_function(_mod_ptr, fn_str.c_str());
 
     if (fn == nullptr) {
         if (throw_on_not_found)

@@ -302,7 +302,7 @@ NodeId JLParser::parse_code(std::string_view code) {
 
     auto* meta_mod = reinterpret_cast<jl_module_t*>(meta_mod_v);
 
-    jl_function_t* parse_fn = jl_get_global(meta_mod, jl_symbol("parse"));
+    jl_value_t* parse_fn = jl_get_global(meta_mod, jl_symbol("parse"));
     if (parse_fn == nullptr)
         throw std::logic_error{"Failed to look up parse function inside the Meta module"};
 
@@ -543,7 +543,7 @@ NodeId JLParser::parse_expr(jl_expr_t* expr) {
 
     error("unsupported Expr node in Julia source code:");
 
-    jl_function_t* dump_fn = ctx.jl_env.module_cache.base_mod.get_fn("dump");
+    jl_value_t* dump_fn = ctx.jl_env.module_cache.base_mod.get_fn("dump");
     jl_call1(dump_fn, reinterpret_cast<jl_value_t*>(expr));
     std::cerr << '\n';
 

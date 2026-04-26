@@ -1,5 +1,7 @@
 #pragma once
 
+#include "julia_guard.h"
+
 #include "frontend/jl/scope.h"
 #include "frontend/jl/sym_res.h"
 #include "frontend/jl/type_conversion.h"
@@ -106,7 +108,7 @@ private:
 
     bool is_method_sig_redecl(const MethodDecl& method_decl, const FunctionDecl& fn_decl);
 
-    TypeId ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>& arg_types,
+    TypeId ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& arg_types,
                                const Expr& base_expr);
 
     std::optional<MethodDecl*> find_sig_match(const FunctionDecl& fn_decl,

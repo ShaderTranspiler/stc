@@ -24,5 +24,8 @@ vs_install/
 # imgui
 imgui.ini
 
-# STJL Pkg
-STJL/Manifest.toml
+# STC.jl
+STC.jl/Manifest.toml
+
+# BinaryBuilder
+products/

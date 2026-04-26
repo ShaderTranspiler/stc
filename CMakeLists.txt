@@ -88,14 +88,17 @@ if (NOT DEFINED STC_JULIA_VERSION)
 endif()
 
 if (WIN32)
-    # on windows with msvc, we can't link the dll itself (because of reasons), we need the dll.a (or .lib)
-    set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dll.a")
-    if (NOT EXISTS "${JULIA_LIB}")
+    if (EXISTS "${JULIA_LIB_DIR}/libjulia.dll.a")
+        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dll.a")
+    elseif (EXISTS "${JULIA_LIB_DIR}/../bin/libjulia.dll")
+        get_filename_component(JULIA_BIN_DIR "${JULIA_LIB_DIR}/../bin" ABSOLUTE)
+        set(JULIA_LIB "${JULIA_BIN_DIR}/libjulia.dll")
+    elseif (EXISTS "${JULIA_LIB_DIR}/libjulia.lib")
+        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.lib")
+    elseif (EXISTS "${JULIA_LIB_DIR}/julia.lib")
         set(JULIA_LIB "${JULIA_LIB_DIR}/julia.lib")
-    endif()
-
-    if (NOT EXISTS "${JULIA_LIB}")
-        message(FATAL_ERROR "Couldn't locate Julia library (libjulia.dll.a or julia.lib)")
+    else()
+        message(FATAL_ERROR "Couldn't locate Julia library (.dll.a, .dll, or .lib) in ${JULIA_LIB_DIR} or bin/")
     endif()
 elseif (NOT DEFINED JULIA_LIB)
     if (EXISTS "${JULIA_LIB_DIR}/libjulia.so")
@@ -131,6 +134,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(LIB_OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
 set(BIN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
 set(TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/test)
@@ -157,21 +162,23 @@ if(NOT fmt_FOUND)
     FetchContent_Declare(
         fmt
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG        12.1.0
+        GIT_TAG        11.1.1
     )
     FetchContent_MakeAvailable(fmt)
-endif()
-
-get_target_property(FMT_INCLUDES fmt INTERFACE_INCLUDE_DIRECTORIES)
-if(FMT_INCLUDES)
-    set_target_properties(fmt PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${FMT_INCLUDES}")
-endif()
-
-if(TARGET fmt)
-    target_compile_options(fmt PRIVATE 
-        $<$<CXX_COMPILER_ID:MSVC>:/w>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
-    )
+    
+    get_target_property(FMT_INCLUDES fmt INTERFACE_INCLUDE_DIRECTORIES)
+    if(FMT_INCLUDES)
+        set_target_properties(fmt PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${FMT_INCLUDES}")
+    endif()
+    
+    if(TARGET fmt)
+        target_compile_options(fmt PRIVATE 
+            $<$<CXX_COMPILER_ID:MSVC>:/w>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
+        )
+    endif()
+else()
+    message(STATUS "fmt found locally")
 endif()
 
 # ccache
@@ -340,7 +347,7 @@ if (NOT NO_CLI)
 
     add_executable(${CLI_TARGET} "cli/cli.cpp")
 
-    set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc")
+    # set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc")
 
     set_target_properties(${CLI_TARGET} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
@@ -557,3 +564,24 @@ if (NOT NO_SANDBOX)
         endif()
     endforeach()
 endif()
+
+# install lib, cli and pkg api headers
+
+include(GNUInstallDirs)
+
+install(TARGETS ${LIB_TARGET}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+if(TARGET ${CLI_TARGET})
+    install(TARGETS ${CLI_TARGET} 
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/api/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
+    FILES_MATCHING PATTERN "*.h"
+)

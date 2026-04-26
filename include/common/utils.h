@@ -73,6 +73,9 @@ bool is_power_of_two(T x) {
     return x != 0 && (x & (x - 1)) == 0;
 }
 
+template <typename... Ts>
+inline constexpr bool dependent_false_v = false;
+
 // same as boost container_hash's current hash_combine implementation for 32/64-bit size_t:
 // https://www.boost.org/doc/libs/latest/libs/container_hash/doc/html/hash.html#notes_hash_combine
 template <typename T, typename Hasher = std::hash<T>>
@@ -93,7 +96,8 @@ constexpr size_t hash_combine(size_t seed, const T& v) {
         x *= 0x735a2d97;
         x ^= x >> 15;
     } else {
-        static_assert(false, "no hash_combine implementation for current size_t width");
+        static_assert(dependent_false_v<T>,
+                      "no hash_combine implementation for current size_t width");
     }
 
     return x;
@@ -166,9 +170,6 @@ concept CNullableSplitId =
         { t.id_value() } -> std::same_as<typename T::id_type>;
         { t.kind_value() } -> std::same_as<typename T::kind_type>;
     } && std::constructible_from<T, typename T::id_type, typename T::kind_type>;
-
-template <typename... Ts>
-inline constexpr bool dependent_false_v = false;
 
 template <typename ImplTy, typename RetTy, typename T>
 concept CHasVisitorFor = requires (ImplTy impl, T t) {

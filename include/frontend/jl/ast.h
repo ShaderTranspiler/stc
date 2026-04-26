@@ -1,5 +1,7 @@
 #pragma once
 
+#include "julia_guard.h"
+
 #include "base.h"
 #include "common/src_info.h"
 #include "common/utils.h"
@@ -244,9 +246,9 @@ struct ParamDecl : public Decl {
 // should only be used with functions expected to be rooted for the lifetime of the transpiler
 // (e.g. global functions of modules accessible from Main)
 struct OpaqueFunction : public Decl {
-    jl_function_t* jl_function;
+    jl_value_t* jl_function;
 
-    explicit OpaqueFunction(SrcLocationId location, SymbolId fn_name, jl_function_t* jl_function,
+    explicit OpaqueFunction(SrcLocationId location, SymbolId fn_name, jl_value_t* jl_function,
                             bool is_ctor = false)
         : Decl{location, NodeKind::OpaqFn, fn_name, static_cast<uint8_t>(is_ctor)},
           jl_function{jl_function} {

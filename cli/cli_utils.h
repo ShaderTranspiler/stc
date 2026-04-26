@@ -3,6 +3,7 @@
 #include <common/term_utils.h>
 #include <meta/version.h>
 
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <iostream>

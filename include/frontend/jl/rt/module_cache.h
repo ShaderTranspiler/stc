@@ -12,7 +12,7 @@ namespace stc::jl::rt {
 struct JuliaModule {
 private:
     using FunctionCache =
-        std::unordered_map<std::string, jl_function_t*, TransparentStringHash, std::equal_to<>>;
+        std::unordered_map<std::string, jl_value_t*, TransparentStringHash, std::equal_to<>>;
 
     jl_module_t* _mod_ptr;
     FunctionCache fn_cache;
@@ -31,7 +31,7 @@ public:
     operator jl_module_t*() const { return mod_ptr(); }
 
     // returns fn ptr from cache, or retrieves from julia, adds to cache and returns
-    jl_function_t* get_fn(std::string_view fn_name, bool throw_on_not_found = true);
+    jl_value_t* get_fn(std::string_view fn_name, bool throw_on_not_found = true);
 };
 
 class JuliaModuleCache {
@@ -85,8 +85,8 @@ public:
     JuliaModule& glm_mod;
 
     // shorthands for common functions
-    jl_function_t* meta_parse     = nullptr;
-    jl_function_t* comp_ret_types = nullptr;
+    jl_value_t* meta_parse     = nullptr;
+    jl_value_t* comp_ret_types = nullptr;
 
 private:
     [[nodiscard]] JuliaModule& register_mod(std::string_view mod_path, jl_module_t* mod);

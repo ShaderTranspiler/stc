@@ -41,3 +41,20 @@ static_assert(false, "max macro defined post julia.h include");
 #ifdef min
 static_assert(false, "min macro defined post julia.h include");
 #endif
+
+#if JULIA_VERSION_MAJOR == 1 && JULIA_VERSION_MINOR <= 10 && !defined(jl_unwrap_unionall)
+
+static inline jl_value_t* stc_unwrap_unionall(jl_value_t* v) {
+    while (jl_is_unionall(v)) {
+        v = ((jl_unionall_t*)v)->body;
+    }
+    return v;
+}
+
+#define jl_unwrap_unionall(v) stc_unwrap_unionall(v)
+
+#endif
+
+#ifndef jl_is_linenumbernode
+#define jl_is_linenumbernode(v) jl_typetagis(v, jl_linenumbernode_type)
+#endif

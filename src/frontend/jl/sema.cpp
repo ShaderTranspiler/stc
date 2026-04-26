@@ -1643,7 +1643,7 @@ TypeId JLSema::visit_DotChain(DotChain& dc) {
         if (sym_lit == nullptr)
             return internal_error("unexpected node kind in dot chain", dc);
 
-        jl_function_t* jl_fn = mod->get().get_fn(ctx.get_sym(sym_lit->value), false);
+        jl_value_t* jl_fn = mod->get().get_fn(ctx.get_sym(sym_lit->value), false);
         if (jl_fn == nullptr)
             return fail(fmt::format("no function with name '{}' was found in module '{}'",
                                     ctx.get_sym(sym_lit->value), mod_path),
@@ -1788,7 +1788,7 @@ TypeId JLSema::visit_DeclRefExpr(DeclRefExpr& dre) {
         }
 
         // try to resolve in JuliaGLM before any other module
-        jl_function_t* jl_fn = ctx.jl_env.module_cache.glm_mod.get_fn(sym_str, false);
+        jl_value_t* jl_fn = ctx.jl_env.module_cache.glm_mod.get_fn(sym_str, false);
 
         if (jl_fn == nullptr)
             jl_fn = find_jl_function(sym_str, ctx.jl_env, false);
@@ -1927,7 +1927,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
 
 // TODO: add jl dumps for types
 // TODO: print inferred sig
-TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>& arg_types,
+TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& arg_types,
                                    const Expr& base_expr) {
     assert(fn != nullptr);
 
@@ -1947,7 +1947,7 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
 
     const ScopeGuard jl_gc_pop_guard{[&]() { JL_GC_POP(); }};
 
-    jl_function_t* ret_type_fn = ctx.jl_env.module_cache.comp_mod.get_fn("return_type");
+    jl_value_t* ret_type_fn = ctx.jl_env.module_cache.comp_mod.get_fn("return_type");
 
     std::vector<jl_value_t*> arg_jl_types{};
     arg_jl_types.reserve(arg_types.size());
@@ -1982,8 +1982,8 @@ TypeId JLSema::ret_type_of_jl_call(jl_function_t* fn, const std::vector<TypeId>&
         // it's not worth it to check hasmethod earlier, since for non-bottom returning cases,
         // it's implied to be true (and so the happy path performs one less julia call)
 
-        jl_function_t* has_method_fn = ctx.jl_env.module_cache.base_mod.get_fn("hasmethod");
-        jl_value_t* has_method_val   = jl_call2(has_method_fn, fn, type_tuple);
+        jl_value_t* has_method_fn  = ctx.jl_env.module_cache.base_mod.get_fn("hasmethod");
+        jl_value_t* has_method_val = jl_call2(has_method_fn, fn, type_tuple);
 
         if (check_exceptions()) {
             std::cerr << "the above Julia exception occured while trying to check if a function "
