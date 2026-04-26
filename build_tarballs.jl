@@ -1,6 +1,13 @@
 using BinaryBuilder, Pkg
 
-name = "stc"
+name = "STC"
+
+prod_dir = joinpath(@__DIR__, "products")
+if isdir(prod_dir)
+    for item in readdir(prod_dir; join=true)
+        rm(item, recursive=true, force=true)
+    end
+end
 
 # a bit hacky, but keeps the CMake file as the single source of truth for versioning
 cmake_content = read("CMakeLists.txt", String)
@@ -91,4 +98,4 @@ products = [
 
 min_julia_ver = minimum(julia_versions)
 build_tarballs(ARGS, name, version, sources, script, platforms, products, dependencies;
-    julia_compat = "$(min_julia_ver.major).$(min_julia_ver.minor)", preferred_gcc_version=v"12")
+    julia_compat="$(min_julia_ver.major).$(min_julia_ver.minor)", preferred_gcc_version=v"12")
