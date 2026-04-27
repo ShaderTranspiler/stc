@@ -618,7 +618,7 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
             return make_binop(BinOpKind::sub);
         if (fn_identifier == sym_asterisk)
             return make_binop(BinOpKind::mul);
-        if (fn_identifier == sym_div)
+        if (fn_identifier == sym_div || fn_identifier == sym_slash)
             return make_binop(BinOpKind::div);
         if (fn_identifier == sym_caret)
             return make_binop(BinOpKind::pow);

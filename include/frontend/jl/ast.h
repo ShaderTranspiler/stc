@@ -551,16 +551,22 @@ struct FunctionCall : public Expr {
     NodeId target_fn;
     std::vector<NodeId> args;
 
-    explicit FunctionCall(SrcLocationId location, NodeId target_fn, std::vector<NodeId> args)
-        : Expr{location, NodeKind::FnCall}, target_fn{target_fn}, args{std::move(args)} {
+    explicit FunctionCall(SrcLocationId location, NodeId target_fn, std::vector<NodeId> args,
+                          bool is_broadcast)
+        : Expr{location, NodeKind::FnCall, static_cast<uint8_t>(is_broadcast)},
+          target_fn{target_fn},
+          args{std::move(args)} {
 
         ASSERT_NOT_NULL(target_fn);
         ASSERT_CONTAINS_NO_NULL(args);
     }
 
     explicit FunctionCall(SrcLocationId location, NodeId target_fn,
-                          std::initializer_list<NodeId> args)
-        : FunctionCall{location, target_fn, std::vector<NodeId>{args}} {}
+                          std::initializer_list<NodeId> args, bool is_broadcast)
+        : FunctionCall{location, target_fn, std::vector<NodeId>{args}, is_broadcast} {}
+
+    bool is_broadcast() const { return static_cast<bool>(node_storage()); }
+    void set_is_broadcast(bool value) { _node_storage = static_cast<uint8_t>(value); }
 
     SAME_NODE_KIND_DEF(NodeKind::FnCall)
 };

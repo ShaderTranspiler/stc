@@ -91,22 +91,39 @@ int run(int argc, char* argv[]) {
             config.warn_on_fn_forward = true;
         else if (arg == "-Wjl-query")
             config.warn_on_jl_sema_query = true;
-        else if (arg == "--err-dump-none")
-            config.err_dump_verbosity = DumpVerbosity::None;
-        else if (arg == "--err-dump-partial")
-            config.err_dump_verbosity = DumpVerbosity::Partial;
-        else if (arg == "--err-dump-verbose")
-            config.err_dump_verbosity = DumpVerbosity::Verbose;
-        else if (arg == "--it") {
+        else if (arg == "--err-dump") {
             if (i + 1 >= argc) {
-                std::cerr << "--it must be followed by the number of iterations";
+                std::cerr << "--err-dump must be followed by a verbosity level\n";
                 return 1;
             }
 
-            auto maybe_ite_count = try_parse_size_t(std::string{argv[i + 1]});
+            std::string_view verbosity{argv[i + 1]};
+
+            if (verbosity == "none")
+                config.err_dump_verbosity = DumpVerbosity::None;
+            else if (verbosity == "partial")
+                config.err_dump_verbosity = DumpVerbosity::Partial;
+            else if (verbosity == "verbose")
+                config.err_dump_verbosity = DumpVerbosity::Verbose;
+            else {
+                std::cerr << fmt::format("'{}' is not a valid error dumping verbosity level "
+                                         "(options: none, partial, verbose)\n",
+                                         verbosity);
+                return 1;
+            }
+
+            i++;
+        } else if (arg == "--it") {
+            if (i + 1 >= argc) {
+                std::cerr << "--it must be followed by the number of iterations\n";
+                return 1;
+            }
+
+            std::string next_arg{argv[i + 1]};
+            auto maybe_ite_count = try_parse_size_t(next_arg);
 
             if (!maybe_ite_count.has_value()) {
-                std::cerr << "--it followed by a non-numeric string";
+                std::cerr << "--it followed by a non-numeric string\n";
                 return 1;
             }
 
@@ -114,14 +131,15 @@ int run(int argc, char* argv[]) {
             i++;
         } else if (arg == "--cg-indent") {
             if (i + 1 >= argc) {
-                std::cerr << "--cg-indent must be followed by the width of indentation (in spaces)";
+                std::cerr
+                    << "--cg-indent must be followed by the width of indentation (in spaces)\n";
                 return 1;
             }
 
             auto maybe_cg_indent = try_parse_size_t(std::string{argv[i + 1]});
 
             if (!maybe_cg_indent.has_value()) {
-                std::cerr << "--cg-indent followed by a non-numeric string";
+                std::cerr << "--cg-indent followed by a non-numeric string\n";
                 return 1;
             }
 
@@ -129,7 +147,7 @@ int run(int argc, char* argv[]) {
             i++;
         } else if (arg == "-o") {
             if (i + 1 >= argc) {
-                std::cerr << "-o must be followed by the output file's path";
+                std::cerr << "-o must be followed by the output file's path\n";
                 return 1;
             }
 
@@ -137,7 +155,7 @@ int run(int argc, char* argv[]) {
             i++;
         } else if (arg == "--gl-version") {
             if (i + 1 >= argc) {
-                std::cerr << "--gl-version must be followed by the desired OpenGL version";
+                std::cerr << "--gl-version must be followed by the desired OpenGL version\n";
                 return 1;
             }
 
@@ -174,8 +192,7 @@ int run(int argc, char* argv[]) {
     jl_init();
     STC_CHECK_EXCEPTIONS
 
-    STC_EVAL_AND_CHECK("import JuliaGLM");
-    STC_EVAL_AND_CHECK("import STJL");
+    STC_EVAL_AND_CHECK("using JuliaGLM");
 
     std::cout << "starting transpilation...\n";
 

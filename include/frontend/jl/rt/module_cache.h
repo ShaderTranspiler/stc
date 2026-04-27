@@ -82,11 +82,7 @@ public:
     JuliaModule& core_mod; // Core
     JuliaModule& meta_mod; // Base.Meta
     JuliaModule& comp_mod; // Core.Compiler
-    JuliaModule& glm_mod;
-
-    // shorthands for common functions
-    jl_value_t* meta_parse     = nullptr;
-    jl_value_t* comp_ret_types = nullptr;
+    JuliaModule& glm_mod;  // Main.JuliaGLM
 
 private:
     [[nodiscard]] JuliaModule& register_mod(std::string_view mod_path, jl_module_t* mod);

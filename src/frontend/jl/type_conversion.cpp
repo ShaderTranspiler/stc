@@ -53,18 +53,35 @@ jl_datatype_t* TypeToJLVisitor::visit(FloatTD float_td) {
 }
 
 jl_datatype_t* TypeToJLVisitor::visit(VectorTD vec_td) {
+#define STC_VEC_N_CASES(prefix)                                                                    \
+    if (vec_td.component_count == 2)                                                               \
+        return type_cache.prefix##vec2;                                                            \
+    if (vec_td.component_count == 3)                                                               \
+        return type_cache.prefix##vec3;                                                            \
+    if (vec_td.component_count == 4)                                                               \
+        return type_cache.prefix##vec4;
+
     const auto& comp_td = type_pool.get_td(vec_td.component_type_id);
     if (comp_td.is<FloatTD>()) {
         FloatTD comp_ty = comp_td.as<FloatTD>();
 
         if (comp_ty.width == 32 && comp_ty.enc == FloatTD::Encoding::ieee754) {
-            if (vec_td.component_count == 2)
-                return type_cache.vec2;
-            if (vec_td.component_count == 3)
-                return type_cache.vec3;
-            if (vec_td.component_count == 4)
-                return type_cache.vec4;
+            STC_VEC_N_CASES()
+        } else if (comp_ty.width == 64 && comp_ty.enc == FloatTD::Encoding::ieee754) {
+            STC_VEC_N_CASES(d)
         }
+    } else if (comp_td.is<IntTD>()) {
+        IntTD comp_ty = comp_td.as<IntTD>();
+
+        if (comp_ty.width == 32) {
+            if (comp_ty.is_signed) {
+                STC_VEC_N_CASES(i)
+            } else {
+                STC_VEC_N_CASES(u)
+            }
+        }
+    } else if (comp_td.is<BoolTD>()) {
+        STC_VEC_N_CASES(b)
     }
 
     jl_value_t* n_tp = jl_box_long(vec_td.component_count);

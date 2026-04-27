@@ -87,7 +87,7 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
                 return parsed;
         }
 
-        error(fmt::format("unsupported Julia type: {}", jl_symbol_name(tsym)));
+        fail(fmt::format("unsupported Julia type: {}", jl_symbol_name(tsym)));
         return TypeId::null_id();
     }
 
@@ -109,7 +109,7 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
 
         if (type_base_sym == sym_cache.Vector) {
             if (type_nargs != 2) {
-                error("invalid Vector type, it must be in the form Vector{T}");
+                fail("invalid Vector type, it must be in the form Vector{T}");
                 return TypeId::null_id();
             }
 
@@ -121,7 +121,7 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
             return ctx.type_pool.any_array_td(res_el_type);
         }
 
-        error("general parametric types are currently not supported");
+        fail("general parametric types are currently not supported");
         return TypeId::null_id();
     }
 
@@ -189,7 +189,7 @@ NodeId JLParser::parse(jl_value_t* node) {
         jl_value_t* inner_v = safe_fieldref(node, 0, "value");
 
         if (!jl_is_symbol(inner_v))
-            return error("QuoteNode-s not wrapping Symbol-s are currently not supported");
+            return fail("QuoteNode-s not wrapping Symbol-s are currently not supported");
 
         auto* sym = reinterpret_cast<jl_sym_t*>(inner_v);
 
@@ -234,10 +234,9 @@ NodeId JLParser::parse(jl_value_t* node) {
         return emplace_node<Int64Literal>(cur_loc, value);
     }
 
-    // TODO: TEST ON SOME BE VM!!
     if (jl_typeis(node, ctx.jl_env.type_cache.uint128)) {
         const auto* data = reinterpret_cast<const uint64_t*>(node);
-        uint64_t hi, lo; // NOLINT(cppcoreguidelines-init-variables)
+        uint64_t hi = 0, lo = 0;
 
         if constexpr (std::endian::native == std::endian::little) {
             lo = data[0];
@@ -246,8 +245,7 @@ NodeId JLParser::parse(jl_value_t* node) {
             lo = data[1];
             hi = data[0];
         } else {
-            throw std::runtime_error{
-                "Using UInt128 literals is not supported on mixed-endian systems"};
+            return fail("using UInt128 literals is not supported on mixed-endian systems");
         }
 
         return emplace_node<UInt128Literal>(cur_loc, hi, lo);
@@ -296,15 +294,10 @@ NodeId JLParser::parse_code(std::string_view code) {
 
     const ScopeGuard jl_gc_pop_guard{[]() { JL_GC_POP(); }};
 
-    jl_value_t* meta_mod_v = jl_get_global(jl_base_module, jl_symbol("Meta"));
-    if (meta_mod_v == nullptr || !jl_is_module(meta_mod_v))
-        throw std::logic_error{"Failed to look up Meta module inside Base"};
+    jl_value_t* parse_fn = ctx.jl_env.module_cache.meta_mod.get_fn("parse", false);
 
-    auto* meta_mod = reinterpret_cast<jl_module_t*>(meta_mod_v);
-
-    jl_value_t* parse_fn = jl_get_global(meta_mod, jl_symbol("parse"));
     if (parse_fn == nullptr)
-        throw std::logic_error{"Failed to look up parse function inside the Meta module"};
+        return fail("failed to load parse function from the Meta module");
 
     // implemented as a simple memcpy in libjulia, avoids strlen (==> null termination agnostic)
     code_jl_str = jl_pchar_to_string(code.data(), code.size());
@@ -312,8 +305,7 @@ NodeId JLParser::parse_code(std::string_view code) {
     parsed_expr = jl_call1(parse_fn, code_jl_str);
 
     if (check_exceptions())
-        throw std::runtime_error{
-            "Julia exception while trying to parse code string using Meta.parse"};
+        return fail("Julia exception while trying to parse code string using Meta.parse");
 
     return parse(parsed_expr);
 }
@@ -350,7 +342,7 @@ jl_value_t* JLParser::unwrap_layout_qual(jl_expr_t* lq_expr, std::vector<QualKin
         if (auto* lq_opt_expr = to_expr_if(lq_opt_v, sym_cache.eq)) {
             jl_value_t* opt_name_v = jl_exprarg(lq_opt_expr, 0);
             if (!jl_is_symbol(opt_name_v)) {
-                error("only symbols are allowed on the lhs of a layout option");
+                fail("only symbols are allowed on the lhs of a layout option");
                 return nullptr;
             }
 
@@ -369,8 +361,8 @@ jl_value_t* JLParser::unwrap_layout_qual(jl_expr_t* lq_expr, std::vector<QualKin
                 int64_t value_i64 = jl_unbox_int64(rhs_v);
 
                 if (value_i64 < i32_min || value_i64 > i32_max) {
-                    error("layout option values have to be 32 bit int literals, or 64 bit int "
-                          "literals convertible to 32 bits without truncation");
+                    fail("layout option values have to be 32 bit int literals, or 64 bit int "
+                         "literals convertible to 32 bits without truncation");
                     return nullptr;
                 }
 
@@ -380,8 +372,8 @@ jl_value_t* JLParser::unwrap_layout_qual(jl_expr_t* lq_expr, std::vector<QualKin
         } else if (jl_is_symbol(lq_opt_v)) {
             opt_name_sym = safe_cast<jl_sym_t>(lq_opt_v);
         } else {
-            error("only symbols and assignment expressions are allowed in a layout qualifier's "
-                  "option");
+            fail("only symbols and assignment expressions are allowed in a layout qualifier's "
+                 "option");
             return nullptr;
         }
 
@@ -389,17 +381,17 @@ jl_value_t* JLParser::unwrap_layout_qual(jl_expr_t* lq_expr, std::vector<QualKin
 
         auto qual = try_parse_qual(opt_name);
         if (!qual.has_value() || !is_layout_qual(*qual)) {
-            error(fmt::format("invalid layout qualifier option: {}", opt_name));
+            fail(fmt::format("invalid layout qualifier option: {}", opt_name));
             return nullptr;
         }
 
         if (has_value && is_valueless_layout_qual(*qual)) {
-            error(fmt::format("layout option '{}' does not expect a value", opt_name));
+            fail(fmt::format("layout option '{}' does not expect a value", opt_name));
             return nullptr;
         }
 
         if (!has_value && is_value_layout_qual(*qual)) {
-            error(fmt::format("layout option '{}' expects a value", opt_name));
+            fail(fmt::format("layout option '{}' expects a value", opt_name));
             return nullptr;
         }
 
@@ -460,12 +452,12 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
         }
 
         if (!qual.has_value())
-            return error("non-qualifier macro calls are currently not supported");
+            return fail("non-qualifier macro calls are currently not supported");
 
         quals.emplace_back(*qual);
 
         if (nargs == 2)
-            return error("empty qualifier target is not allowed");
+            return fail("empty qualifier target is not allowed");
 
         expr_it_v = jl_exprarg(expr_it, 2);
     }
@@ -476,7 +468,7 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
 
     Decl* decl = ctx.get_and_dyn_cast<Decl>(decl_id);
     if (decl == nullptr)
-        return error("qualifiers can only be applied to declarations");
+        return fail("qualifiers can only be applied to declarations");
 
     assert(decl->qualifiers.is_null());
     QualId qual_id   = !quals.empty() ? ctx.qual_pool.emplace(std::move(quals), lq_payloads).first
@@ -539,9 +531,9 @@ NodeId JLParser::parse_expr(jl_expr_t* expr) {
         return emplace_node<ContinueStmt>(cur_loc);
 
     if (head == sym_cache.arrow)
-        return error("arrow functions are not currently supported");
+        return fail("arrow functions are not currently supported");
 
-    error("unsupported Expr node in Julia source code:");
+    fail("unsupported Expr node in Julia source code:");
 
     jl_value_t* dump_fn = ctx.jl_env.module_cache.base_mod.get_fn("dump");
     jl_call1(dump_fn, reinterpret_cast<jl_value_t*>(expr));
@@ -620,12 +612,12 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
 
     // function(x::T) where {T <: Int} ... end
     if (header->head == sym_cache.where)
-        return error("type parameters in method definitions are not supported currently (i.e. "
-                     "using 'where' in the header)");
+        return fail("type parameters in method definitions are not supported currently (i.e. "
+                    "using 'where' in the header)");
 
     // function() ... end
     if (header->head == sym_cache.tuple)
-        return error("anonymous functions are not currently supported");
+        return fail("anonymous functions are not currently supported");
 
     TypeId expl_ret_type = TypeId::null_id();
     // function f()::Int ... end
@@ -707,7 +699,7 @@ NodeId JLParser::parse_param_decl(jl_value_t* param) {
 
         // TODO: kwargs
         if (param_expr->head == sym_cache.parameters)
-            return error("kwargs are currently not supported");
+            return fail("kwargs are currently not supported");
 
         if (param_expr->head == sym_cache.kw) {
             if (jl_expr_nargs(param_expr) != 2)
@@ -723,7 +715,7 @@ NodeId JLParser::parse_param_decl(jl_value_t* param) {
         param_expr = safe_cast<jl_expr_t>(param);
 
         if (param_expr->head == sym_cache.dots)
-            return error("variadic arguments are currently not supported");
+            return fail("variadic arguments are currently not supported");
 
         if (param_expr->head == sym_cache.dbl_col) {
             auto [inner, annot_type] = parse_type_annotation(param_expr);
@@ -795,32 +787,71 @@ NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
 }
 
 NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
-    assert(expr->head == sym_cache.call);
+    assert(expr->head == sym_cache.call || expr->head == sym_cache.dot);
 
     SrcLocationId call_loc = cur_loc;
 
     if (nargs == 0)
         return internal_error("function call expression with zero arguments");
 
-    NodeId parsed_target_fn = parse(jl_exprarg(expr, 0));
+    // regular/infix broadcast calls need to be dissected differently
+    // but their processing logic is identical otherwise
+    // f.(x, y, z)  ->  (.    f  tuple (x y z))
+    // f(x, y, z)   ->  (call f  x y z)
+    // x .+ y       ->  (call .+ x y)
+    // x + y        ->  (call +  x y)
+
+    // catches regular broadcast calls immediately
+    bool is_broadcast       = expr->head == sym_cache.dot;
+    NodeId parsed_target_fn = NodeId::null_id();
+
+    jl_value_t* target_fn_v = jl_exprarg(expr, 0);
+    if (!is_broadcast && jl_is_symbol(target_fn_v)) {
+        assert(expr->head == sym_cache.call);
+        std::string_view fn_name{jl_symbol_name(safe_cast<jl_sym_t>(target_fn_v))};
+
+        // prefix broadcast calls, strip first symbol
+        if (fn_name.starts_with('.')) {
+            is_broadcast = true;
+
+            std::string_view target_fn = fn_name.substr(1);
+            NodeId sym_lit   = emplace_node<SymbolLiteral>(cur_loc, ctx.sym_pool.get_id(target_fn));
+            parsed_target_fn = emplace_node<DeclRefExpr>(cur_loc, sym_lit);
+        } else {
+            parsed_target_fn = parse(target_fn_v);
+        }
+    } else {
+        parsed_target_fn = parse(target_fn_v);
+    }
+
+    jl_expr_t* params_expr = expr;
+    size_t first_param_idx = 1;
+
+    if (expr->head == sym_cache.dot) {
+        jl_value_t* params_tuple_v = jl_exprarg(expr, 1);
+
+        if (!is_expr(params_tuple_v, sym_cache.tuple))
+            return fail("unexpected broadcast call layout (second arg is not a :tuple Expr)");
+
+        params_expr     = safe_cast<jl_expr_t>(params_tuple_v);
+        first_param_idx = 0;
+    }
+
+    size_t params_n = jl_expr_nargs(params_expr);
 
     std::vector<NodeId> params;
-    for (size_t i = 1; i < nargs; i++) {
-        jl_value_t* arg = jl_exprarg(expr, i);
+    for (size_t i = first_param_idx; i < params_n; i++) {
+        jl_value_t* arg = jl_exprarg(params_expr, i);
 
-        // handle kwargs
-        auto* arg_expr = try_cast<jl_expr_t>(arg);
-        if (arg_expr != nullptr && arg_expr->head == sym_cache.parameters) {
-            // TODO
-            // args traversal where arg is either Expr(:kw, k, v) or Symbol (<=> Expr(:kw, k, k))
-            throw std::runtime_error{"Keyword arguments are not currently supported"};
-        }
+        // FEATURE: handle kwargs
+        if (is_expr(arg, sym_cache.parameters) || is_expr(arg, sym_cache.kw))
+            return fail("Keyword arguments are currently not supported");
 
         NodeId parsed_arg = parse(arg);
         params.push_back(parsed_arg);
     }
 
-    return emplace_node<FunctionCall>(call_loc, parsed_target_fn, std::move(params));
+    return emplace_node<FunctionCall>(call_loc, parsed_target_fn, std::move(params), is_broadcast);
 }
 
 NodeId JLParser::parse_if(jl_expr_t* expr, size_t nargs) {
@@ -888,6 +919,10 @@ NodeId JLParser::parse_dot_chain(jl_expr_t* expr, size_t nargs) {
 
     if (nargs != 2)
         return internal_error("unexpected dot expr layout (more or less than two args)");
+
+    // check if expr is a broadcast call first (and redirect if necessary)
+    if (is_expr(jl_exprarg(expr, 1), sym_cache.tuple))
+        return parse_call(expr, nargs);
 
     jl_value_t* current_lhs = jl_exprarg(expr, 0);
     jl_value_t* current_rhs = jl_exprarg(expr, 1);
@@ -966,14 +1001,14 @@ NodeId JLParser::parse_ref(jl_expr_t* expr, size_t nargs) {
 
 NodeId JLParser::parse_field_decl(jl_value_t* field_decl_v) {
     if (jl_is_symbol(field_decl_v))
-        return error("field declaration without explicit type annotation is not allowed");
+        return fail("field declaration without explicit type annotation is not allowed");
 
     jl_expr_t* field_decl_expr =
         jl_is_expr(field_decl_v) ? safe_cast<jl_expr_t>(field_decl_v) : nullptr;
 
     if (field_decl_expr == nullptr || field_decl_expr->head != sym_cache.dbl_col)
-        return error("only typed field declarations are supported inside struct definitions, "
-                     "inner constructors are not allowed");
+        return fail("only typed field declarations are supported inside struct definitions, "
+                    "inner constructors are not allowed");
 
     auto [field_id_v, field_type] = parse_type_annotation(field_decl_expr);
 
@@ -1018,10 +1053,10 @@ NodeId JLParser::parse_struct(jl_expr_t* expr, size_t nargs) {
         assert(struct_id_expr != nullptr);
 
         if (struct_id_expr->head == sym_cache.curly)
-            return error("parametric composite types are not supported");
+            return fail("parametric composite types are not supported");
 
         if (struct_id_expr->head == sym_cache.subtype_op)
-            return error("composite subtypes are not supported");
+            return fail("composite subtypes are not supported");
 
         return internal_error(
             "unexpected struct definition layout (second arg is an expr, but not {T} or <:)");
@@ -1031,7 +1066,7 @@ NodeId JLParser::parse_struct(jl_expr_t* expr, size_t nargs) {
     SymbolId struct_id_sym = ctx.sym_pool.get_id(struct_id);
 
     if (!ctx.type_pool.get_struct_td(struct_id_sym).is_null())
-        return error(fmt::format("multiple definitions found for type '{}'", struct_id));
+        return fail(fmt::format("multiple definitions found for type '{}'", struct_id));
 
     if (!jl_is_expr(field_decls_arg))
         return internal_error("unexpected struct definition layout (third arg is non-expr)");
@@ -1071,7 +1106,7 @@ NodeId JLParser::parse_struct(jl_expr_t* expr, size_t nargs) {
 
         bool inserted = field_names.emplace(fdecl->identifier).second;
         if (!inserted)
-            return error("struct with repeated field names is not allowed");
+            return fail("struct with repeated field names is not allowed");
 
         sdecl->field_decls.emplace_back(parsed_decl);
         field_infos.emplace_back(fdecl->identifier, fdecl->type);
@@ -1099,7 +1134,7 @@ NodeId JLParser::parse_log_op(jl_expr_t* expr, size_t nargs) {
     return emplace_node<LogicalBinOp>(base_loc, lhs, rhs, expr->head == sym_cache.dbl_amper);
 }
 
-NodeId JLParser::error(std::string_view msg, SrcLocationId loc_id) {
+NodeId JLParser::fail(std::string_view msg, SrcLocationId loc_id) {
     if (loc_id.is_null())
         loc_id = cur_loc;
 

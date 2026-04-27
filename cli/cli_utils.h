@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <string>
 
 namespace stc::cli {
 
@@ -73,9 +74,9 @@ inline void print_help() {
     std::cout << '\n';
 
     std::cout << stc::colored("errors and warnings:\n", title_col);
-    std::cout << "  " << stc::colored("--err-dump-none",    flag_col)   << "      disable AST dumping on errors (default)\n";
-    std::cout << "  " << stc::colored("--err-dump-partial", flag_col)   << "   dump the AST subtree that caused the given error\n";
-    std::cout << "  " << stc::colored("--err-dump-verbose", flag_col)   << "   dump the full AST at every error reported\n";
+    std::cout << "  " << stc::colored("--err-dump none",    flag_col)   << "      disable AST dumping on errors (default)\n";
+    std::cout << "  " << stc::colored("--err-dump partial", flag_col)   << "   dump the AST subtree that caused the given error\n";
+    std::cout << "  " << stc::colored("--err-dump verbose", flag_col)   << "   dump the full AST at every error reported\n";
     std::cout << "  " << stc::colored("-Wfwd-fns",          flag_col)   << "            warn when a function call is forwarded (see --fwd-fns)\n";
     std::cout << "  " << stc::colored("-Wjl-query",         flag_col)   << "           warn when the Julia runtime was queried for function call resolution\n";
     // clang-format on
@@ -84,8 +85,8 @@ inline void print_help() {
 inline void print_version_info() {
     static constexpr auto val_col = ansi_codes::yellow;
 
-    std::string header{"  Shader Transpiler Core (STC)"};
-    std::string stc_ver{" v" STC_META_VERSION "  "};
+    std::string header{"       Shader Transpiler Core (STC)"};
+    std::string stc_ver{" v" STC_META_VERSION "        "};
 
     std::string sep(header.size() + stc_ver.size(), '-');
 
@@ -97,13 +98,13 @@ inline void print_version_info() {
     std::cout << sep << "\n\n";
 
     // clang-format off
-    std::cout << "target:       " << stc::colored(STC_META_SYSTEM_ARCH "-" STC_META_SYSTEM_NAME, val_col) << '\n';
-    std::cout << "compiler:     " << stc::colored(STC_META_COMPILER_ID " " STC_META_COMPILER_VERSION, val_col) << '\n';
-    std::cout << "build type:   " << stc::colored(STC_META_BUILD_TYPE, val_col) << '\n';
-    std::cout << "build commit: " << stc::colored(STC_META_BUILD_COMMIT, val_col) << '\n';
-    std::cout << "julia compat: " << stc::colored(STC_META_JULIA_VERSION, val_col) << '\n';
+    std::cout << "target:         " << stc::colored(STC_META_SYSTEM_ARCH "-" STC_META_SYSTEM_NAME, val_col) << '\n';
+    std::cout << "compiler:       " << stc::colored(STC_META_COMPILER_ID " " STC_META_COMPILER_VERSION, val_col) << '\n';
+    std::cout << "build type:     " << stc::colored(STC_META_BUILD_TYPE, val_col) << '\n';
+    std::cout << "build commit:   " << stc::colored(STC_META_BUILD_COMMIT, val_col) << '\n';
+    std::cout << "julia compat:   " << stc::colored(STC_META_JULIA_VERSION, val_col) << '\n';
     std::cout << "\n";
-    std::cout << "build date:   ";
+    std::cout << "build date:     ";
     // clang-format on
 
     if (stc::TerminalInfo::supports_color())
@@ -114,7 +115,7 @@ inline void print_version_info() {
     if (stc::TerminalInfo::supports_color())
         std::cout << ansi_codes::reset;
 
-    std::cout << "repo link:    " << stc::colored("https://github.com/szgerii/stc", val_col)
+    std::cout << "repo link:      " << stc::colored("https://github.com/szgerii/stc", val_col)
               << '\n';
 }
 

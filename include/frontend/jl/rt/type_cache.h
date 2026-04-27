@@ -24,9 +24,11 @@ struct JuliaTypeCache {
 
     jl_unionall_t* array_ua = jl_array_type;
 
-    jl_datatype_t* vec2;
-    jl_datatype_t* vec3;
-    jl_datatype_t* vec4;
+    jl_datatype_t *vec2, *vec3, *vec4;
+    jl_datatype_t *dvec2, *dvec3, *dvec4;
+    jl_datatype_t *ivec2, *ivec3, *ivec4;
+    jl_datatype_t *uvec2, *uvec3, *uvec4;
+    jl_datatype_t *bvec2, *bvec3, *bvec4;
 
     jl_unionall_t* vec_nt_ua;
     jl_unionall_t* vec_2t_ua;
@@ -58,9 +60,21 @@ struct JuliaTypeCache {
         uint128 = get_dt_from(mod_cache.core_mod, "UInt128");
         int128  = get_dt_from(mod_cache.core_mod, "Int128");
 
-        vec2 = get_dt_from(mod_cache.glm_mod, "Vec2");
-        vec3 = get_dt_from(mod_cache.glm_mod, "Vec3");
-        vec4 = get_dt_from(mod_cache.glm_mod, "Vec4");
+        vec2  = get_dt_from(mod_cache.glm_mod, "Vec2");
+        vec3  = get_dt_from(mod_cache.glm_mod, "Vec3");
+        vec4  = get_dt_from(mod_cache.glm_mod, "Vec4");
+        dvec2 = get_dt_from(mod_cache.glm_mod, "DVec2");
+        dvec3 = get_dt_from(mod_cache.glm_mod, "DVec3");
+        dvec4 = get_dt_from(mod_cache.glm_mod, "DVec4");
+        ivec2 = get_dt_from(mod_cache.glm_mod, "IVec2");
+        ivec3 = get_dt_from(mod_cache.glm_mod, "IVec3");
+        ivec4 = get_dt_from(mod_cache.glm_mod, "IVec4");
+        uvec2 = get_dt_from(mod_cache.glm_mod, "UVec2");
+        uvec3 = get_dt_from(mod_cache.glm_mod, "UVec3");
+        uvec4 = get_dt_from(mod_cache.glm_mod, "UVec4");
+        bvec2 = get_dt_from(mod_cache.glm_mod, "BVec2");
+        bvec3 = get_dt_from(mod_cache.glm_mod, "BVec3");
+        bvec4 = get_dt_from(mod_cache.glm_mod, "BVec4");
 
         vec_nt_ua = get_ua_from(mod_cache.glm_mod, "VecNT");
         vec_2t_ua = get_ua_from(mod_cache.glm_mod, "Vec2T");

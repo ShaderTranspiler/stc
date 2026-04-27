@@ -85,7 +85,7 @@ private:
     }
 
     TypeId resolve_type(jl_value_t* type);
-    NodeId error(std::string_view msg, SrcLocationId loc_id = SrcLocationId::null_id());
+    NodeId fail(std::string_view msg, SrcLocationId loc_id = SrcLocationId::null_id());
     NodeId internal_error(std::string_view msg, SrcLocationId loc_id = SrcLocationId::null_id());
 };
 

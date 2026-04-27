@@ -31,6 +31,7 @@ public:
         sym_plus     = sir_ctx.sym_pool.get_id("+");
         sym_minus    = sir_ctx.sym_pool.get_id("-");
         sym_asterisk = sir_ctx.sym_pool.get_id("*");
+        sym_slash    = sir_ctx.sym_pool.get_id("/");
         sym_div      = sir_ctx.sym_pool.get_id("div");
         sym_caret    = sir_ctx.sym_pool.get_id("^");
         sym_perc     = sir_ctx.sym_pool.get_id("%");
@@ -100,9 +101,9 @@ private:
     // skips id-lookup roundtrip for nodes that have already been looked up
     SIRNodeId visit_ptr(Expr* node);
 
-    SymbolId sym_plus, sym_minus, sym_asterisk, sym_div, sym_caret, sym_perc, sym_rem, sym_dbl_eq,
-        sym_neq, sym_lt, sym_leq, sym_gt, sym_geq, sym_xor, sym_amper, sym_pipe, sym_bang,
-        sym_tilde;
+    SymbolId sym_plus, sym_minus, sym_asterisk, sym_slash, sym_div, sym_caret, sym_perc, sym_rem,
+        sym_dbl_eq, sym_neq, sym_lt, sym_leq, sym_gt, sym_geq, sym_xor, sym_amper, sym_pipe,
+        sym_bang, sym_tilde;
 };
 
 } // namespace stc::jl

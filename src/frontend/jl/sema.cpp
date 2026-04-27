@@ -1928,7 +1928,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
 // TODO: add jl dumps for types
 // TODO: print inferred sig
 TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& arg_types,
-                                   const Expr& base_expr) {
+                                   bool is_broadcast, const Expr& base_expr) {
     assert(fn != nullptr);
 
     // only actually alloc and init string if needed for an error msg
@@ -1941,9 +1941,10 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& ar
                          error_suffix.get()),
              base_expr);
 
-    jl_value_t* type_tuple  = nullptr;
-    jl_value_t* res_jl_type = nullptr;
-    JL_GC_PUSH2(&type_tuple, &res_jl_type); // NOLINT
+    jl_value_t* type_tuple         = nullptr;
+    jl_value_t* type_tuple_with_fn = nullptr;
+    jl_value_t* res_jl_type        = nullptr;
+    JL_GC_PUSH3(&type_tuple, &type_tuple_with_fn, &res_jl_type); // NOLINT
 
     const ScopeGuard jl_gc_pop_guard{[&]() { JL_GC_POP(); }};
 
@@ -1964,8 +1965,23 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& ar
         arg_jl_types.emplace_back(reinterpret_cast<jl_value_t*>(dt));
     }
 
-    type_tuple  = jl_apply_tuple_type_v(arg_jl_types.data(), arg_jl_types.size());
-    res_jl_type = jl_call2(ret_type_fn, fn, type_tuple);
+    type_tuple = jl_apply_tuple_type_v(arg_jl_types.data(), arg_jl_types.size());
+
+    if (is_broadcast) {
+        jl_value_t* broadcast_fn = ctx.jl_env.module_cache.base_mod.get_fn("broadcast");
+        jl_value_t* fn_type      = jl_typeof(fn);
+
+        std::vector<jl_value_t*> args_with_fn{};
+        args_with_fn.resize(arg_jl_types.size() + 1);
+        args_with_fn[0] = fn_type;
+        std::copy(arg_jl_types.begin(), arg_jl_types.end(), args_with_fn.begin() + 1);
+
+        type_tuple_with_fn = jl_apply_tuple_type_v(args_with_fn.data(), args_with_fn.size());
+        res_jl_type        = jl_call2(ret_type_fn, broadcast_fn, type_tuple_with_fn);
+    } else {
+        type_tuple  = jl_apply_tuple_type_v(arg_jl_types.data(), arg_jl_types.size());
+        res_jl_type = jl_call2(ret_type_fn, fn, type_tuple);
+    }
 
     if (check_exceptions()) {
         std::cerr << "the above julia exception occured while trying to resolve the return type of "
@@ -1975,12 +1991,26 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& ar
                     base_expr);
     }
 
+    auto print_infer_info = [&]() {
+        if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
+            std::cerr << "\nFunction symbol:      " << get_jl_fn_name(fn)
+                      << (is_broadcast ? " (broadcast)" : "");
+            std::cerr << "\nInferred signature:   ";
+            jl_static_show(jl_stderr_stream(), type_tuple);
+            std::cerr << "\nInferred return type: ";
+            jl_static_show(jl_stderr_stream(), res_jl_type);
+            std::cerr << '\n';
+        }
+    };
+
     if (res_jl_type == jl_bottom_type) { // Union{}
         // either function is not callable with given signature, or function body never returns
         // normally (e.g. throw, infinite loop, etc. on every branch)
 
         // it's not worth it to check hasmethod earlier, since for non-bottom returning cases,
         // it's implied to be true (and so the happy path performs one less julia call)
+
+        print_infer_info();
 
         jl_value_t* has_method_fn  = ctx.jl_env.module_cache.base_mod.get_fn("hasmethod");
         jl_value_t* has_method_val = jl_call2(has_method_fn, fn, type_tuple);
@@ -2003,6 +2033,22 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& ar
                 base_expr);
         }
 
+        if (is_broadcast) {
+            std::cerr << "Inferred signature: ";
+            jl_static_show(jl_stderr_stream(), type_tuple_with_fn);
+            std::cerr << "\nInferred return type: ";
+            jl_static_show(jl_stderr_stream(), res_jl_type);
+            std::cerr << '\n';
+
+            return fail(
+                fmt::format(
+                    "Julia inferred bottom as the return type for a broadcast call. this probably "
+                    "indicates a dimension mismatch in the arguments, but could be caused "
+                    "by the target function having no valid return paths too.",
+                    error_suffix.get()),
+                base_expr);
+        }
+
         return fail(fmt::format("Julia inferred bottom as the return type, meaning the function "
                                 "execution never exits normally {}",
                                 error_suffix.get()),
@@ -2010,10 +2056,8 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& ar
     }
 
     if (!jl_is_datatype(res_jl_type) || !rt::is_concrete_type(res_jl_type)) {
-        std::cerr << "Inferred signature: ";
-        jl_static_show(jl_stderr_stream(), type_tuple);
-        std::cerr << "\nInferred return type: ";
-        jl_static_show(jl_stderr_stream(), res_jl_type);
+        print_infer_info();
+
         std::cerr << '\n';
         return fail(
             fmt::format("Julia could only infer a non-concrete return type {}", error_suffix.get()),
@@ -2022,9 +2066,12 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, const std::vector<TypeId>& ar
 
     TypeId res_type = parse_jl_type(safe_cast<jl_datatype_t>(res_jl_type), ctx);
 
-    if (res_type.is_null())
+    if (res_type.is_null()) {
+        print_infer_info();
+
         return fail(fmt::format("Julia inferred an unsupported return type {}", error_suffix.get()),
                     base_expr);
+    }
 
     return res_type;
 }
@@ -2136,32 +2183,32 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
     // exactly one of these should be non-nullptr by the end of resolution
     FunctionDecl* fn_decl       = nullptr;
-    OpaqueFunction* opaq_fn     = nullptr;
     BuiltinFunction* builtin_fn = nullptr;
+    OpaqueFunction* opaq_fn     = nullptr;
     StructDecl* struct_decl     = nullptr;
     bool resolved_fn            = false;
 
-    Expr* decl_expr = ctx.get_node(target_decl);
-    assert(decl_expr != nullptr);
+    Expr* decl_node = ctx.get_node(target_decl);
+    assert(decl_node != nullptr);
 
-    const auto* decl_base = dyn_cast<Decl>(decl_expr);
+    const auto* decl_base = dyn_cast<Decl>(decl_node);
     assert(decl_base != nullptr);
 
-    fn_decl     = dyn_cast<FunctionDecl>(decl_expr);
+    fn_decl     = dyn_cast<FunctionDecl>(decl_node);
     resolved_fn = fn_decl != nullptr;
 
     if (!resolved_fn) {
-        builtin_fn  = dyn_cast<BuiltinFunction>(decl_expr);
+        builtin_fn  = dyn_cast<BuiltinFunction>(decl_node);
         resolved_fn = builtin_fn != nullptr;
     }
 
     if (!resolved_fn) {
-        opaq_fn     = dyn_cast<OpaqueFunction>(decl_expr);
+        opaq_fn     = dyn_cast<OpaqueFunction>(decl_node);
         resolved_fn = opaq_fn != nullptr;
     }
 
     if (!resolved_fn) {
-        struct_decl = dyn_cast<StructDecl>(decl_expr);
+        struct_decl = dyn_cast<StructDecl>(decl_node);
         resolved_fn = struct_decl != nullptr;
     }
 
@@ -2173,6 +2220,13 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
     assert(fn_decl != nullptr || opaq_fn != nullptr || builtin_fn != nullptr ||
            struct_decl != nullptr);
+
+    if (builtin_fn == nullptr && opaq_fn == nullptr && fn_call.is_broadcast()) {
+        // FEATURE: auto-generate element-wise application fn
+        return fail("broadcast call to functions other than target language builtins is "
+                    "currently not supported",
+                    fn_call);
+    }
 
     std::vector<TypeId> arg_types{};
     arg_types.reserve(fn_call.args.size());
@@ -2218,8 +2272,30 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
         assert(ctx.target_info != nullptr);
 
         std::string_view fn_name_str = ctx.get_sym(builtin_fn->fn_name());
+
         TypeId ret_ty =
             ctx.target_info->builtin_fn_ret_ty_with_impl_cast(fn_name_str, arg_types).first;
+
+        // these have to be checked to avoid letting calls like cross.(vec3) through
+        if (fn_call.is_broadcast()) {
+            std::vector<TypeId> arg_el_types{};
+            arg_el_types.reserve(arg_types.size());
+
+            for (TypeId arg_type : arg_types)
+                arg_el_types.emplace_back(tpool.el_type_of(arg_type, true));
+
+            TypeId el_ret_ty =
+                ctx.target_info->builtin_fn_ret_ty_with_impl_cast(fn_name_str, arg_el_types).first;
+
+            if (!ret_ty.is_null() && el_ret_ty.is_null()) {
+                return fail(
+                    fmt::format(
+                        "broadcast call is invalid according to the target language, i.e. it has a "
+                        "collection-level overload, but not an element-level one (in call to '{}')",
+                        fn_name_str),
+                    fn_call);
+            }
+        }
 
         if (ret_ty.is_null()) {
             return fail(fmt::format("builtin function does not have an overload for the inferred "
@@ -2270,6 +2346,8 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
         if (ctx.target_info != nullptr &&
             ctx.target_info->valid_ctor_call(target_type, arg_types)) {
+            if (fn_call.is_broadcast())
+                return fail("broadcast call to constructor is not allowed", fn_call);
 
             opaq_fn->set_is_ctor(true);
 
@@ -2286,7 +2364,8 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
     }
 
     // ret_type_of_jl_call should already print any error necessary
-    TypeId ret_type = ret_type_of_jl_call(opaq_fn->jl_function, arg_types, fn_call);
+    TypeId ret_type =
+        ret_type_of_jl_call(opaq_fn->jl_function, arg_types, fn_call.is_broadcast(), fn_call);
 
     if (!ret_type.is_null() && ctx.config.warn_on_fn_forward) {
         warn(fmt::format(

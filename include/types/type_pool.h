@@ -114,7 +114,10 @@ public:
 
     [[nodiscard]] TypeId el_type_of(const TypeDescriptor& td) const;
 
-    [[nodiscard]] TypeId el_type_of(TypeId id) const { return el_type_of(get_td(id)); }
+    [[nodiscard]] TypeId el_type_of(TypeId id, bool return_self_on_not_found = false) const {
+        TypeId result = el_type_of(get_td(id));
+        return !result.is_null() || !return_self_on_not_found ? result : id;
+    }
 
     void register_builtin_str(BuiltinKind kind, std::string str);
     template <CEnumOf<BuiltinKind> T>

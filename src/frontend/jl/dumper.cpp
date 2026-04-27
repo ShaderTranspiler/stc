@@ -358,7 +358,8 @@ void JLDumper::visit_Assignment(Assignment& assign) {
 }
 
 void JLDumper::visit_FunctionCall(FunctionCall& fn_call) {
-    out << indent() << "FunctionCall:\n";
+    out << indent()
+        << fmt::format("FunctionCall (broadcast: {}):\n", fn_call.is_broadcast() ? "yes" : "no");
 
     out << indent() << dump_label("target_fn");
     inc_indent();
