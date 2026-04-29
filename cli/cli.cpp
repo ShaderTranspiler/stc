@@ -190,7 +190,9 @@ int run(int argc, char* argv[]) {
     }
 
     std::stringstream code_stream;
+    code_stream << "begin ";
     code_stream << file.rdbuf();
+    code_stream << " end";
     std::string code{code_stream.str()};
 
 #define STC_CHECK_EXCEPTIONS                                                                       \

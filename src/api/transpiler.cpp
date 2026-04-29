@@ -22,6 +22,17 @@ MaybeString transpile_parsed(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
         return std::nullopt;
     }
 
+    // unwrap nested blocks, if any
+    while (cmpd->body.size() == 1) {
+        auto* inner = jl_ctx.get_and_dyn_cast<CompoundExpr>(cmpd->body[0]);
+
+        if (inner == nullptr)
+            break;
+
+        jl_ast = jl_ctx.calculate_node_id(*inner);
+        cmpd   = inner;
+    }
+
     benchmark_tracker.sema_start();
 
     JLSema sema{jl_ctx, *cmpd};
