@@ -11,6 +11,13 @@ namespace stc {
 enum class DumpVerbosity : uint8_t { First = 0, None = First, Partial, Verbose, Last = Verbose };
 
 struct TranspilerConfig {
+    // GLSL
+    std::string target_version = "460";
+    uint32_t local_size_x      = 0; // 0 <=> do not print layout input decl for local size
+    uint32_t local_size_y      = 0;
+    uint32_t local_size_z      = 0;
+
+    // General
     uint16_t code_gen_indent         = 4;
     uint16_t dump_indent             = 2;
     DumpVerbosity err_dump_verbosity = DumpVerbosity::None;
@@ -27,7 +34,6 @@ struct TranspilerConfig {
     bool dump_parsed                 = false;
     bool dump_sema                   = false;
     bool dump_lowered                = false;
-    std::string target_version       = "460";
 };
 
 } // namespace stc

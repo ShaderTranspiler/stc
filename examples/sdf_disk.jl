@@ -10,10 +10,6 @@ function main()
 
     d = length(p) - 0.5
 
-    while true
-        h = vec3(0)
-    end
-
     local col::Vec3
     if d > 0.0
         col = vec3(0.9, 0.6, 0.3)

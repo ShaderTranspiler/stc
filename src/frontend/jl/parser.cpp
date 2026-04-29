@@ -693,6 +693,10 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
     for (size_t i = 1; i < header_nargs; i++) {
         jl_value_t* arg_v = jl_exprarg(header, i);
 
+        // manually intercept empty kwargs collection and skip it
+        if (is_expr(arg_v, sym_cache.parameters) && jl_expr_nargs(arg_v) == 0)
+            continue;
+
         NodeId arg_id = parse_qualified_decl(arg_v, &JLParser::parse_param_decl);
         if (arg_id.is_null())
             continue;

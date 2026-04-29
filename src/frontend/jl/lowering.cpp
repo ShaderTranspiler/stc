@@ -316,7 +316,7 @@ SIRNodeId JLLoweringVisitor::visit_CompoundExpr(CompoundExpr& cmpd) {
 
         // silent decls in compound expressions are the only exception to null-returning
         if (lowered.is_null()) {
-            VarDecl* vdecl = ctx.get_and_dyn_cast<VarDecl>(expr);
+            auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(expr);
 
             if (vdecl == nullptr || !vdecl->is_silent_decl()) {
                 internal_error(

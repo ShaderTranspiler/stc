@@ -96,6 +96,19 @@ extern "C" {
         STC_SET_CFG_VALUE(cfg_handle, target_version, value != nullptr ? std::string{value} : "");
     }
 
+    STC_API void stc_set_local_size(void* cfg_handle, uint32_t x, uint32_t y, uint32_t z) noexcept {
+        if (cfg_handle != nullptr) {
+            auto* tc_ptr = static_cast<TranspilerConfig*>(cfg_handle);
+
+            if (x != 0)
+                tc_ptr->local_size_x = x;
+            if (y != 0)
+                tc_ptr->local_size_y = y;
+            if (z != 0)
+                tc_ptr->local_size_z = z;
+        }
+    }
+
 #undef STC_SET_CFG_VALUE
 }
 } // namespace stc::api

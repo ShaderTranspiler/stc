@@ -31,6 +31,7 @@ extern "C" {
     STC_API void stc_set_dump_sema(void* cfg_handle, bool value) noexcept;
     STC_API void stc_set_dump_lowered(void* cfg_handle, bool value) noexcept;
     STC_API void stc_set_target_version(void* cfg_handle, const char* value) noexcept;
+    STC_API void stc_set_local_size(void* cfg_handle, uint32_t x, uint32_t y, uint32_t z) noexcept;
 }
 
 } // namespace stc::api

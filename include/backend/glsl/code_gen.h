@@ -26,6 +26,12 @@ public:
 
         out << "#version " << ctx.config.target_version << "\n\n";
         out << "// THIS CODE WAS AUTO-GENERATED USING THE STC TRANSPILER LIBRARY\n\n";
+
+        if (ctx.config.local_size_x != 0) {
+            out << fmt::format(
+                "layout(local_size_x = {}, local_size_y = {}, local_size_z = {}) in;\n\n",
+                ctx.config.local_size_x, ctx.config.local_size_y, ctx.config.local_size_z);
+        }
     }
 
     // ! this performs a move on the internal buffer
