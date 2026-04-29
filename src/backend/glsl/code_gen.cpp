@@ -108,8 +108,7 @@ std::string GLSLCodeGenVisitor::indent() const {
 void GLSLCodeGenVisitor::visit_VarDecl(VarDecl& var_decl) {
     print_quals(ctx.get_quals(var_decl.qualifiers()), out);
 
-    out << type_str(var_decl.type, ctx.type_pool, ctx.sym_pool) << ' '
-        << ctx.get_sym(var_decl.identifier);
+    out << decl_str(var_decl.type, ctx.type_pool, ctx.sym_pool, var_decl.identifier);
 
     if (!var_decl.initializer.is_null()) {
         out << " = ";
@@ -153,8 +152,7 @@ void GLSLCodeGenVisitor::visit_FunctionDecl(FunctionDecl& fn_decl) {
 void GLSLCodeGenVisitor::visit_ParamDecl(ParamDecl& param_decl) {
     print_quals(ctx.get_quals(param_decl.qualifiers()), out);
 
-    out << type_str(param_decl.param_type, ctx.type_pool, ctx.sym_pool) << ' '
-        << ctx.get_sym(param_decl.identifier);
+    out << decl_str(param_decl.param_type, ctx.type_pool, ctx.sym_pool, param_decl.identifier);
 }
 
 void GLSLCodeGenVisitor::visit_StructDecl(StructDecl& struct_decl) {
@@ -198,8 +196,7 @@ void GLSLCodeGenVisitor::visit_FieldDecl(FieldDecl& field_decl) {
 
     print_quals(ctx.get_quals(field_decl.qualifiers()), out);
 
-    out << type_str(field_decl.field_type, ctx.type_pool, ctx.sym_pool) << ' '
-        << ctx.get_sym(field_decl.identifier);
+    out << decl_str(field_decl.field_type, ctx.type_pool, ctx.sym_pool, field_decl.identifier);
 }
 
 // ===============

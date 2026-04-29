@@ -53,7 +53,10 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
 
         const TypeDescriptor* it_td = &td;
         do {
-            dims_str += fmt::format("[{}]", it_td->as<ArrayTD>().length);
+            uint32_t len     = it_td->as<ArrayTD>().length;
+            bool is_any_size = len == std::numeric_limits<uint32_t>::max();
+            dims_str += fmt::format("[{}]", !is_any_size ? std::to_string(len) : "");
+
             auto [elem_type_id, dim_length] = it_td->as<ArrayTD>();
 
             it_td = &(type_pool.get_td(elem_type_id));
@@ -82,6 +85,30 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
     assert(false && "missing type case in glsl code gen's type_str");
     error("trying to get GLSL string representation for unknown type kind");
     return "?";
+}
+
+std::string decl_str(const TypeDescriptor& td, const TypePool& type_pool,
+                     const SymbolPool& sym_pool, SymbolId name) {
+    if (td.is_array()) {
+        std::string dims_str{};
+        dims_str.reserve(16);
+
+        const TypeDescriptor* it_td = &td;
+        do {
+            uint32_t len     = it_td->as<ArrayTD>().length;
+            bool is_any_size = len == std::numeric_limits<uint32_t>::max();
+            dims_str += fmt::format("[{}]", !is_any_size ? std::to_string(len) : "");
+
+            auto [elem_type_id, dim_length] = it_td->as<ArrayTD>();
+
+            it_td = &(type_pool.get_td(elem_type_id));
+        } while (it_td->is_array());
+
+        return fmt::format("{} {}{}", type_str(*it_td, type_pool, sym_pool),
+                           sym_pool.get_symbol(name), dims_str);
+    }
+
+    return fmt::format("{} {}", type_str(td, type_pool, sym_pool), sym_pool.get_symbol(name));
 }
 
 } // namespace stc::glsl

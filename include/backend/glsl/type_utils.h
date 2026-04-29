@@ -23,10 +23,18 @@ inline std::string type_prefix(const TypeDescriptor& td) {
     return "?";
 }
 
-std::string type_str(const TypeDescriptor& td, const TypePool& pool, const SymbolPool& sym_pool);
+std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
+                     const SymbolPool& sym_pool);
+std::string decl_str(const TypeDescriptor& td, const TypePool& type_pool,
+                     const SymbolPool& sym_pool, SymbolId name);
 
 inline std::string type_str(TypeId type_id, const TypePool& type_pool, const SymbolPool& sym_pool) {
     return type_str(type_pool.get_td(type_id), type_pool, sym_pool);
+}
+
+inline std::string decl_str(TypeId type_id, const TypePool& type_pool, const SymbolPool& sym_pool,
+                            SymbolId name) {
+    return decl_str(type_pool.get_td(type_id), type_pool, sym_pool, name);
 }
 
 inline std::string_view qual_kind_to_str(QualKind kind) {
