@@ -6,7 +6,7 @@ include(FetchContent)
 
 # Version info
 
-project(ShaderTranspilerCore VERSION 0.8.4)
+project(ShaderTranspilerCore VERSION 0.8.5)
 set(STC_VERSION_SUFFIX "")
 set(STC_SOVERSION PROJECT_VERSION_MAJOR) # ! ABI version is linked to semver's major version
 
