@@ -60,6 +60,11 @@ public:
         sym_dbl_rangle = sir_ctx.sym_pool.get_id(">>");
 
         sym_main = sir_ctx.sym_pool.get_id("main");
+
+        sym_x = sir_ctx.sym_pool.get_id("x");
+        sym_y = sir_ctx.sym_pool.get_id("y");
+        sym_z = sir_ctx.sym_pool.get_id("z");
+        sym_w = sir_ctx.sym_pool.get_id("w");
     }
 
     bool pre_visit_ptr(Expr* expr);
@@ -120,6 +125,7 @@ private:
         sym_dbl_eq, sym_neq, sym_lt, sym_leq, sym_gt, sym_geq, sym_xor, sym_amper, sym_pipe,
         sym_bang, sym_tilde, sym_dbl_langle, sym_dbl_rangle;
     SymbolId sym_main;
+    SymbolId sym_x, sym_y, sym_z, sym_w;
 };
 
 } // namespace stc::jl

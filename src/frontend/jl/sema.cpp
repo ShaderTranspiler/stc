@@ -1630,13 +1630,51 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (!acc.type.is_null())
         return acc.type;
 
-    TypeId target_ty      = infer(acc.target);
+    TypeId target_ty = infer(acc.target);
+
+    if (target_ty.is_null())
+        return fail("couldn't infer type of field access node's target expression", acc);
+
     const auto& target_td = tpool.get_td(target_ty);
 
-    if (!target_td.is_struct())
+    auto* target_sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(acc.field_decl);
+    if (target_sym_lit == nullptr)
+        return internal_error("unexpected node kind in rhs of a FieldAccess expression", acc);
+
+    // CLEANUP: this is GLSL-specific rn (x/y/z field access on vec-s)
+    if (target_td.is_vector()) {
+        SymbolId field_sym = target_sym_lit->value;
+
+        uint8_t req_comp_count = 0;
+
+        if (field_sym == sym_x || field_sym == sym_y)
+            req_comp_count = 2;
+        else if (field_sym == sym_z)
+            req_comp_count = 3;
+        else if (field_sym == sym_w)
+            req_comp_count = 4;
+
+        if (req_comp_count == 0) {
+            return fail(fmt::format("vector types have no field '{}'", ctx.get_sym(field_sym)),
+                        acc);
+        }
+
+        auto vec_td = target_td.as<VectorTD>();
+
+        if (vec_td.component_count < req_comp_count) {
+            return fail(fmt::format("field '{}' is out of bounds for vector type {}",
+                                    ctx.get_sym(field_sym), type_str(target_ty)),
+                        acc);
+        }
+
+        return vec_td.component_type_id;
+    }
+
+    if (!target_td.is_struct()) {
         return fail(
             fmt::format("field access into invalid or unsupported type {}", type_str(target_ty)),
             acc);
+    }
 
     const auto& s_td = target_td.as<StructTD>();
     assert(s_td.data != nullptr);
@@ -1657,10 +1695,6 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
                               "sema's symbol table",
                               acc);
     }
-
-    auto* target_sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(acc.field_decl);
-    if (target_sym_lit == nullptr)
-        return internal_error("unexpected node kind in rhs of a FieldAccess expression", acc);
 
     for (NodeId fdecl_id : sdecl->field_decls) {
         const auto* fdecl = ctx.get_and_dyn_cast<FieldDecl>(fdecl_id);
@@ -2645,6 +2679,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
     assert(opaq_fn != nullptr);
 
     // try to handle ctors separately first
+    // TODO: BVecNs seem to miss this branch for some reason (works with every other scalar type)
     if (jl_is_datatype(opaq_fn->jl_function)) {
         auto* dt = safe_cast<jl_datatype_t>(opaq_fn->jl_function);
 

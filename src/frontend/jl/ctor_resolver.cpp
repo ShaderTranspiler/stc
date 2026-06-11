@@ -17,7 +17,8 @@ CtorResolver::CtorResolver(SymbolPool& sym_pool) {
     static constexpr std::array vec_prefixes = {'d', 'i', 'u', 'b'};
     for (uint8_t n = 2; n <= 4; n++) {
         for (auto prefix : vec_prefixes) {
-            add(fmt::format("{}vec{}", prefix, n), fmt::format("{}Vec{}", std::toupper(prefix), n));
+            add(fmt::format("{}vec{}", prefix, n),
+                fmt::format("{}Vec{}", static_cast<char>(std::toupper(prefix)), n));
         }
 
         add(fmt::format("vec{}", n), fmt::format("Vec{}", n));

@@ -125,10 +125,7 @@ jl_datatype_t* TypeToJLVisitor::visit(BuiltinTD builtin_td) {
     auto kind_of = [this](TypeId type) -> uint8_t {
         const auto& td = type_pool.get_td(type);
 
-#ifndef NDEBUG
-        if (!td.is_builtin())
-            throw std::logic_error{"kind_of invoked on non-builtin type descriptor"};
-#endif
+        assert(td.is_builtin() && "kind_of invoked on non-builtin type descriptor");
 
         return td.as<BuiltinTD>().kind;
     };

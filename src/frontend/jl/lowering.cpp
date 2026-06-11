@@ -581,6 +581,24 @@ SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
 }
 
 SIRNodeId JLLoweringVisitor::visit_FieldAccess(FieldAccess& acc) {
+    Expr* target = ctx.get_node(acc.target);
+    assert(target != nullptr);
+    const auto& target_td  = sir_ctx.type_pool.get_td(target->type);
+    const auto* field_node = ctx.get_and_dyn_cast<SymbolLiteral>(acc.field_decl);
+    SymbolId field_sym     = field_node != nullptr ? field_node->value : SymbolId::null_id();
+
+    if (target_td.is_vector() &&
+        (field_sym == sym_x || field_sym == sym_y || field_sym == sym_z || field_sym == sym_w)) {
+        // convert vector field access to regular swizzle indexer and re-lower
+        // more or less this is where v.x -> v[:x] happens
+
+        NodeId sym_lit = ctx.emplace_node<SymbolLiteral>(acc.location, field_sym).first;
+        NodeId indexer =
+            ctx.emplace_node<IndexerExpr>(acc.location, acc.target, std::vector{sym_lit}).first;
+
+        return visit_and_check(indexer);
+    }
+
     return emplace_node<sir::FieldAccess>(acc.location, visit_and_check(acc.target),
                                           visit_and_check(acc.field_decl));
 }

@@ -307,7 +307,7 @@ void SymbolRes::visit_DotChain(DotChain& dc) {
     const auto* sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(dc.chain[0]);
 
     if (sym_lit == nullptr) {
-        const auto* dre = ctx.get_and_dyn_cast<DeclRefExpr>(dc.chain[1]);
+        const auto* dre = ctx.get_and_dyn_cast<DeclRefExpr>(dc.chain[0]);
 
         if (dre != nullptr)
             sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(dre->decl);

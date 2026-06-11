@@ -27,7 +27,12 @@ private:
     CtorResolver ctor_resolver;
 
     NodeId main_fn_decl        = NodeId::null_id();
+    // CLEANUP: central sym caching
     SymbolId sym_main          = SymbolId::null_id();
+    SymbolId sym_x             = SymbolId::null_id();
+    SymbolId sym_y             = SymbolId::null_id();
+    SymbolId sym_z             = SymbolId::null_id();
+    SymbolId sym_w             = SymbolId::null_id();
     TypeId expected_type       = TypeId::null_id();
     TypeId current_fn_ret      = TypeId::null_id();
     MethodDecl* current_method = nullptr;
@@ -46,6 +51,10 @@ public:
           op_resolver{ctx.sym_pool},
           ctor_resolver{ctx.sym_pool},
           sym_main{ctx.sym_pool.get_id("main")},
+          sym_x{ctx.sym_pool.get_id("x")},
+          sym_y{ctx.sym_pool.get_id("y")},
+          sym_z{ctx.sym_pool.get_id("z")},
+          sym_w{ctx.sym_pool.get_id("w")},
           in_interactive_ctx{in_interactive_ctx} {
 
         push_scope(ScopeKind::Global, global_scope_body);
