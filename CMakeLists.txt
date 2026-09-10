@@ -313,7 +313,7 @@ else()
     endif()
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND SAN)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND STC_USE_SAN)
     # enable asan (and force disable incompatible options on MSVC)
     if (MSVC)
         target_compile_options(CommonConfig INTERFACE /fsanitize=address)
