@@ -1,8 +1,8 @@
 #include "frontend/jl/sema.h"
+#include "external/julia.h"
 #include "frontend/jl/ast_utils.h"
 #include "frontend/jl/dumper.h"
 #include "frontend/jl/rt/utils.h"
-#include "julia_guard.h"
 #include "types/type_to_string.h"
 
 namespace stc::jl {

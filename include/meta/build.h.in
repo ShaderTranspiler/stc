@@ -1,0 +1,12 @@
+#pragma once
+
+#include <string_view>
+
+// ? metadata updated before every build
+
+namespace stc::meta {
+
+inline constexpr std::string_view build_commit = "@STC_COMMIT_HASH@";
+inline constexpr std::string_view build_date   = "@STC_BUILD_TIMESTAMP@";
+
+} // namespace stc::meta

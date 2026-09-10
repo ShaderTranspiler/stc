@@ -3,12 +3,14 @@
 cmake_minimum_required(VERSION 3.14)
 
 include(FetchContent)
+set(STC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Version info
 
+# set current project version in these two lines
+# cascades through the entire codebase, treated as a single source of truth
 project(ShaderTranspilerCore VERSION 0.8.5)
 set(STC_VERSION_SUFFIX "")
-set(STC_SOVERSION "${PROJECT_VERSION_MAJOR}") # ! ABI version is linked to semver's major version
 
 if(STC_VERSION_SUFFIX)
     set(STC_VERSION "${PROJECT_VERSION}-${STC_VERSION_SUFFIX}")
@@ -16,31 +18,32 @@ else()
     set(STC_VERSION "${PROJECT_VERSION}")
 endif()
 
-if (NOT DEFINED STC_GIT_HASH)
-    find_package(Git QUIET)
+set(STC_SOVERSION "${PROJECT_VERSION_MAJOR}") # ! ABI version is linked to semver's major version
 
-    if(GIT_FOUND)
-        execute_process(
-            COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            OUTPUT_VARIABLE STC_GIT_HASH
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
+if (DEFINED STC_COMMIT_HASH AND NOT STC_COMMIT_HASH STREQUAL "")
+    set(STC_GIT_EXECUTABLE "")
+    message(STATUS "Using explicitly provided commit hash: ${STC_COMMIT_HASH}")
+else()
+    set(STC_COMMIT_HASH "")
+    
+    find_package(Git QUIET)
+    if (Git_FOUND)
+        set(STC_GIT_EXECUTABLE "${GIT_EXECUTABLE}")
+        message(STATUS "Commit hash not specified, but Git is available on the system: the latest commit hash will be acquired automatically before every build")
     else()
-        set(STC_GIT_HASH "unknown")
+        set(STC_GIT_EXECUTABLE "")
+        message(WARNING "Commit has not specified and Git is not available on the system: commit hash metadata won't be available")
     endif()
 endif()
 
-set(STC_FULL_VERSION "${STC_VERSION}+${STC_GIT_HASH}")
-
-message(STATUS "Build version is ${STC_FULL_VERSION}")
-
-if (NOT STC_BUILD_DATE)
-    string(TIMESTAMP STC_BUILD_DATE "%Y-%m-%d %H:%M:%S")
-    message(STATUS "No build date provided, auto-filled: ${STC_BUILD_DATE}")
+if (DEFINED STC_BUILD_TIMESTAMP AND NOT STC_BUILD_TIMESTAMP STREQUAL "")
+    message(STATUS "Using explicitly provided build timestamp: ${STC_BUILD_TIMESTAMP}")
 else()
-    message(STATUS "Using provided build date: ${STC_BUILD_DATE}")
+    set(STC_BUILD_TIMESTAMP "")
+    message(STATUS "No explicit build timestamp provided, system time will be queried automatically before every build")
 endif()
+
+message(STATUS "Build version is ${STC_VERSION}")
 
 # Config
 
@@ -153,9 +156,37 @@ set(LIB_OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
 set(BIN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
 set(TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/test)
 
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/meta.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/meta.h"
+set(STC_CONFIG_META_TEMPLATE "${STC_SOURCE_DIR}/include/meta/configure.h.in")
+set(STC_CONFIG_META_OUT "${CMAKE_BINARY_DIR}/generated/meta/configure.h")
+
+# generate config-time metadata
+configure_file("${STC_CONFIG_META_TEMPLATE}" "${STC_CONFIG_META_OUT}")
+
+set(STC_BUILD_META_SCRIPT "${STC_SOURCE_DIR}/cmake/gen_build_meta.cmake")
+set(STC_BUILD_META_TEMPLATE "${STC_SOURCE_DIR}/include/meta/build.h.in")
+set(STC_BUILD_META_OUT "${CMAKE_BINARY_DIR}/generated/meta/build.h")
+set(STC_BUILD_META_BASE_ARGS
+    "-DSTC_SOURCE_DIR=${STC_SOURCE_DIR}"
+    "-DSTC_GIT_EXECUTABLE=${STC_GIT_EXECUTABLE}"
+    "-DSTC_COMMIT_HASH=${STC_COMMIT_HASH}"
+    "-DSTC_BUILD_TIMESTAMP=${STC_BUILD_TIMESTAMP}"
+    "-DSTC_BUILD_META_TEMPLATE=${STC_BUILD_META_TEMPLATE}"
+    "-DSTC_BUILD_META_OUT=${STC_BUILD_META_OUT}"
+)
+
+# generate build-time metadata, so the headers already exist before first build
+# (first build overwrites this)
+message(STATUS "Running build-time metadata script to populate generated headers before first build")
+execute_process(COMMAND ${CMAKE_COMMAND} ${STC_BUILD_META_BASE_ARGS} -P "${STC_BUILD_META_SCRIPT}")
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${STC_BUILD_META_TEMPLATE}" "${STC_BUILD_META_SCRIPT}")
+
+set(BUILD_META_TARGET stc_build_meta)
+add_custom_target(${BUILD_META_TARGET}
+    COMMAND ${CMAKE_COMMAND} ${STC_BUILD_META_BASE_ARGS} -P "${STC_BUILD_META_SCRIPT}"
+    BYPRODUCTS ${STC_BUILD_META_OUT}
+    COMMENT "Generating build-time metadata"
+    VERBATIM
 )
 
 file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
@@ -358,6 +389,7 @@ list(FILTER LIB_SOURCES EXCLUDE REGEX "^${CMAKE_CURRENT_SOURCE_DIR}/cli/.*")
 
 set(LIBSTC_OBJ_TARGET stc_objs)
 add_library(${LIBSTC_OBJ_TARGET} OBJECT ${LIB_SOURCES})
+add_dependencies(${LIBSTC_OBJ_TARGET} ${BUILD_META_TARGET})
 
 target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -421,6 +453,7 @@ if (STC_BUILD_CLI)
         "src/common/term_utils.cpp"
         "src/common/utils.cpp"
     )
+    add_dependencies(${CLI_TARGET} ${BUILD_META_TARGET})
 
     # set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc")
 
@@ -472,46 +505,49 @@ if (BUILD_TESTING)
     endif()
 
     file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/*.cpp")
-    add_executable(unit_tests ${TEST_SOURCES})
 
-    set_target_properties(unit_tests PROPERTIES
+    set(UNIT_TESTS_TARGET unit_tests)
+    add_executable(${UNIT_TESTS_TARGET} ${TEST_SOURCES})
+    add_dependencies(${UNIT_TESTS_TARGET} ${BUILD_META_TARGET})
+
+    set_target_properties(${UNIT_TESTS_TARGET} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${TEST_OUTPUT_DIR}
         RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${TEST_OUTPUT_DIR}
         RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${TEST_OUTPUT_DIR}
         RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${TEST_OUTPUT_DIR}
     )
 
-    target_compile_definitions(unit_tests PRIVATE PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(${UNIT_TESTS_TARGET} PRIVATE PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
 
-    target_link_libraries(unit_tests PRIVATE ${LIBSTC_OBJ_TARGET})
-    target_link_libraries(unit_tests PRIVATE Catch2::Catch2WithMain)
+    target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE ${LIBSTC_OBJ_TARGET})
+    target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Catch2::Catch2WithMain)
 
     if (STC_ENABLE_PROFILING)
-        target_link_libraries(unit_tests PRIVATE Tracy::TracyClient)
-        target_compile_definitions(unit_tests PRIVATE STC_PROFILING=1)
+        target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Tracy::TracyClient)
+        target_compile_definitions(${UNIT_TESTS_TARGET} PRIVATE STC_PROFILING=1)
     endif()
 
     # copy lib for test runner
     if (WIN32)
-        add_custom_command(TARGET unit_tests POST_BUILD
+        add_custom_command(TARGET ${UNIT_TESTS_TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:${LIBSTC_TARGET}>
-            $<TARGET_FILE_DIR:unit_tests>
+            $<TARGET_FILE_DIR:${UNIT_TESTS_TARGET}>
         )
     endif()
 
     # CTest
     include(CTest)
     enable_testing()
-    #add_test(NAME AllTests COMMAND $<TARGET_FILE:unit_tests>)
+    #add_test(NAME AllTests COMMAND $<TARGET_FILE:${UNIT_TESTS_TARGET}>)
 
     include(Catch)
 
-    catch_discover_tests(unit_tests)
+    catch_discover_tests(${UNIT_TESTS_TARGET})
 
-    message(STATUS "Catch2 found, unit_tests target enabled for testing")
+    message(STATUS "Catch2 found, ${UNIT_TESTS_TARGET} target enabled for testing")
 else()
-    message(STATUS "Skipping Catch2 build and unit_tests target")
+    message(STATUS "Skipping Catch2 build and ${UNIT_TESTS_TARGET} target")
 endif()
 
 # Doxygen (+ Graphviz)

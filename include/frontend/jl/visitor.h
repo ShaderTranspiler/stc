@@ -1,9 +1,9 @@
 #pragma once
 
 #include "ast/visitor.h"
+#include "external/tracy.h"
 #include "frontend/jl/ast.h"
 #include "frontend/jl/context.h"
-#include "tracy_guard.h"
 #include <type_traits>
 
 namespace stc::jl {

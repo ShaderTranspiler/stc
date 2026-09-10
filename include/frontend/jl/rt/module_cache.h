@@ -1,6 +1,6 @@
 #pragma once
 
-#include "julia_guard.h"
+#include "external/julia.h"
 
 #include "common/utils.h"
 #include "frontend/jl/utils.h"

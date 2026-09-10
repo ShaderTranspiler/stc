@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base.h"
-#include "julia_guard.h"
+#include "external/julia.h"
 #include "types/type_pool.h"
 
 #include <utility>

@@ -1,4 +1,4 @@
-#include <julia_guard.h>
+#include <external/julia.h>
 JULIA_DEFINE_FAST_TLS
 
 #include <api/transpiler.h>

@@ -1,8 +1,9 @@
 #pragma once
 
-#include "base.h"
 #include <cstdint>
 #include <string_view>
+
+// ? metadata available at during CMake's configuration-time
 
 namespace stc::meta {
 
@@ -13,8 +14,6 @@ inline constexpr uint8_t          version_minor  =  @PROJECT_VERSION_MINOR@;
 inline constexpr uint8_t          version_patch  =  @PROJECT_VERSION_PATCH@;
 inline constexpr std::string_view version_suffix = "@STC_VERSION_SUFFIX@";
 
-inline constexpr std::string_view build_commit   = "@STC_GIT_HASH@";
-inline constexpr std::string_view build_date     = "@STC_BUILD_DATE@";
 inline constexpr std::string_view build_type     = "@CMAKE_BUILD_TYPE@";
 
 inline constexpr std::string_view compiler_id    = "@CMAKE_CXX_COMPILER_ID@";

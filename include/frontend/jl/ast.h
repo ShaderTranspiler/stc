@@ -1,6 +1,6 @@
 #pragma once
 
-#include "julia_guard.h"
+#include "external/julia.h"
 
 #include "base.h"
 #include "common/src_info.h"

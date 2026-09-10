@@ -1,7 +1,7 @@
 #include "frontend/jl/parser.h"
+#include "external/tracy.h"
 #include "frontend/jl/type_conversion.h"
 #include "frontend/jl/utils.h"
-#include "tracy_guard.h"
 #include <algorithm>
 #include <bit>
 #include <utility>

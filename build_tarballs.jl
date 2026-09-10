@@ -1,7 +1,9 @@
 using BinaryBuilder
 using Pkg
-using Dates
 using LibGit2
+
+# files and directories copied into the sandbox for building
+const STAGED_FILES = ["include", "src", "cli", "cmake", "CMakeLists.txt", "LICENSE"]
 
 name = "stc"
 
@@ -15,16 +17,16 @@ end
 version = VersionNumber(version_match[1])
 
 # try to grab git hash for versioning on the host itself
-git_hash = try
+commit_hash = try
     repo = LibGit2.GitRepo(@__DIR__)
     oid = LibGit2.head_oid(repo)
     string(oid)[1:7]
 catch
-    println(stderr, "warning: couldn't open git repo at `$(@__DIR__)` to obtain the latest commit hash. the builds will use 'unknown' for it as metadata.")
-    "unknown"
+    println(stderr, "warning: couldn't open git repo at `$(@__DIR__)` to obtain the latest commit hash.")
+    nothing
 end
 
-build_date = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
+build_timestamp = Libc.strftime("%Y-%m-%d %H:%M:%S %z", time())
 
 prod_dir = joinpath(@__DIR__, "products")
 if isdir(prod_dir)
@@ -35,7 +37,7 @@ end
 
 # create staging dir, so that local builds are possible without having to delete build and other unnecessary local folders
 staging_dir = mktempdir()
-for item in ["include", "src", "cli", "CMakeLists.txt", "LICENSE"]
+for item in STAGED_FILES
     item_path = joinpath(@__DIR__, item)
 
     # disallow symlinks explicitly (for now)
@@ -67,8 +69,8 @@ cmake .. -DCMAKE_INSTALL_PREFIX=\${prefix} \\
          -DJULIA_INCLUDE_DIR=\${prefix}/include/julia \\
          -DJULIA_LIB_DIR=\${prefix}/lib \\
          -DSTC_JULIA_VERSION=\${ACTUAL_JULIA_VER} \\
-         -DSTC_GIT_HASH=$git_hash \\
-         -DSTC_BUILD_DATE=\"$build_date\" \\
+         $(commit_hash === nothing ? "-DSTC_COMMIT_HASH=$commit_hash \\" : "")
+         -DSTC_BUILD_TIMESTAMP=\"$build_timestamp\" \\
          -DBUILD_TESTING=OFF \\
          -DSTC_USE_FORMAT=OFF
 

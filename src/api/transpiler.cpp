@@ -2,13 +2,13 @@
 
 #include "backend/glsl/code_gen.h"
 #include "backend/glsl/target_info.h"
+#include "external/tracy.h"
 #include "frontend/jl/dumper.h"
 #include "frontend/jl/lowering.h"
 #include "frontend/jl/parser.h"
 #include "frontend/jl/sema.h"
 #include "meta.h"
 #include "sir/dumper.h"
-#include "tracy_guard.h"
 
 namespace stc::api {
 

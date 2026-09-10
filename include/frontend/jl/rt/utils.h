@@ -1,7 +1,7 @@
 #pragma once
 
+#include "external/julia.h"
 #include "frontend/jl/rt/env.h"
-#include "julia_guard.h"
 
 namespace stc::jl::rt {
 
