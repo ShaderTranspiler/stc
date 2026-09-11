@@ -209,11 +209,11 @@ int run(int argc, char* argv[]) {
     jl_init();
     STC_CHECK_EXCEPTIONS
 
+    const ScopeGuard jl_guard{[]() { jl_atexit_hook(0); }};
+
     STC_EVAL_AND_CHECK("using JuliaGLM");
 
     std::cout << "Starting transpilation...\n";
-
-    const ScopeGuard jl_guard{[&]() { jl_atexit_hook(0); }};
 
     for (size_t i = 0; i < ite_count; i++) {
         if (run_benchmark && ite_count != 1) {

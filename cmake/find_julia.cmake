@@ -127,6 +127,6 @@ message(STATUS "Using Julia version: ${STC_JULIA_VERSION}")
 
 add_library(STC::Julia UNKNOWN IMPORTED)
 set_target_properties(STC::Julia PROPERTIES
-    IMPORTED_LOCATION                    "${JULIA_LIB}"
+    IMPORTED_LOCATION             "${JULIA_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${JULIA_INCLUDE_DIR}"
 )
