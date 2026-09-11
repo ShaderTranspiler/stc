@@ -33,12 +33,10 @@ foreach (SBOX_FILE ${SANDBOX_SOURCES})
     )
 
     target_link_libraries(${FNAME} PRIVATE ${LIBSTC_TARGET} CommonConfig)
-    target_link_libraries(${FNAME} PRIVATE ${JULIA_LIB})
-    target_link_libraries(${FNAME} PRIVATE fmt::fmt)
+    target_link_libraries(${FNAME} PRIVATE STC::Julia fmt::fmt)
 
     target_include_directories(${FNAME} PRIVATE ${STC_SRC_DIR}/include)
     target_include_directories(${FNAME} PRIVATE ${STC_BUILD_DIR}/generated)
-    target_include_directories(${FNAME} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
 
     if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
         set_target_properties(${FNAME} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")

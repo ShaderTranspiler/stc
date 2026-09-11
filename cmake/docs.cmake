@@ -1,9 +1,14 @@
 # Doxygen (+ Graphviz) docs setup
 
-# needs: STC_SRC_DIR, STC_BUILD_DIR defined
+# needs:
+#   - STC_SRC_DIR
+#   - STC_BUILD_DIR
+#   - STC_VERSION
 # adds targets: docs, docs_pdf
 #   - docs target generates docs as HTML
 #   - docs_pdf generates LaTeX, and compiles to PDF if pdflatex is available
+
+set(STC_DOCS_PDF_OUT "${STC_BUILD_DIR}/docs/stc_v${STC_VERSION}_docs.pdf")
 
 find_package(Doxygen COMPONENTS dot)
 
@@ -97,10 +102,21 @@ if (Doxygen_FOUND)
             COMMENT "Generating LaTeX docs with doxygen..."
         )
 
+        # compile LaTeX to PDF
         add_custom_command(TARGET docs_pdf POST_BUILD
             COMMAND ${MAKE_CMD}
             WORKING_DIRECTORY "${STC_BUILD_DIR}/docs/latex"
             COMMENT "Compiling LaTeX docs to PDF..."
+            VERBATIM
+        )
+
+        # copy result PDF to docs/
+        add_custom_command(TARGET docs_pdf POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STC_BUILD_DIR}/docs/latex/refman.pdf"
+                    "${STC_DOCS_PDF_OUT}"
+            BYPRODUCTS "${STC_DOCS_PDF_OUT}"
+            COMMENT "Copying generated PDF to ${STC_DOCS_PDF_OUT}"
             VERBATIM
         )
 

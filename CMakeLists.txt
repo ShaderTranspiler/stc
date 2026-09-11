@@ -1,6 +1,6 @@
 # TODO: set up CMakePresets instead of CMakeSettings
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.16)
 
 include(FetchContent)
 
@@ -277,9 +277,8 @@ add_dependencies(${LIBSTC_OBJ_TARGET} ${BUILD_META_TARGET})
 
 target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${STC_SRC_DIR}/include)
 target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${STC_BUILD_DIR}/generated)
-target_include_directories(${LIBSTC_OBJ_TARGET} SYSTEM PUBLIC ${JULIA_INCLUDE_DIR})
 
-target_link_libraries(${LIBSTC_OBJ_TARGET} PUBLIC CommonConfig ${JULIA_LIB} fmt::fmt)
+target_link_libraries(${LIBSTC_OBJ_TARGET} PUBLIC CommonConfig STC::Julia fmt::fmt)
 target_compile_definitions(${LIBSTC_OBJ_TARGET} PUBLIC STC_BUILDING_DLL=1 JULIA_ENABLE_THREADING=1)
 
 if (STC_ENABLE_PROFILING)
@@ -341,13 +340,12 @@ if (STC_BUILD_CLI)
         RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_BIN_DIR}"
     )
 
-    target_link_libraries(${CLI_TARGET} PRIVATE ${LIBSTC_TARGET} CommonConfig ${JULIA_LIB})
+    target_link_libraries(${CLI_TARGET} PRIVATE ${LIBSTC_TARGET} CommonConfig STC::Julia)
     target_link_libraries(${CLI_TARGET} PRIVATE fmt::fmt)
 
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/include)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/cli)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_BUILD_DIR}/generated)
-    target_include_directories(${CLI_TARGET} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
 
     if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
         set_target_properties(${CLI_TARGET} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")

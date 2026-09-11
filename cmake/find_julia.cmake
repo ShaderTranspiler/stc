@@ -14,6 +14,8 @@
 # defines variables (cannot be explicitly specified):
 #   - JULIA_LIB: the absolute path of the libjulia file to link against
 
+# defines target: STC::Julia (link against libjulia through this if possible, use directories for more complex ops)
+
 # resolution happens by querying the Julia executable directly for paths, so julia needs to be available in PATH
 
 set(FJL_DIR_VARS JULIA_INCLUDE_DIR JULIA_LIB_DIR JULIA_BIN_DIR)
@@ -122,3 +124,9 @@ message(STATUS "Using Julia bin dir: ${JULIA_BIN_DIR}")
 message(STATUS "Using Julia lib dir: ${JULIA_LIB_DIR}")
 message(STATUS "Using Julia library: ${JULIA_LIB}")
 message(STATUS "Using Julia version: ${STC_JULIA_VERSION}")
+
+add_library(STC::Julia UNKNOWN IMPORTED)
+set_target_properties(STC::Julia PROPERTIES
+    IMPORTED_LOCATION                    "${JULIA_LIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${JULIA_INCLUDE_DIR}"
+)

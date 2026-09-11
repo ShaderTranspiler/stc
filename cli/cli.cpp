@@ -9,6 +9,7 @@ JULIA_DEFINE_FAST_TLS
 
 #include "cli_utils.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -24,7 +25,7 @@ int run(int argc, char* argv[]) {
         std::cerr << "usage: stc <input file> [OPTIONS]\n";
         std::cerr << "run with " << stc::colored("--help", ansi_codes::yellow) << " or "
                   << stc::colored("-h", ansi_codes::yellow) << " for a list of available options\n";
-        return 1;
+        return EXIT_FAILURE;
     }
 
     // only help or version info can be invoked on their own
@@ -34,12 +35,12 @@ int run(int argc, char* argv[]) {
 
     if (argv1 == "-h" || argv1 == "--help") {
         print_help();
-        return 0;
+        return EXIT_SUCCESS;
     }
 
     if (argv1 == "-v" || argv1 == "--version") {
         print_version_info();
-        return 0;
+        return EXIT_SUCCESS;
     }
 
     std::string path = argv[1];
@@ -55,12 +56,12 @@ int run(int argc, char* argv[]) {
 
         if (arg == "-h" || arg == "--help") {
             print_help();
-            return 0;
+            return EXIT_SUCCESS;
         }
 
         if (arg == "-v" || arg == "--version") {
             print_version_info();
-            return 0;
+            return EXIT_SUCCESS;
         }
 
         if (arg == "--no-benchmark")
@@ -99,7 +100,7 @@ int run(int argc, char* argv[]) {
         else if (arg == "--err-dump") {
             if (i + 1 >= argc) {
                 std::cerr << "--err-dump must be followed by a verbosity level\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             std::string_view verbosity{argv[i + 1]};
@@ -114,14 +115,14 @@ int run(int argc, char* argv[]) {
                 std::cerr << fmt::format("'{}' is not a valid error dumping verbosity level "
                                          "(options: none, partial, verbose)\n",
                                          verbosity);
-                return 1;
+                return EXIT_FAILURE;
             }
 
             i++;
         } else if (arg == "--it") {
             if (i + 1 >= argc) {
                 std::cerr << "--it must be followed by the number of iterations\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             std::string next_arg{argv[i + 1]};
@@ -129,7 +130,7 @@ int run(int argc, char* argv[]) {
 
             if (!maybe_ite_count.has_value()) {
                 std::cerr << "--it followed by a non-numeric string\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             ite_count = *maybe_ite_count;
@@ -138,14 +139,14 @@ int run(int argc, char* argv[]) {
             if (i + 1 >= argc) {
                 std::cerr
                     << "--cg-indent must be followed by the width of indentation (in spaces)\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             auto maybe_cg_indent = try_parse_u16(std::string{argv[i + 1]});
 
             if (!maybe_cg_indent.has_value()) {
                 std::cerr << "--cg-indent followed by a non-numeric string\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             config.code_gen_indent = *maybe_cg_indent;
@@ -153,7 +154,7 @@ int run(int argc, char* argv[]) {
         } else if (arg == "-o") {
             if (i + 1 >= argc) {
                 std::cerr << "-o must be followed by the output file's path\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             out_path = argv[i + 1];
@@ -161,14 +162,14 @@ int run(int argc, char* argv[]) {
         } else if (arg == "--gl-version") {
             if (i + 1 >= argc) {
                 std::cerr << "--gl-version must be followed by the desired OpenGL version\n";
-                return 1;
+                return EXIT_FAILURE;
             }
 
             config.target_version = std::string{argv[i + 1]};
             i++;
         } else {
             std::cerr << fmt::format("unknown argument: {}\n", arg);
-            return 1;
+            return EXIT_FAILURE;
         }
     }
 
@@ -184,7 +185,7 @@ int run(int argc, char* argv[]) {
     std::ifstream file(path);
     if (!file.is_open()) {
         std::cerr << "couldn't open input file at '" << path << "'\n";
-        return 1;
+        return EXIT_FAILURE;
     }
 
     std::stringstream code_stream;
@@ -196,7 +197,7 @@ int run(int argc, char* argv[]) {
 #define STC_CHECK_EXCEPTIONS                                                                       \
     if (jl::check_exceptions()) {                                                                  \
         std::cerr << "\nan error occured while initializing Julia\n";                              \
-        return 1;                                                                                  \
+        return EXIT_SUCCESS;                                                                       \
     }
 
 #define STC_EVAL_AND_CHECK(str)                                                                    \
@@ -230,7 +231,7 @@ int run(int argc, char* argv[]) {
 
         if (!result.has_value()) {
             std::cerr << "\nan error occured during transpilation\n";
-            return 1;
+            return EXIT_FAILURE;
         }
 
         if (!no_out && i + 1 == ite_count) {
@@ -247,13 +248,13 @@ int run(int argc, char* argv[]) {
             if (out_file.get() == nullptr) {
                 std::cerr << "\nfailed to open '" << out_path << "' for writing (errno: " << errno
                           << '\n';
-                return 1;
+                return EXIT_FAILURE;
             }
 
             size_t written = fwrite(result->data(), 1, result->size(), out_file.get());
             if (written != result->size()) {
                 std::cerr << "\ncouldn't write output to file\n";
-                return 1;
+                return EXIT_FAILURE;
             }
         }
     }
@@ -264,7 +265,7 @@ int run(int argc, char* argv[]) {
     std::cin.get();
 #endif
 
-    return 0;
+    return EXIT_SUCCESS;
 
 #undef STC_EVAL_AND_CHECK
 #undef STC_CHECK_EXCEPTIONS
@@ -282,5 +283,5 @@ int main(int argc, char* argv[]) {
         std::cerr << "an unexpected error occured while running stc\n";
     }
 
-    return 1;
+    return EXIT_FAILURE;
 }
