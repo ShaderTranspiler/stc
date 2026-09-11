@@ -312,7 +312,7 @@ private:
             _success = res.finalize();
 
             if (sema.ctx.config.dump_scopes) {
-                std::cout << "scope dump after symbol resolution:\n";
+                report("scope dump after symbol resolution:", std::cout);
                 scope.dump(sema.ctx);
             }
         }
@@ -324,7 +324,7 @@ private:
         ~ScopeRAII() {
             try {
                 if (sema.ctx.config.dump_scopes) {
-                    std::cout << "scope dump before popping:\n";
+                    report("scope dump before popping:", std::cout);
                     scope.dump(sema.ctx);
                 }
 

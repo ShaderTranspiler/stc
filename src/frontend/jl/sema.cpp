@@ -131,7 +131,7 @@ void JLSema::finalize() {
     }
 
     if (ctx.config.dump_scopes) {
-        std::cout << "scope dump before popping global scope:\n";
+        report("scope dump before popping global scope:", std::cout);
         scopes[0].dump(ctx);
     }
 

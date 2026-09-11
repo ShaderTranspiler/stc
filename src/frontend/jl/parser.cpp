@@ -513,9 +513,10 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
         jl_value_t* arg1_v = jl_exprarg(expr_it, 0);
         jl_value_t* arg2_v = jl_exprarg(expr_it, 1);
 
-        if (!jl_is_linenumbernode(arg2_v))
+        if (!jl_is_linenumbernode(arg2_v)) {
             return internal_error(
                 "unexpected macrocall layout (second arg is not a LineNumberNode)");
+        }
 
         // update cur_loc
         parse(arg2_v);
@@ -883,8 +884,18 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
                                     &JLParser::parse_method_decl);
 
     // x::Int = 0
-    if (is_expr(lhs, sym_cache.dbl_col))
-        return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr), &JLParser::parse_var_decl);
+    if (is_expr(lhs, sym_cache.dbl_col)) {
+        return fail("declarations of the form 'name::Type = value' are currently not supported "
+                    "(explicitly declare the variable local or global, or simply use the form "
+                    "'name = value' without the type constraint if it's not necessary)");
+
+        // TODO: add proper support for independent :: exprs
+        // ? tedious, since a :: expression could be a typeassert, type conversion or regular decl
+        // ? requiring global/local markers resolves this confusion for now at parse time
+
+        // return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
+        // &JLParser::parse_var_decl);
+    }
 
     jl_value_t* rhs = jl_exprarg(expr, 1);
 
