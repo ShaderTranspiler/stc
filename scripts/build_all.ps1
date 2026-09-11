@@ -115,7 +115,7 @@ foreach ($cfg in $configs) {
 
         $cmake_config_args += "-DCMAKE_BUILD_TYPE=$($cfg.Type)"
         
-        $cmake_config_args += "-DBUILD_TESTING=OFF"
+        $cmake_config_args += "-DSTC_BUILD_TESTS=OFF"
         if ($cfg.Tidy)    { $cmake_config_args += "-DSTC_USE_TIDY=ON" }
         if ($cfg.Profile) { $cmake_config_args += "-DSTC_ENABLE_PROFILING=ON" }
 

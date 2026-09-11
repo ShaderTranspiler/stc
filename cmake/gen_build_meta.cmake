@@ -1,4 +1,4 @@
-set(REQ_VARS STC_BUILD_META_TEMPLATE STC_BUILD_META_OUT STC_SOURCE_DIR)
+set(REQ_VARS STC_BUILD_META_TEMPLATE STC_BUILD_META_OUT STC_SRC_DIR)
 set(OPT_VARS STC_BUILD_TIMESTAMP STC_COMMIT_HASH STC_GIT_EXECUTABLE)
 
 foreach (REQ IN ITEMS ${REQ_VARS})
@@ -16,7 +16,7 @@ endforeach()
 if (STC_BUILD_TIMESTAMP STREQUAL "")
     string(TIMESTAMP STC_BUILD_TIMESTAMP "%Y-%m-%d %H:%M:%S %z")
 endif()
-message(STATUS "Using timestamp: ${STC_BUILD_TIMESTAMP}")
+message(STATUS "Using build timestamp: ${STC_BUILD_TIMESTAMP}")
 
 if (STC_COMMIT_HASH STREQUAL "")
     set(STC_COMMIT_HASH "unknown")
@@ -24,7 +24,7 @@ if (STC_COMMIT_HASH STREQUAL "")
     if (NOT STC_GIT_EXECUTABLE STREQUAL "")
         execute_process(
             COMMAND "${STC_GIT_EXECUTABLE}" rev-parse --short HEAD
-            WORKING_DIRECTORY "${STC_SOURCE_DIR}"
+            WORKING_DIRECTORY "${STC_SRC_DIR}"
             OUTPUT_VARIABLE GIT_REVPARSE_OUT
             OUTPUT_STRIP_TRAILING_WHITESPACE
             RESULT_VARIABLE GIT_REVPARSE_RESULT
@@ -37,7 +37,7 @@ if (STC_COMMIT_HASH STREQUAL "")
             # flag a working tree carrying uncommitted changes to tracked files
             execute_process(
                 COMMAND "${STC_GIT_EXECUTABLE}" diff --quiet HEAD --
-                WORKING_DIRECTORY "${STC_SOURCE_DIR}"
+                WORKING_DIRECTORY "${STC_SRC_DIR}"
                 RESULT_VARIABLE GIT_DIFF_RESULT
                 ERROR_QUIET
             )

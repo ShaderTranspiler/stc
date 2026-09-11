@@ -71,7 +71,7 @@ cmake .. -DCMAKE_INSTALL_PREFIX=\${prefix} \\
          -DSTC_JULIA_VERSION=\${ACTUAL_JULIA_VER} \\
          $(commit_hash === nothing ? "-DSTC_COMMIT_HASH=$commit_hash \\" : "")
          -DSTC_BUILD_TIMESTAMP=\"$build_timestamp\" \\
-         -DBUILD_TESTING=OFF \\
+         -DSTC_BUILD_TESTS=OFF \\
          -DSTC_USE_FORMAT=OFF
 
 make -j\${nproc}
@@ -112,7 +112,7 @@ dependencies = [
 
 products = [
     LibraryProduct("libstc", :libstc; dont_dlopen=true),
-    ExecutableProduct("stc_cli", :stc_cli)
+    ExecutableProduct("stc", :stc)
 ]
 
 min_julia_ver = minimum(julia_versions)

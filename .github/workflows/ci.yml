@@ -37,7 +37,7 @@ jobs:
         if: matrix.config.os == 'windows-latest'
         uses: actions/cache@v4
         with:
-          path: C:\vcpkg\installed 
+          path: C:\vcpkg\installed
           key: ${{ runner.os }}-vcpkg-catch2
 
       - name: Setup Julia
@@ -56,13 +56,13 @@ jobs:
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
         with:
-          cmake-version: '4.2.3'
+          cmake-version: "4.2.3"
 
       - name: Configure CMake
         run: >
           cmake -B build -S . 
           -DCMAKE_BUILD_TYPE=Debug 
-          -DBUILD_TESTING=ON 
+          -DSTC_BUILD_TESTS=ON
           -DSTC_USE_FORMAT=OFF
           ${{ matrix.config.os == 'windows-latest' && '-DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"' || '' }}
           ${{ matrix.config.compiler == 'gcc' && '-DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_FLAGS="--coverage"' || '' }}
@@ -72,7 +72,7 @@ jobs:
 
       - name: Run Tests
         working-directory: build
-        run: ctest --output-on-failure
+        run: ctest --output-on-failure --no-tests=error
 
       - name: Generate Coverage (GCC Only)
         if: matrix.config.compiler == 'gcc'

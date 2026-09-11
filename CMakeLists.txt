@@ -3,7 +3,12 @@
 cmake_minimum_required(VERSION 3.14)
 
 include(FetchContent)
-set(STC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
+set(STC_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(STC_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(STC_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/lib)
+set(STC_BIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/bin)
+set(STC_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
 
 # Version info
 
@@ -32,7 +37,7 @@ else()
         message(STATUS "Commit hash not specified, but Git is available on the system: the latest commit hash will be acquired automatically before every build")
     else()
         set(STC_GIT_EXECUTABLE "")
-        message(WARNING "Commit has not specified and Git is not available on the system: commit hash metadata won't be available")
+        message(WARNING "Commit hash not specified and Git is not available on the system: commit hash metadata won't be available")
     endif()
 endif()
 
@@ -47,17 +52,27 @@ message(STATUS "Build version is ${STC_VERSION}")
 
 # Config
 
+# fallback for users and build pipelines that prefer BUILD_TESTING over a prefixed switch 
+# an explicit -DSTC_BUILD_TESTS=<value> parameter still overwrites BUILD_TESTING
+set(STC_BUILD_TESTS_DEFAULT OFF)
+if (DEFINED BUILD_TESTING)
+    set(STC_BUILD_TESTS_DEFAULT ${BUILD_TESTING})
+endif()
+
 option(STC_BUILD_CLI "Enable CLI target (disabling can save a bit of time in some cases, where it's enough to build the lib)" ON)
 option(STC_BUILD_DOCS "Enable docs-related targets." OFF)
-option(STC_ENABLE_PROFILING "Enables downloading and linking Tracy through FetchContent, and defines the STC_PROFILING macro)" OFF)
+option(STC_BUILD_TESTS "Enable targets for running unit and other tests suites (fetches Catch2 if not available on host)." ${STC_BUILD_TESTS_DEFAULT})
 option(STC_BUILD_SANDBOX "Enable sandbox targets" OFF)
+option(STC_ENABLE_PROFILING "Enables downloading and linking Tracy through FetchContent, and defines the STC_PROFILING macro)" OFF)
 option(STC_USE_CCACHE "Use ccache for compiler caching, if it's installed locally" ON)
 option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed locally" ON)
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
 
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
-    message(STATUS "No build type specified, defaulting to Debug")
+get_property(STC_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
+if (NOT STC_MULTI_CONFIG AND "${CMAKE_BUILD_TYPE}" STREQUAL "")
+    message(STATUS "No build type specified and not in multi-config environment, defaulting to Debug")
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
@@ -65,82 +80,7 @@ message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
 
 # Julia lookup
 
-if (NOT DEFINED JULIA_INCLUDE_DIR OR NOT DEFINED JULIA_LIB_DIR)
-    # make sure julia executable is available
-    find_program(JULIA_EXEC julia)
-    if (NOT JULIA_EXEC)
-        message(FATAL_ERROR "Couldn't locate Julia executable (needed for locating libjulia). Please ensure Julia is installed and added to PATH.")
-    endif()
-
-    # find and include Julia lib and headers
-    execute_process(
-        COMMAND ${JULIA_EXEC} -e "print(normpath(joinpath(Sys.BINDIR, \"..\", \"include\", \"julia\")))"
-        OUTPUT_VARIABLE JULIA_INCLUDE_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-    execute_process(
-        COMMAND ${JULIA_EXEC} -e "using Libdl; print(Libdl.dlpath(\"libjulia\"))"
-        OUTPUT_VARIABLE JULIA_LIB
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-    execute_process(
-        COMMAND ${JULIA_EXEC} -e "print(VERSION)"
-        OUTPUT_VARIABLE STC_JULIA_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-    get_filename_component(JULIA_BIN_DIR ${JULIA_LIB} DIRECTORY)
-    set(JULIA_LIB_DIR "${JULIA_BIN_DIR}/../lib")
-    get_filename_component(JULIA_LIB_DIR ${JULIA_LIB_DIR} ABSOLUTE)
-endif()
-
-if (NOT EXISTS "${JULIA_LIB_DIR}")
-    message(FATAL_ERROR "Couldn't locate Julia's lib directory")
-endif()
-
-if (NOT DEFINED STC_JULIA_VERSION)
-    message(FATAL_ERROR "STC_JULIA_VERSION is required. When bypassing include/lib directory resolution through the julia exectuable, pass -DSTC_JULIA_VERSION=x.y.z manually.")
-endif()
-
-if (WIN32)
-    if (EXISTS "${JULIA_LIB_DIR}/libjulia.dll.a")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dll.a")
-    elseif (EXISTS "${JULIA_LIB_DIR}/../bin/libjulia.dll")
-        get_filename_component(JULIA_BIN_DIR "${JULIA_LIB_DIR}/../bin" ABSOLUTE)
-        set(JULIA_LIB "${JULIA_BIN_DIR}/libjulia.dll")
-    elseif (EXISTS "${JULIA_LIB_DIR}/libjulia.lib")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.lib")
-    elseif (EXISTS "${JULIA_LIB_DIR}/julia.lib")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/julia.lib")
-    else()
-        message(FATAL_ERROR "Couldn't locate Julia library (.dll.a, .dll, or .lib) in ${JULIA_LIB_DIR} or bin/")
-    endif()
-elseif (NOT DEFINED JULIA_LIB)
-    if (EXISTS "${JULIA_LIB_DIR}/libjulia.so")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.so")
-    elseif (EXISTS "${JULIA_LIB_DIR}/libjulia.dylib")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dylib")
-    else()
-        file(GLOB JULIA_LIB_MATCHES "${JULIA_LIB_DIR}/libjulia.*")
-        if (JULIA_LIB_MATCHES)
-            list(GET JULIA_LIB_MATCHES 0 JULIA_LIB)
-        endif()
-    endif()
-endif()
-
-if (NOT EXISTS "${JULIA_LIB}")
-    message(FATAL_ERROR "Couldn't locate libjulia")
-endif()
-
-if (NOT EXISTS "${JULIA_INCLUDE_DIR}")
-    message(FATAL_ERROR "Couldn't locate libjulia's include directory")
-endif()
-
-message(STATUS "Found Julia include dir: ${JULIA_INCLUDE_DIR}")
-message(STATUS "Found Julia library: ${JULIA_LIB}")
-message(STATUS "Julia version: ${STC_JULIA_VERSION}")
+include(${STC_SRC_DIR}/cmake/find_julia.cmake)
 
 # C++ building begins here
 
@@ -152,21 +92,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(LIB_OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
-set(BIN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
-set(TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/test)
-
-set(STC_CONFIG_META_TEMPLATE "${STC_SOURCE_DIR}/include/meta/configure.h.in")
-set(STC_CONFIG_META_OUT "${CMAKE_BINARY_DIR}/generated/meta/configure.h")
+set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.h.in")
+set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.h")
 
 # generate config-time metadata
-configure_file("${STC_CONFIG_META_TEMPLATE}" "${STC_CONFIG_META_OUT}")
+configure_file("${STC_CONFIG_META_TEMPLATE}" "${STC_CONFIG_META_OUT}" @ONLY)
 
-set(STC_BUILD_META_SCRIPT "${STC_SOURCE_DIR}/cmake/gen_build_meta.cmake")
-set(STC_BUILD_META_TEMPLATE "${STC_SOURCE_DIR}/include/meta/build.h.in")
-set(STC_BUILD_META_OUT "${CMAKE_BINARY_DIR}/generated/meta/build.h")
+set(STC_BUILD_META_SCRIPT "${STC_SRC_DIR}/cmake/gen_build_meta.cmake")
+set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.h.in")
+set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.h")
 set(STC_BUILD_META_BASE_ARGS
-    "-DSTC_SOURCE_DIR=${STC_SOURCE_DIR}"
+    "-DSTC_SRC_DIR=${STC_SRC_DIR}"
     "-DSTC_GIT_EXECUTABLE=${STC_GIT_EXECUTABLE}"
     "-DSTC_COMMIT_HASH=${STC_COMMIT_HASH}"
     "-DSTC_BUILD_TIMESTAMP=${STC_BUILD_TIMESTAMP}"
@@ -177,7 +113,14 @@ set(STC_BUILD_META_BASE_ARGS
 # generate build-time metadata, so the headers already exist before first build
 # (first build overwrites this)
 message(STATUS "Running build-time metadata script to populate generated headers before first build")
-execute_process(COMMAND ${CMAKE_COMMAND} ${STC_BUILD_META_BASE_ARGS} -P "${STC_BUILD_META_SCRIPT}")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} ${STC_BUILD_META_BASE_ARGS} -P "${STC_BUILD_META_SCRIPT}"
+    RESULT_VARIABLE STC_BUILD_META_RESULT
+)
+
+if (NOT STC_BUILD_META_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to generate build metadata (exited with ${STC_BUILD_META_RESULT})")
+endif()
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${STC_BUILD_META_TEMPLATE}" "${STC_BUILD_META_SCRIPT}")
 
@@ -236,82 +179,11 @@ if (STC_ENABLE_PROFILING)
     FetchContent_MakeAvailable(tracy)
 endif()
 
-# ccache
+# dev tooling (ccache, clang-format, clang-tidy)
 
-if (STC_USE_CCACHE)
-    find_program(CCACHE_EXEC ccache)
-    if (CCACHE_EXEC)
-        set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXEC}")
-        set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_EXEC}")
+include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
 
-        message(STATUS "ccache found and enabled for compiler caching")
-    else()
-        message(STATUS "ccache not found, compiler caching won't be possible")
-    endif()
-else()
-    message(STATUS "ccache usage is disabled")
-endif()
-
-# clang-format
-
-if (STC_USE_FORMAT)
-    find_program(CLANG_FORMAT_EXEC NAMES clang-format)
-    if (CLANG_FORMAT_EXEC)
-        # style checking
-        add_custom_target(
-            "check_format"
-            COMMAND ${CLANG_FORMAT_EXEC}
-                    -style=file
-                    -n
-                    --Werror
-                    ${ALL_SOURCES}
-            COMMENT "Checking C++ code style..."
-        )
-
-        # automatic style enforcement
-        add_custom_target(
-            "fix_format"
-            COMMAND ${CLANG_FORMAT_EXEC}
-                    -style=file
-                    -i
-                    ${ALL_SOURCES}
-            COMMENT "Fixing C++ code style..."
-        )
-
-        message(STATUS "clang-format found, check_format and fix_format targets enabled. Using ${CLANG_FORMAT_EXEC}")
-    else()
-        message(STATUS "clang-format could not be located, code style checking won't be possible.")
-    endif()
-else()
-    message(STATUS "clang-format usage is disabled")
-endif()
-
-# clang-tidy
-
-if (STC_USE_TIDY)
-    find_program(CLANG_TIDY_EXEC clang-tidy)
-
-    if (CLANG_TIDY_EXEC)
-        set(CLANG_TIDY_CMD "${CLANG_TIDY_EXEC}")
-
-        list(APPEND CLANG_TIDY_CMD "--extra-arg=-Wno-unknown-warning-option")
-        list(APPEND CLANG_TIDY_CMD "--header-filter=^${CMAKE_SOURCE_DIR}/*.h")
-        list(APPEND CLANG_TIDY_CMD "--extra-arg=-Qunused-arguments")
-
-        if (MSVC)
-            list(APPEND CLANG_TIDY_CMD "--extra-arg-before=--driver-mode=cl")
-            list(APPEND CLANG_TIDY_CMD "--extra-arg=-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH")
-            list(APPEND CLANG_TIDY_CMD "--extra-arg=-Wno-unused-command-line-argument")
-            list(APPEND CLANG_TIDY_CMD "--extra-arg=/EHsc")
-        endif()
-
-        message(STATUS "clang-tidy found and enabled. Using ${CLANG_TIDY_EXEC}")
-    else()
-        message(STATUS "clang-tidy could not be located, static analysis won't be possible.")
-    endif()
-else()
-    message(STATUS "clang-tidy usage is disabled")
-endif()
+# common compiler/linker config
 
 add_library(CommonConfig INTERFACE)
 
@@ -344,11 +216,13 @@ else()
     endif()
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND STC_USE_SAN)
-    # enable asan (and force disable incompatible options on MSVC)
+if (STC_USE_SAN)
+    # enable sanitizers for debug builds (and force disable incompatible options on MSVC)
     if (MSVC)
-        target_compile_options(CommonConfig INTERFACE /fsanitize=address)
-        target_compile_options(CommonConfig INTERFACE /Zi)
+        target_compile_options(CommonConfig INTERFACE
+            "$<$<CONFIG:Debug>:/fsanitize=address>"
+            "$<$<CONFIG:Debug>:/Zi>"
+        )
 
         string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
         string(REPLACE "/ZI" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
@@ -356,43 +230,53 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND STC_USE_SAN)
         string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
         string(REPLACE "/ZI" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 
-        target_link_options(CommonConfig INTERFACE "/INCREMENTAL:NO")
-        message(STATUS "ASan enabled for MSVC")
-    else()
-        target_compile_options(CommonConfig INTERFACE
-            -fsanitize=address,undefined -fno-omit-frame-pointer -g
+        target_link_options(CommonConfig INTERFACE
+            "$<$<CONFIG:Debug>:/INCREMENTAL:NO>"
         )
 
-        target_link_options(CommonConfig INTERFACE -fsanitize=address,undefined)
-        message(STATUS "ASan and UBSan enabled for GCC/Clang/etc")
+        if (STC_MULTI_CONFIG OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+            message(STATUS "ASan enabled for MSVC (debug builds)")
+        endif()
+    else()
+        target_compile_options(CommonConfig INTERFACE
+            "$<$<CONFIG:Debug>:-fsanitize=address,undefined>"
+            "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+            "$<$<CONFIG:Debug>:-g>"
+        )
+
+        target_link_options(CommonConfig INTERFACE
+            "$<$<CONFIG:Debug>:-fsanitize=address,undefined>"
+        )
+
+        if (STC_MULTI_CONFIG OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+            message(STATUS "ASan and UBSan enabled for GCC/Clang/etc (debug builds)")
+        endif()
     endif()
 endif()
 
 # link time optimization
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-    include(CheckIPOSupported)
-    check_ipo_supported(RESULT lto_supported)
-    if (lto_supported)
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
-        message(STATUS "LTO enabled for release builds")
-    endif()
+include(CheckIPOSupported)
+check_ipo_supported(RESULT lto_supported)
+if (lto_supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
+    message(STATUS "LTO enabled for Release and MinSizeRel builds")
 endif()
 
 # lib obj files (needed to support testing of symbols stripped from final binaries)
 
 set(LIB_SOURCES ${ALL_SOURCES} )
-list(FILTER LIB_SOURCES EXCLUDE REGEX "^${CMAKE_CURRENT_SOURCE_DIR}/sandbox/.*")
-list(FILTER LIB_SOURCES EXCLUDE REGEX "^${CMAKE_CURRENT_SOURCE_DIR}/test/.*")
-list(FILTER LIB_SOURCES EXCLUDE REGEX "^${CMAKE_CURRENT_SOURCE_DIR}/cli/.*")
+list(FILTER LIB_SOURCES EXCLUDE REGEX "^${STC_SRC_DIR}/sandbox/.*")
+list(FILTER LIB_SOURCES EXCLUDE REGEX "^${STC_SRC_DIR}/test/.*")
+list(FILTER LIB_SOURCES EXCLUDE REGEX "^${STC_SRC_DIR}/cli/.*")
 
 set(LIBSTC_OBJ_TARGET stc_objs)
 add_library(${LIBSTC_OBJ_TARGET} OBJECT ${LIB_SOURCES})
 add_dependencies(${LIBSTC_OBJ_TARGET} ${BUILD_META_TARGET})
 
-target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${STC_SRC_DIR}/include)
+target_include_directories(${LIBSTC_OBJ_TARGET} PUBLIC  ${STC_BUILD_DIR}/generated)
 target_include_directories(${LIBSTC_OBJ_TARGET} SYSTEM PUBLIC ${JULIA_INCLUDE_DIR})
 
 target_link_libraries(${LIBSTC_OBJ_TARGET} PUBLIC CommonConfig ${JULIA_LIB} fmt::fmt)
@@ -405,8 +289,6 @@ endif()
 
 # libstc
 
-file(GLOB_RECURSE LIB_HEADERS CONFIGURE_DEPENDS "include/*.h")
-
 set(LIBSTC_TARGET stc)
 add_library(${LIBSTC_TARGET} SHARED $<TARGET_OBJECTS:${LIBSTC_OBJ_TARGET}>)
 target_link_libraries(${LIBSTC_TARGET} PRIVATE ${LIBSTC_OBJ_TARGET})
@@ -415,28 +297,26 @@ if (STC_ENABLE_PROFILING)
     target_link_libraries(${LIBSTC_TARGET} PRIVATE Tracy::TracyClient)    
 endif()
 
-# target_compile_definitions(${LIBSTC_TARGET} PRIVATE STC_BUILDING_DLL=1 JULIA_ENABLE_THREADING=1)
-
 set_target_properties(${LIBSTC_TARGET} PROPERTIES
-    VERSION                                 ${PROJECT_VERSION}
-    SOVERSION                               ${STC_SOVERSION}
+    VERSION                                 "${PROJECT_VERSION}"
+    SOVERSION                               "${STC_SOVERSION}"
 
     CXX_VISIBILITY_PRESET                   hidden
     C_VISIBILITY_PRESET                     hidden
     VISIBILITY_INLINES_HIDDEN               ON
 
-    LIBRARY_OUTPUT_DIRECTORY                ${LIB_OUTPUT_DIR}
-    ARCHIVE_OUTPUT_DIRECTORY                ${LIB_OUTPUT_DIR}
+    LIBRARY_OUTPUT_DIRECTORY                "${STC_LIB_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY                "${STC_LIB_DIR}"
 
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${LIB_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${LIB_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${LIB_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${LIB_OUTPUT_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG          "${STC_LIB_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE        "${STC_LIB_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_LIB_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_LIB_DIR}"
 
-    ARCHIVE_OUTPUT_DIRECTORY_DEBUG          ${LIB_OUTPUT_DIR}
-    ARCHIVE_OUTPUT_DIRECTORY_RELEASE        ${LIB_OUTPUT_DIR}
-    ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO ${LIB_OUTPUT_DIR}
-    ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     ${LIB_OUTPUT_DIR}
+    ARCHIVE_OUTPUT_DIRECTORY_DEBUG          "${STC_LIB_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY_RELEASE        "${STC_LIB_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_LIB_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_LIB_DIR}"
 )
 
 if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
@@ -445,9 +325,8 @@ endif()
 
 # CLI
 
+set(CLI_TARGET stc_cli)
 if (STC_BUILD_CLI)
-    set(CLI_TARGET stc_cli)
-
     add_executable(${CLI_TARGET}
         "cli/cli.cpp"
         "src/common/term_utils.cpp"
@@ -455,21 +334,19 @@ if (STC_BUILD_CLI)
     )
     add_dependencies(${CLI_TARGET} ${BUILD_META_TARGET})
 
-    # set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc")
-
-    set_target_properties(${CLI_TARGET} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${BIN_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${BIN_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${BIN_OUTPUT_DIR}
+    set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG          "${STC_BIN_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE        "${STC_BIN_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_BIN_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_BIN_DIR}"
     )
 
     target_link_libraries(${CLI_TARGET} PRIVATE ${LIBSTC_TARGET} CommonConfig ${JULIA_LIB})
     target_link_libraries(${CLI_TARGET} PRIVATE fmt::fmt)
 
-    target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-    target_include_directories(${CLI_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/cli)
+    target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/include)
+    target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/cli)
+    target_include_directories(${CLI_TARGET} PRIVATE ${STC_BUILD_DIR}/generated)
     target_include_directories(${CLI_TARGET} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
 
     if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
@@ -491,7 +368,8 @@ endif()
 
 # Catch2 / testing
 
-if (BUILD_TESTING)
+set(UNIT_TESTS_TARGET unit_tests)
+if (STC_BUILD_TESTS)
     FetchContent_Declare(
         Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
@@ -506,18 +384,17 @@ if (BUILD_TESTING)
 
     file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/*.cpp")
 
-    set(UNIT_TESTS_TARGET unit_tests)
     add_executable(${UNIT_TESTS_TARGET} ${TEST_SOURCES})
     add_dependencies(${UNIT_TESTS_TARGET} ${BUILD_META_TARGET})
 
     set_target_properties(${UNIT_TESTS_TARGET} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${TEST_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${TEST_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${TEST_OUTPUT_DIR}
-        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${TEST_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG          "${STC_TEST_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE        "${STC_TEST_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_TEST_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_TEST_DIR}"
     )
 
-    target_compile_definitions(${UNIT_TESTS_TARGET} PRIVATE PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(${UNIT_TESTS_TARGET} PRIVATE PROJECT_ROOT="${STC_SRC_DIR}")
 
     target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE ${LIBSTC_OBJ_TARGET})
     target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Catch2::Catch2WithMain)
@@ -536,13 +413,8 @@ if (BUILD_TESTING)
         )
     endif()
 
-    # CTest
-    include(CTest)
     enable_testing()
-    #add_test(NAME AllTests COMMAND $<TARGET_FILE:${UNIT_TESTS_TARGET}>)
-
     include(Catch)
-
     catch_discover_tests(${UNIT_TESTS_TARGET})
 
     message(STATUS "Catch2 found, ${UNIT_TESTS_TARGET} target enabled for testing")
@@ -553,176 +425,15 @@ endif()
 # Doxygen (+ Graphviz)
 
 if (STC_BUILD_DOCS)
-    find_package(Doxygen COMPONENTS dot)
-
-    if (Doxygen_FOUND)
-        set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
-
-        set(DOXYGEN_GENERATE_HTML YES)
-        set(DOXYGEN_GENERATE_LATEX NO)
-        set(DOXYGEN_RECURSIVE YES)
-
-        set(DOXYGEN_HAVE_DOT YES)
-        set(DOXYGEN_DOT_IMAGE_FORMAT svg)
-        set(DOXYGEN_INTERACTIVE_SVG YES)
-        set(DOXYGEN_DOT_TRANSPARENT YES)
-
-        set(DOXYGEN_EXTRACT_ALL YES)
-        set(DOXYGEN_EXTRACT_STATIC YES)
-        set(DOXYGEN_EXTRACT_PRIVATE NO)
-        set(DOXYGEN_EXTRACT_ANON_NSPACES NO)
-
-        set(DOXYGEN_BUILTIN_STL_SUPPORT YES)
-        set(DOXYGEN_MACRO_EXPANSION YES)
-
-        set(DOXYGEN_SOURCE_BROWSER YES)
-        set(DOXYGEN_INLINE_SOURCES NO)
-        set(DOXYGEN_SHOW_FILES YES)
-        set(DOXYGEN_SHOW_USED_FILES YES)
-
-        set(DOXYGEN_EXCLUDE_PATTERNS
-            "*.def"
-            "*.inc"
-            "*/test/*"
-            "*/sandbox/*"
-            "*/examples/*"
-            "*/cli/*"
-        )
-
-        set(DOXYGEN_UML_LOOK YES)
-        set(DOXYGEN_TEMPLATE_RELATIONS YES)
-
-        set(DOXYGEN_EXTRACT_ALL YES)
-        set(DOXYGEN_EXTRACT_PRIVATE NO)
-        set(DOXYGEN_EXTRACT_STATIC NO)
-        set(DOXYGEN_EXTRACT_ANON_NSPACES NO)
-
-        set(DOXYGEN_CALL_GRAPH NO)
-        set(DOXYGEN_CALLER_GRAPH NO)
-
-        set(DOXYGEN_CLASS_GRAPH YES)
-        set(DOXYGEN_COLLABORATION_GRAPH YES)
-        set(DOXYGEN_DIRECTORY_GRAPH YES)
-        set(DOXYGEN_INCLUDE_GRAPH YES)
-        set(DOXYGEN_INCLUDED_BY_GRAPH YES)
-
-        doxygen_add_docs(
-            docs
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            COMMENT "Generating HTML docs with doxygen..."
-        )
-
-        message(STATUS "doxygen and graphviz found, docs target enabled")
-
-        find_program(PDFLATEX_COMPILER pdflatex)
-
-        if (PDFLATEX_COMPILER)
-        set(DOXYGEN_GENERATE_HTML NO)
-        set(DOXYGEN_GENERATE_LATEX YES)
-        set(DOXYGEN_USE_PDFLATEX YES)
-        set(DOXYGEN_PDF_HYPERLINKS YES)
-
-        set(DOXYGEN_SOURCE_BROWSER NO)
-        set(DOXYGEN_INLINE_SOURCES NO)
-        set(DOXYGEN_SHOW_FILES NO)
-        set(DOXYGEN_SHOW_USED_FILES NO)
-        set(DOXYGEN_DIRECTORY_GRAPH NO)
-
-        set(DOXYGEN_ALPHABETICAL_INDEX NO)
-        set(DOXYGEN_SHOW_NAMESPACES NO)
-
-        set(DOXYGEN_EXTRACT_ALL NO)
-        set(DOXYGEN_HIDE_UNDOC_CLASSES YES)
-        set(DOXYGEN_HIDE_UNDOC_MEMBERS YES)
-
-        set(DOXYGEN_EXCLUDE_SYMBOLS "std::hash*" "*JuliaSymbolCache" "*JuliaTypeCache")
-            if (WIN32)
-                set(MAKE_CMD "make.bat")
-            else()
-                set(MAKE_CMD "make")
-            endif()
-
-            doxygen_add_docs(
-                docs_pdf
-                ${CMAKE_CURRENT_SOURCE_DIR}/include
-                COMMENT "Generating LaTeX docs with doxygen..."
-            )
-
-            add_custom_command(TARGET docs_pdf POST_BUILD
-                COMMAND ${MAKE_CMD}
-                WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs/latex"
-                COMMENT "Compiling LaTeX docs to PDF..."
-                VERBATIM
-            )
-
-            message(STATUS "pdflatex found, automatic LaTeX -> PDF docs generation enabled for docs_pdf target")
-        else()
-            message(STATUS "pdflatex could not be located, PDF generation from LaTeX docs won't be possible.")
-        endif()
-    else()
-        message(STATUS "doxygen or graphviz could not be located, docs generation won't be possible.")
-    endif()
+    include(${STC_SRC_DIR}/cmake/docs.cmake)
 else()
     message(STATUS "docs building is disabled")
 endif()
 
-# TODO: do I still need this?
+# sandbox
+
 if (STC_BUILD_SANDBOX)
-    # sandbox targets
-    # for trying out and playing around with the library
-    # cpp files prefixed with sb_ are treated as separate targets
-    # other cpp files can be used for includes and such
-
-    message(STATUS "setting up sandbox targets")
-
-    file(GLOB SANDBOX_SOURCES "sandbox/sb_*.cpp")
-
-    foreach (SBOX_FILE ${SANDBOX_SOURCES})
-        get_filename_component(FNAME ${SBOX_FILE} NAME_WE)
-
-        add_executable(${FNAME} ${SBOX_FILE})
-
-        set_target_properties(${FNAME} PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${BIN_OUTPUT_DIR}
-            RUNTIME_OUTPUT_DIRECTORY_RELEASE        ${BIN_OUTPUT_DIR}
-            RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${BIN_OUTPUT_DIR}
-            RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     ${BIN_OUTPUT_DIR}
-        )
-
-        target_link_libraries(${FNAME} PRIVATE ${LIBSTC_TARGET} CommonConfig)
-        target_link_libraries(${FNAME} PRIVATE ${JULIA_LIB})
-        target_link_libraries(${FNAME} PRIVATE fmt::fmt)
-
-        target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-        target_include_directories(${FNAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-        target_include_directories(${FNAME} SYSTEM PRIVATE ${JULIA_INCLUDE_DIR})
-
-        if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
-            set_target_properties(${FNAME} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
-        endif()
-
-        # copy lib next to sandbox executable
-        if (WIN32)
-            add_custom_command(TARGET ${FNAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:${LIBSTC_TARGET}>
-                $<TARGET_FILE_DIR:${FNAME}>
-            )
-        endif()
-
-        # create wrappers for executable, with Julia first in PATH
-        if (WIN32)
-            file(TO_NATIVE_PATH "${JULIA_BIN_DIR}" JULIA_BIN_DIR_NATIVE)
-            
-            file(GENERATE OUTPUT "${BIN_OUTPUT_DIR}/run_${FNAME}.bat"
-                CONTENT "@echo off\nset PATH=${JULIA_BIN_DIR_NATIVE};%PATH%\n\"$<TARGET_FILE:${FNAME}>\" %*"
-                CONDITION $<CONFIG:${CMAKE_BUILD_TYPE}>
-            )
-        endif()
-
-        message(STATUS "found and created sandbox target '${FNAME}'")
-    endforeach()
+    add_subdirectory(sandbox)
 else()
     message(STATUS "sandbox building is disabled")
 endif()
@@ -737,13 +448,13 @@ install(TARGETS ${LIBSTC_TARGET}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-if(TARGET ${CLI_TARGET})
+if(STC_BUILD_CLI)
     install(TARGETS ${CLI_TARGET} 
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
 endif()
 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/api/
+install(DIRECTORY ${STC_SRC_DIR}/include/api/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
     FILES_MATCHING PATTERN "*.h"
 )

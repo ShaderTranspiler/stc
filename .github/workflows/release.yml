@@ -59,7 +59,7 @@ jobs:
           version: ${{ matrix.julia }}
 
       - name: Configure CMake
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DSTC_USE_FORMAT=OFF
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSTC_BUILD_TESTS=OFF -DSTC_USE_FORMAT=OFF
 
       - name: Build
         run: cmake --build build --config Release -j
