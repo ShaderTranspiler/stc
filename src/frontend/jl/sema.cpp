@@ -296,23 +296,23 @@ JLSema::TypeCheckResult JLSema::check_type_against(TypeId actual_type, TypeId ch
             return TypeCheckResult::Match;
         }
 
-        if (ctx.target_info->can_implicit_cast(actual_type, expected_type))
+        if (ctx.target_info->can_implicit_cast(actual_type, checked_type))
             return TypeCheckResult::ImplicitCast;
 
-        if (ctx.target_info->valid_ctor_call(expected_type, std::vector{actual_type}))
+        if (ctx.target_info->valid_ctor_call(checked_type, std::vector{actual_type}))
             return TypeCheckResult::ExplicitCast;
 
         return TypeCheckResult::Incompatible;
     }
 
-    const auto& expected_td = tpool.get_td(checked_type);
+    const auto& checked_td = tpool.get_td(checked_type);
     LazyInit actual_td{[&]() -> const TypeDescriptor& { return tpool.get_td(actual_type); }};
 
     // if expected fn type has an identifier, actual has to match it
     // if it doesnt, only the function-ness of the actual type is checked
-    if (expected_td.is_function() &&
+    if (checked_td.is_function() &&
         (actual_td.get().is_function() || actual_td.get().is_struct())) {
-        auto expected_fn = expected_td.as<FunctionTD>();
+        auto checked_fn = checked_td.as<FunctionTD>();
 
         SymbolId actual_id = SymbolId::null_id();
         if (actual_td.get().is_function())
@@ -322,62 +322,62 @@ JLSema::TypeCheckResult JLSema::check_type_against(TypeId actual_type, TypeId ch
             actual_id = actual_td.get().as<StructTD>().data->name;
         }
 
-        if (expected_fn.identifier.is_null() || expected_fn.identifier == actual_id)
+        if (checked_fn.identifier.is_null() || checked_fn.identifier == actual_id)
             return TypeCheckResult::Match;
 
         return TypeCheckResult::Incompatible;
     }
 
-    if (expected_td.is_array() && actual_td.get().is_array()) {
-        ArrayTD expected_arr_ty = expected_td.as<ArrayTD>();
-        ArrayTD actual_arr_ty   = actual_td.get().as<ArrayTD>();
+    if (checked_td.is_array() && actual_td.get().is_array()) {
+        ArrayTD checked_arr_ty = checked_td.as<ArrayTD>();
+        ArrayTD actual_arr_ty  = actual_td.get().as<ArrayTD>();
 
-        if (check_type_against(actual_arr_ty.element_type_id, expected_arr_ty.element_type_id,
+        if (check_type_against(actual_arr_ty.element_type_id, checked_arr_ty.element_type_id,
                                base_expr) != TypeCheckResult::Match)
             return TypeCheckResult::Incompatible;
 
         if (tpool.is_array_any_size(checked_type))
             return TypeCheckResult::Match;
 
-        return actual_arr_ty.length == expected_arr_ty.length ? TypeCheckResult::Match
-                                                              : TypeCheckResult::Incompatible;
+        return actual_arr_ty.length == checked_arr_ty.length ? TypeCheckResult::Match
+                                                             : TypeCheckResult::Incompatible;
     }
 
-    if (expected_td.is_vector() && actual_td.get().is_vector()) {
-        VectorTD expected_vec_ty = expected_td.as<VectorTD>();
-        VectorTD actual_vec_ty   = actual_td.get().as<VectorTD>();
+    if (checked_td.is_vector() && actual_td.get().is_vector()) {
+        VectorTD checked_vec_ty = checked_td.as<VectorTD>();
+        VectorTD actual_vec_ty  = actual_td.get().as<VectorTD>();
 
-        if (check_type_against(actual_vec_ty.component_type_id, expected_vec_ty.component_type_id,
+        if (check_type_against(actual_vec_ty.component_type_id, checked_vec_ty.component_type_id,
                                base_expr) != TypeCheckResult::Match)
             return TypeCheckResult::Incompatible;
 
         if (tpool.is_vec_any_size(checked_type))
             return TypeCheckResult::Match;
 
-        return actual_vec_ty.component_count == expected_vec_ty.component_count
+        return actual_vec_ty.component_count == checked_vec_ty.component_count
                    ? TypeCheckResult::Match
                    : TypeCheckResult::Incompatible;
     }
 
-    if (expected_td.is_matrix() && actual_td.get().is_matrix()) {
-        MatrixTD expected_mat_ty = expected_td.as<MatrixTD>();
-        MatrixTD actual_mat_ty   = actual_td.get().as<MatrixTD>();
+    if (checked_td.is_matrix() && actual_td.get().is_matrix()) {
+        MatrixTD checked_mat_ty = checked_td.as<MatrixTD>();
+        MatrixTD actual_mat_ty  = actual_td.get().as<MatrixTD>();
 
         assert(tpool.is_type_of<VectorTD>(actual_mat_ty.column_type_id));
-        assert(tpool.is_type_of<VectorTD>(expected_mat_ty.column_type_id));
+        assert(tpool.is_type_of<VectorTD>(checked_mat_ty.column_type_id));
 
-        VectorTD actual_col_ty   = tpool.get_td(actual_mat_ty.column_type_id).as<VectorTD>();
-        VectorTD expected_col_ty = tpool.get_td(expected_mat_ty.column_type_id).as<VectorTD>();
+        VectorTD actual_col_ty  = tpool.get_td(actual_mat_ty.column_type_id).as<VectorTD>();
+        VectorTD checked_col_ty = tpool.get_td(checked_mat_ty.column_type_id).as<VectorTD>();
 
-        if (check_type_against(actual_col_ty.component_type_id, expected_col_ty.component_type_id,
+        if (check_type_against(actual_col_ty.component_type_id, checked_col_ty.component_type_id,
                                base_expr) != TypeCheckResult::Match)
             return TypeCheckResult::Incompatible;
 
         if (tpool.is_mat_any_size(checked_type))
             return TypeCheckResult::Match;
 
-        if (actual_mat_ty.column_count == expected_mat_ty.column_count &&
-            actual_col_ty.component_count == expected_col_ty.component_count)
+        if (actual_mat_ty.column_count == checked_mat_ty.column_count &&
+            actual_col_ty.component_count == checked_col_ty.component_count)
             return TypeCheckResult::Match;
 
         return TypeCheckResult::Incompatible;
