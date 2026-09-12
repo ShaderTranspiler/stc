@@ -25,6 +25,8 @@ public:
     QualifierPool(QualifierPool&&)                 = default;
     QualifierPool& operator=(QualifierPool&&)      = default;
 
+    ~QualifierPool() = default;
+
     std::pair<QualId, DeclQualifiers&> emplace(std::vector<QualKind> quals,
                                                LQPayload layout_payloads);
     const DeclQualifiers& get_quals(QualId id) const;

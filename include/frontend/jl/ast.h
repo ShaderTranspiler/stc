@@ -112,7 +112,7 @@ struct Expr {
     NodeKind kind() const { return _kind; }
     uint8_t node_storage() const { return _node_storage; }
 
-    static bool same_node_kind(NodeKind) { return true; }
+    static bool same_node_kind([[maybe_unused]] NodeKind kind) { return true; }
 
     static Expr* safe_cast_to_base(void* node_ptr, NodeId node_id);
 };
@@ -155,6 +155,11 @@ struct Decl : public Expr {
 // ================
 
 struct VarDecl : public Decl {
+    static constexpr uint8_t SCOPE_MASK = 0b00111111;
+
+    static constexpr uint8_t IS_BUILTIN_SHIFT     = 7;
+    static constexpr uint8_t IS_SILENT_DECL_SHIFT = 6;
+
     TypeId annot_type;
     NodeId initializer;
 
@@ -162,9 +167,11 @@ struct VarDecl : public Decl {
                      MaybeScopeType scope, NodeId initializer = NodeId::null_id(),
                      bool is_builtin = false, bool is_silent_decl = false)
         : Decl{location, NodeKind::VarDecl, identifier,
-               static_cast<uint8_t>(static_cast<uint8_t>(scope) |
-                                    static_cast<uint8_t>(is_builtin << 7) |
-                                    static_cast<uint8_t>(is_silent_decl << 6))},
+               static_cast<uint8_t>(
+                   static_cast<uint8_t>(scope) |
+                   static_cast<uint8_t>(static_cast<uint8_t>(is_builtin) << IS_BUILTIN_SHIFT) |
+                   static_cast<uint8_t>(static_cast<uint8_t>(is_silent_decl)
+                                        << IS_SILENT_DECL_SHIFT))},
           annot_type{annot_type},
           initializer{initializer} {}
 
@@ -175,27 +182,35 @@ struct VarDecl : public Decl {
                   initializer, is_builtin, is_silent_decl} {}
 
     MaybeScopeType scope() const {
-        return static_cast<MaybeScopeType>(0b00111111 & node_storage());
+        return static_cast<MaybeScopeType>(SCOPE_MASK & node_storage());
     }
 
     void set_scope(MaybeScopeType value) {
-        _node_storage = (_node_storage & ((1U << 7) | (1U << 6))) | static_cast<uint8_t>(value);
+        _node_storage =
+            (_node_storage & ((1U << IS_BUILTIN_SHIFT) | (1U << IS_SILENT_DECL_SHIFT))) |
+            static_cast<uint8_t>(value);
     }
 
-    bool is_builtin() const { return static_cast<bool>(0x01 & (node_storage() >> 7)); }
+    bool is_builtin() const {
+        return static_cast<bool>(0x01 & (node_storage() >> IS_BUILTIN_SHIFT));
+    }
+
     void set_is_builtin(bool value) {
         if (value)
-            _node_storage |= (1U << 7);
+            _node_storage |= (1U << IS_BUILTIN_SHIFT);
         else
-            _node_storage &= static_cast<uint8_t>(~(1U << 7));
+            _node_storage &= static_cast<uint8_t>(~(1U << IS_BUILTIN_SHIFT));
     }
 
-    bool is_silent_decl() const { return static_cast<bool>(0x01 & (node_storage() >> 6)); }
+    bool is_silent_decl() const {
+        return static_cast<bool>(0x01 & (node_storage() >> IS_SILENT_DECL_SHIFT));
+    }
+
     void set_is_silent_decl(bool value) {
         if (value)
-            _node_storage |= (1U << 6);
+            _node_storage |= (1U << IS_SILENT_DECL_SHIFT);
         else
-            _node_storage &= static_cast<uint8_t>(~(1U << 6));
+            _node_storage &= static_cast<uint8_t>(~(1U << IS_SILENT_DECL_SHIFT));
     }
 
     SAME_NODE_KIND_DEF(NodeKind::VarDecl)
@@ -215,7 +230,7 @@ struct MethodDecl : public Decl {
           param_decls{std::move(param_decls)} {
 
         ASSERT_NOT_NULL(body);
-        ASSERT_CONTAINS_NO_NULL(param_decls);
+        ASSERT_CONTAINS_NO_NULL(this->param_decls);
     }
 
     SAME_NODE_KIND_DEF(NodeKind::MethodDecl)
@@ -230,7 +245,7 @@ struct FunctionDecl : public Decl {
     explicit FunctionDecl(SrcLocationId location, SymbolId identifier, std::vector<NodeId> methods)
         : Decl{location, NodeKind::FnDecl, identifier}, methods{std::move(methods)} {
 
-        ASSERT_CONTAINS_NO_NULL(methods);
+        ASSERT_CONTAINS_NO_NULL(this->methods);
     }
 
     SAME_NODE_KIND_DEF(NodeKind::FnDecl)
@@ -301,7 +316,7 @@ struct StructDecl : public Decl {
         : Decl{location, NodeKind::StructDecl, identifier, static_cast<uint8_t>(is_mutable)},
           field_decls{std::move(field_decls)} {
 
-        ASSERT_CONTAINS_NO_NULL(field_decls);
+        ASSERT_CONTAINS_NO_NULL(this->field_decls);
     }
 
     bool is_mutable() const { return static_cast<bool>(node_storage()); }
@@ -324,7 +339,7 @@ struct InterfaceBlockDecl : public Decl {
           _instance_name{instance_name} {
 
         ASSERT_NOT_NULL(identifier);
-        ASSERT_CONTAINS_NO_NULL(field_decls);
+        ASSERT_CONTAINS_NO_NULL(this->field_decls);
     }
 
     InterfaceStorage storage_type() const { return InterfaceStorage{node_storage()}; }
@@ -345,7 +360,7 @@ struct CompoundExpr : public Expr {
     explicit CompoundExpr(SrcLocationId location, std::vector<NodeId> body)
         : Expr{location, NodeKind::Compound}, body{std::move(body)} {
 
-        ASSERT_CONTAINS_NO_NULL(body);
+        ASSERT_CONTAINS_NO_NULL(this->body);
     }
 
     explicit CompoundExpr(SrcLocationId location, std::initializer_list<NodeId> nodes)
@@ -466,7 +481,7 @@ struct DotChain : public Expr {
     explicit DotChain(SrcLocationId location, std::vector<NodeId> chain)
         : Expr{location, NodeKind::DotChain}, chain{std::move(chain)} {
 
-        ASSERT_CONTAINS_NO_NULL(chain);
+        ASSERT_CONTAINS_NO_NULL(this->chain);
     }
 
     bool is_resolved() const { return !resolved_expr.is_null(); }
@@ -610,7 +625,7 @@ struct FunctionCall : public Expr {
           args{std::move(args)} {
 
         ASSERT_NOT_NULL(target_fn);
-        ASSERT_CONTAINS_NO_NULL(args);
+        ASSERT_CONTAINS_NO_NULL(this->args);
     }
 
     explicit FunctionCall(SrcLocationId location, NodeId target_fn,

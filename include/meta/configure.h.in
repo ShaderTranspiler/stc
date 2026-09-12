@@ -12,6 +12,8 @@ inline constexpr std::string_view version        = "@STC_VERSION@";
 inline constexpr uint8_t          version_major  =  @PROJECT_VERSION_MAJOR@;
 inline constexpr uint8_t          version_minor  =  @PROJECT_VERSION_MINOR@;
 inline constexpr uint8_t          version_patch  =  @PROJECT_VERSION_PATCH@;
+
+// NOLINTNEXTLINE(readability-redundant-string-init)
 inline constexpr std::string_view version_suffix = "@STC_VERSION_SUFFIX@";
 
 inline constexpr std::string_view build_type     = "@CMAKE_BUILD_TYPE@";

@@ -89,8 +89,10 @@ template <size_t N>
 consteval auto n_chars_of(char sep) {
     std::array<char, N> arr{};
 
-    for (size_t i = 0; i < N; i++)
+    for (size_t i = 0; i < N; i++) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
         arr[i] = sep;
+    }
 
     return arr;
 }
@@ -105,7 +107,8 @@ inline void print_version_info() {
     static constexpr auto padding_buf      = n_chars_of<padding_width>(' ');
     static constexpr auto padding = std::string_view{padding_buf.data(), padding_buf.size()};
 
-    static constexpr size_t header_width = title.size() + 2 * padding_width + stc_ver.size() + 2;
+    static constexpr size_t header_width =
+        2U * static_cast<size_t>(padding_width) + title.size() + stc_ver.size() + 2U;
 
     static constexpr auto sep_line_buf = n_chars_of<header_width>('-');
     static constexpr auto sep_line     = std::string_view{sep_line_buf.data(), sep_line_buf.size()};

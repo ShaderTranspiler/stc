@@ -43,17 +43,19 @@ public:
     SymbolPool sym_pool;
     QualifierPool qual_pool;
 
-    explicit ASTCtx(std::vector<types::BuiltinTD> type_builtins = {},
-                    const TargetInfo* target_info = nullptr, NodeIdTy::id_type node_arena_kb = 128U,
-                    SrcLocationId::id_type src_info_arena_kb = 128U,
-                    types::TypeId::id_type type_arena_kb     = 32U,
-                    SymbolId::id_type sym_arena_kb = 64U, QualId::id_type qual_arena_kb = 16U)
+    explicit ASTCtx(
+        const std::vector<types::BuiltinTD>& type_builtins = std::vector<types::BuiltinTD>{},
+        const TargetInfo* target_info = nullptr, NodeIdTy::id_type node_arena_kb = 128U,
+        SrcLocationId::id_type src_info_arena_kb = 128U, types::TypeId::id_type type_arena_kb = 32U,
+        SymbolId::id_type sym_arena_kb = 64U, QualId::id_type qual_arena_kb = 16U)
         : target_info{target_info},
           node_arena{node_arena_kb * 1024U},
-          type_pool{static_cast<types::TypeId::id_type>(type_arena_kb), std::move(type_builtins)},
+          type_pool{type_arena_kb, type_builtins},
           src_info_pool{src_info_arena_kb},
           sym_pool{sym_arena_kb},
           qual_pool{qual_arena_kb} {}
+
+    ~ASTCtx() = default;
 
     ASTCtx(const ASTCtx&)                  = delete;
     ASTCtx& operator=(const ASTCtx&) const = delete;
@@ -75,6 +77,7 @@ protected:
     // protected to allow derived classes to use as a starting point, but publicly only accessible
     // from the factory function move_pools_from
     template <typename T, typename U>
+    // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
     explicit ASTCtx(ASTCtx<T, U>&& other, NodeIdTy::id_type node_arena_kb)
         : config{std::move(other.config)},
           target_info{other.target_info},

@@ -27,7 +27,7 @@ struct SrcLocation {
         assert(l > 0 && c > 0 && "Line and col numbers cannot be zero");
     }
 
-    constexpr bool is_null() const { return line == 0 && col == 0; }
+    [[nodiscard]] constexpr bool is_null() const { return line == 0 && col == 0; }
 
     [[nodiscard]] static SrcLocation null() { return SrcLocation{}; }
 
@@ -43,7 +43,7 @@ static_assert(std::is_trivially_copy_constructible_v<SrcLocation>);
 struct SrcLocationId : public StrongId<uint32_t> {
     using StrongId::StrongId;
 
-    constexpr bool is_null() const { return *this == null_id(); }
+    [[nodiscard]] constexpr bool is_null() const { return *this == null_id(); }
 
     static constexpr SrcLocationId null_id() { return SrcLocationId{0U}; }
 };
@@ -71,6 +71,8 @@ public:
     SrcInfoPool& operator=(const SrcInfoPool&)     = delete;
     SrcInfoPool(SrcInfoPool&&) noexcept            = default;
     SrcInfoPool& operator=(SrcInfoPool&&) noexcept = default;
+
+    ~SrcInfoPool() = default;
 
     [[nodiscard]] SrcLocationId get_location(intptr_t line, uint32_t col);
     [[nodiscard]] size_t get_file(std::string path);

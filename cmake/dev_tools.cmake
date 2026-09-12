@@ -64,8 +64,13 @@ if (STC_USE_TIDY)
         set(CLANG_TIDY_CMD "${CLANG_TIDY_EXEC}")
 
         list(APPEND CLANG_TIDY_CMD "--extra-arg=-Wno-unknown-warning-option")
-        list(APPEND CLANG_TIDY_CMD "--header-filter=^${STC_SRC_DIR}/*.h")
         list(APPEND CLANG_TIDY_CMD "--extra-arg=-Qunused-arguments")
+
+        # include all header files, then exclude dependencies
+        # this is to ensure new header additions are never forgotten to be added here
+        # if something is vendored that shouldn't be checked, add it to the exclusion list
+        list(APPEND CLANG_TIDY_CMD "--header-filter=.*")
+        list(APPEND CLANG_TIDY_CMD "--exclude-header-filter=[/\\\\]_deps[/\\\\]")
 
         if (MSVC)
             list(APPEND CLANG_TIDY_CMD "--extra-arg-before=--driver-mode=cl")

@@ -116,7 +116,7 @@ inline bool is_spec_of(jl_datatype_t* dt, jl_unionall_t* ua) {
 
     unwrapped_ua = jl_unwrap_unionall(reinterpret_cast<jl_value_t*>(ua));
 
-    jl_datatype_t* unwrapped_ua_dt = safe_cast<jl_datatype_t>(unwrapped_ua);
+    const auto* unwrapped_ua_dt = safe_cast<jl_datatype_t>(unwrapped_ua);
 
     return dt->name == unwrapped_ua_dt->name;
 }

@@ -23,7 +23,14 @@ Checks: >
   -readability-avoid-nested-conditional-operator,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -bugprone-easily-swappable-parameters,
-  -modernize-use-designated-initializers
+  -modernize-use-designated-initializers,
+  -readability-enum-initial-value,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -modernize-use-nodiscard,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -readability-inconsistent-ifelse-braces,
+  -readability-math-missing-parentheses,
+  -bugprone-multi-level-implicit-pointer-conversion
 
 CheckOptions:
   readability-magic-numbers.IgnorePowersOf2IntegerValues: true

@@ -85,6 +85,7 @@ inline constexpr bool dependent_false_v = false;
 template <typename T, typename Hasher = std::hash<T>>
 requires CHashable<T, Hasher>
 constexpr size_t hash_combine(size_t seed, const T& v) {
+    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
     size_t x = seed + 0x9e3779b9 + Hasher{}(v);
 
     if constexpr (sizeof(size_t) == 8U) {
@@ -105,6 +106,7 @@ constexpr size_t hash_combine(size_t seed, const T& v) {
     }
 
     return x;
+    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 }
 
 // named after strong typedefs (pattern has been slightly tweaked/extended)
@@ -148,19 +150,23 @@ concept CNullableStrongId = CStrongId<T> && requires (T t) {
 struct SplitU32Id : public StrongId<uint32_t> {
     using kind_type = uint8_t;
 
-    static constexpr uint32_t ID_MASK   = 0x00FFFFFF;
-    static constexpr uint32_t KIND_MASK = ~ID_MASK;
+    static constexpr uint32_t ID_MASK       = 0x00FFFFFF;
+    static constexpr uint32_t KIND_MASK     = ~ID_MASK;
+    static constexpr uint32_t U8_KIND_SHIFT = 24;
 
     constexpr SplitU32Id() = default;
     constexpr SplitU32Id(uint32_t id, uint8_t kind)
-        : StrongId{static_cast<uint32_t>(kind) << 24 | id} {
+        : StrongId{static_cast<uint32_t>(kind) << U8_KIND_SHIFT | id} {
 
         if ((id & KIND_MASK) != 0)
             throw std::logic_error{"id value must fit into 24 bits"};
     };
 
-    uint32_t id_value() const { return value & ID_MASK; }
-    uint8_t kind_value() const { return static_cast<uint8_t>(value >> 24); }
+    [[nodiscard]] uint32_t id_value() const { return value & ID_MASK; }
+
+    [[nodiscard]] uint8_t kind_value() const {
+        return static_cast<uint8_t>(value >> U8_KIND_SHIFT);
+    }
 };
 
 template <typename T>
@@ -250,7 +256,7 @@ public:
     explicit LazyInit(InitFn initializer)
         : initializer{initializer} {}
 
-    bool has_value() const { return value.has_value(); }
+    [[nodiscard]] bool has_value() const { return value.has_value(); }
 
     decltype(auto) get() {
         if (!value.has_value())
@@ -291,13 +297,14 @@ class FileRAII {
     FILE* file = nullptr;
 
 public:
-    explicit FileRAII(const std::string& path, const char* mode) {
-        file = fopen(path.c_str(), mode);
-    }
+    explicit FileRAII(const std::string& path, const char* mode)
+        : file{fopen(path.c_str(), mode)} {}
 
     ~FileRAII() {
-        if (file != nullptr)
+        if (file != nullptr) {
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
             fclose(file);
+        }
     }
 
     FileRAII(const FileRAII&)            = delete;
@@ -307,12 +314,14 @@ public:
         : file{other.file} {
         other.file = nullptr;
     }
-    FileRAII& operator=(FileRAII&& other) {
+    FileRAII& operator=(FileRAII&& other) noexcept {
         if (this == &other)
             return *this;
 
-        if (file != nullptr)
+        if (file != nullptr) {
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
             fclose(file);
+        }
 
         this->file = other.file;
         other.file = nullptr;
@@ -320,7 +329,7 @@ public:
         return *this;
     }
 
-    FILE* get() const { return file; }
+    [[nodiscard]] FILE* get() const { return file; }
 };
 #if _MSC_VER
     #pragma warning(pop)
@@ -328,6 +337,7 @@ public:
 
 } // namespace stc
 
+// NOLINTBEGIN(bugprone-std-namespace-modification)
 // hash impl for all id types derived from StrongId that "forwards" to the underlying value type
 template <stc::CStrongId T>
 struct std::hash<T> {
@@ -335,3 +345,4 @@ struct std::hash<T> {
         return std::hash<typename T::id_type>{}(id.value);
     }
 };
+// NOLINTEND(bugprone-std-namespace-modification)

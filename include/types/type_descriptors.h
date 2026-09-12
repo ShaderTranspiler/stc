@@ -180,6 +180,7 @@ struct TypeDescriptor {
     TypeDescriptor& operator=(const TypeDescriptor& other)     = delete;
     TypeDescriptor(TypeDescriptor&&) noexcept                  = default;
     TypeDescriptor& operator=(TypeDescriptor&& other) noexcept = delete;
+    ~TypeDescriptor()                                          = default;
 
     TDVariantType type_data() const { return _type_data; }
 
@@ -214,7 +215,7 @@ struct TypeDescriptor {
         return std::get<T>(_type_data);
     }
 
-    bool operator==(const TypeDescriptor&) const;
+    bool operator==(const TypeDescriptor& other) const;
 
 private:
     friend class TypePool;
@@ -228,14 +229,16 @@ static_assert(sizeof(TypeDescriptor) == sizeof(TDVariantType));
 
 } // namespace stc::types
 
+// NOLINTBEGIN(bugprone-std-namespace-modification)
+// hash specializations are allowed by the spec
 template <>
 struct std::hash<stc::types::VoidTD> {
-    size_t operator()(const stc::types::VoidTD&) const noexcept { return 0; }
+    size_t operator()([[maybe_unused]] const stc::types::VoidTD& x) const noexcept { return 0; }
 };
 
 template <>
 struct std::hash<stc::types::BoolTD> {
-    size_t operator()(const stc::types::BoolTD&) const noexcept { return 0; }
+    size_t operator()([[maybe_unused]] const stc::types::BoolTD& x) const noexcept { return 0; }
 };
 
 template <>
@@ -337,6 +340,7 @@ struct std::hash<stc::types::BuiltinTD> {
         return std::hash<stc::types::BuiltinKind>{}(x.kind);
     }
 };
+// NOLINTEND(bugprone-std-namespace-modification)
 
 static_assert(stc::CHashable<stc::types::TDVariantType>);
 static_assert(stc::CEqualityComparable<stc::types::TDVariantType>);

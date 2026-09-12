@@ -37,7 +37,7 @@ public:
         assert(TypeId{offset} == TypeId::void_id() && "invalid void type id");
     }
 
-    explicit TypePool(SizeTy initial_capacity, std::vector<BuiltinTD> builtins)
+    explicit TypePool(SizeTy initial_capacity, const std::vector<BuiltinTD>& builtins)
         : TypePool{initial_capacity} {
 
         for (BuiltinTD td : builtins)
@@ -48,6 +48,8 @@ public:
     TypePool& operator=(const TypePool&) = delete;
     TypePool(TypePool&&)                 = default;
     TypePool& operator=(TypePool&&)      = default;
+
+    ~TypePool() = default;
 
     const TypeDescriptor& get_td(TypeId id) const;
 
@@ -64,6 +66,7 @@ public:
         return td->is<T>();
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     [[nodiscard]] TypeId void_td() { return TypeId::void_id(); }
     [[nodiscard]] TypeId bool_td();
     [[nodiscard]] TypeId int_td(uint32_t width, bool is_signed);
@@ -126,7 +129,7 @@ public:
     void register_builtin_str(BuiltinKind kind, std::string str);
     template <CEnumOf<BuiltinKind> T>
     void register_builtin_str(T kind, std::string str) {
-        return register_builtin_str(static_cast<BuiltinKind>(kind), str);
+        return register_builtin_str(static_cast<BuiltinKind>(kind), std::move(str));
     }
 
     void clear_builtin_str_map();

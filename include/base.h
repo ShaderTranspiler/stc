@@ -16,7 +16,7 @@
     #endif
 #endif
 
-#if defined(_MSC_VER)
+#ifdef _MSC_VER
     #define STC_FORCE_INLINE __forceinline
 #elif defined(__GNUC__) || defined(__clang__)
     #define STC_FORCE_INLINE __attribute__((always_inline)) inline
@@ -24,7 +24,7 @@
     #define STC_FORCE_INLINE inline
 #endif
 
-#if defined(_MSC_VER)
+#ifdef _MSC_VER
     #define STC_PRETTY_FUNC __FUNCSIG__
 #elif defined(__GNUC__) || defined(__clang__)
     #define STC_PRETTY_FUNC __PRETTY_FUNCTION__

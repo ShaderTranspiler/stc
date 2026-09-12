@@ -27,7 +27,7 @@ public:
     }
 
     // no-op because of arena design, memory is deallocated together
-    void deallocate(T*, size_t) noexcept {}
+    void deallocate([[maybe_unused]] T* start, [[maybe_unused]] size_t size) noexcept {}
 
     // NOTE: this is an extra helper, potentially useful for non-STL DSA stuff
     template <typename... Args>

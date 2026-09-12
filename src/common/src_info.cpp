@@ -98,7 +98,7 @@ SrcLocationId SrcInfoPool::get_location(intptr_t line, uint32_t col) {
 }
 
 size_t SrcInfoPool::get_file(std::string path) {
-    if (!file_bounds.empty() && file_bounds[file_bounds.size() - 1].second.path == path)
+    if (!file_bounds.empty() && file_bounds.back().second.path == path)
         return file_bounds.size() - 1;
 
     file_bounds.emplace_back(last_loc_id, SrcFile{std::move(path)});
@@ -123,7 +123,7 @@ const SrcFile& SrcInfoPool::get_file_for_location(SrcLocationId loc_id) const {
            "File pool was empty, its size should be at least 1 (the invalid src file at idx 0)");
 
     // CLEANUP: last_id_of_prev is monotonically increasing, binary search can be used for large N-s
-    const SrcFile* last_file = &file_bounds[0].second;
+    const SrcFile* last_file = &file_bounds.front().second;
     for (const auto& [last_id_of_prev, file] : file_bounds) {
         if (loc_id <= last_id_of_prev)
             return *last_file;

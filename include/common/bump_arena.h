@@ -146,8 +146,9 @@ public:
         // remains in a usable state even if the exception is caught and ignored
 
         void* dtor_mem = nullptr;
+
         // in the trivially destructible case, dtor_call is unused
-        [[maybe_unused]] void (*dtor_call)(void*);
+        [[maybe_unused]] void (*dtor_call)(void*) = nullptr;
 
         if constexpr (!std::is_trivially_destructible_v<T>) {
             dtor_mem  = allocate_for<DtorLLNode>().second;
@@ -156,9 +157,11 @@ public:
 
         auto [offset, mem] = allocate_for<T>();
 
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         T* obj_ptr = new (mem) T{std::forward<Args>(args)...};
 
         if constexpr (!std::is_trivially_destructible_v<T>) {
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
             dtor_tail = new (dtor_mem) DtorLLNode{dtor_call, obj_ptr, dtor_tail};
         }
 
@@ -171,6 +174,7 @@ public:
             return nullptr;
 
         assert(last_slab_hint < slabs.size());
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
         const auto& last_accessed = slabs[last_slab_hint];
         assert(last_accessed != nullptr);
 
@@ -182,7 +186,9 @@ public:
         if (it == slab_end_offsets.end())
             return nullptr;
 
-        SizeTy idx       = static_cast<SizeTy>(it - slab_end_offsets.begin());
+        const auto idx = static_cast<SizeTy>(it - slab_end_offsets.begin());
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
         const auto& slab = slabs[idx];
 
         assert(slab != nullptr);
@@ -228,11 +234,13 @@ public:
 
 private:
     struct Slab {
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         std::unique_ptr<std::byte[]> buffer;
         SizeTy capacity;
         SizeTy start_offset;
 
         explicit Slab(SizeTy capacity, SizeTy start_offset)
+            // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
             : buffer{std::make_unique_for_overwrite<std::byte[]>(capacity)},
               capacity{capacity},
               start_offset{start_offset} {
@@ -245,22 +253,24 @@ private:
         Slab(Slab&&) noexcept            = default;
         Slab& operator=(Slab&&) noexcept = default;
 
+        ~Slab() = default;
+
         // pointer to first byte past buffer
-        std::byte* get_end_ptr() const { return buffer.get() + capacity; }
+        [[nodiscard]] std::byte* get_end_ptr() const { return buffer.get() + capacity; }
 
         // offset to first byte past buffer
-        SizeTy get_end_offset() const { return SizeT_add(start_offset, capacity); }
+        [[nodiscard]] SizeTy get_end_offset() const { return SizeT_add(start_offset, capacity); }
 
-        bool contains_offset(SizeTy offset) const {
+        [[nodiscard]] bool contains_offset(SizeTy offset) const {
             return start_offset <= offset && offset < get_end_offset();
         }
 
-        void* offset_to_ptr(SizeTy offset) const {
+        [[nodiscard]] void* offset_to_ptr(SizeTy offset) const {
             assert(contains_offset(offset) && "offset outside slab's buffer");
             return buffer.get() + SizeT_sub(offset, start_offset);
         }
 
-        bool contains_ptr(const void* ptr) const {
+        [[nodiscard]] bool contains_ptr(const void* ptr) const {
             return ptr != nullptr && buffer.get() <= ptr && ptr < get_end_ptr();
         }
 
@@ -269,7 +279,7 @@ private:
         SizeTy ptr_to_offset(const void* ptr) const {
             assert(contains_ptr(ptr) && "ptr outside slab's buffer");
 
-            SizeTy internal_offset =
+            const auto internal_offset =
                 static_cast<SizeTy>(static_cast<const std::byte*>(ptr) - buffer.get());
             return SizeT_add(start_offset, internal_offset);
         }
@@ -298,12 +308,13 @@ private:
         // see: https://llvm.org/doxygen/Alignment_8h_source.html#l00144
 
         // upcast so the bitmask trick works
-        uintptr_t alignment_uptr = static_cast<uintptr_t>(alignment);
+        const auto alignment_uptr = static_cast<uintptr_t>(alignment);
 
         return (size + alignment_uptr - 1U) & ~(alignment_uptr - 1U);
     }
 
     static std::byte* get_aligned_ptr(std::byte* ptr, SizeTy alignment) {
+        // NOLINTNEXTLINE(performance-no-int-to-ptr)
         return reinterpret_cast<std::byte*>(
             get_aligned_size(reinterpret_cast<uintptr_t>(ptr), alignment));
     }
@@ -318,8 +329,8 @@ private:
     void make_new_slab(SizeTy capacity_fallback = 0) {
         SizeTy new_capacity;
         if (!slabs.empty()) {
-            assert(slabs[slabs.size() - 1] != nullptr && "Slab pointer is nullptr");
-            SizeTy old_capacity = slabs[slabs.size() - 1]->capacity;
+            assert(slabs.back() != nullptr && "Slab pointer is nullptr");
+            SizeTy old_capacity = slabs.back()->capacity;
             new_capacity =
                 old_capacity < SizeT_div(SizeT_max, 2) ? SizeT_mul(old_capacity, 2U) : SizeT_max;
         } else {
@@ -346,6 +357,7 @@ private:
         end_ptr    = slabs_tail->get_end_ptr();
     }
 
+    // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
     void handle_move(BumpArena&& other) noexcept {
         slabs            = std::move(other.slabs);
         slab_end_offsets = std::move(other.slab_end_offsets);

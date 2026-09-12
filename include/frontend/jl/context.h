@@ -50,6 +50,8 @@ public:
     JLCtx(JLCtx&&)            = delete;
     JLCtx& operator=(JLCtx&&) = delete;
 
+    ~JLCtx() = default;
+
 protected:
     template <typename T, typename U>
     explicit JLCtx(ASTCtx<T, U>&& other, NodeId::id_type node_arena_kb = 128U)

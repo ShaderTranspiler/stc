@@ -41,15 +41,15 @@ enum class QualKind : uint8_t {
 
 };
 
-inline constexpr bool is_layout_qual(QualKind kind) {
+constexpr bool is_layout_qual(QualKind kind) {
     return QualKind::FirstLQ <= kind && kind <= QualKind::LastLQ;
 }
 
-inline constexpr bool is_valueless_layout_qual(QualKind kind) {
+constexpr bool is_valueless_layout_qual(QualKind kind) {
     return QualKind::FirstLQNoVal <= kind && kind <= QualKind::LastLQNoVal;
 }
 
-inline constexpr bool is_value_layout_qual(QualKind kind) {
+constexpr bool is_value_layout_qual(QualKind kind) {
     return QualKind::FirstLQVal <= kind && kind <= QualKind::LastLQVal;
 }
 
@@ -106,6 +106,7 @@ struct DeclQualifiers {
     DeclQualifiers& operator=(const DeclQualifiers&) = default;
     DeclQualifiers(DeclQualifiers&&)                 = default;
     DeclQualifiers& operator=(DeclQualifiers&&)      = default;
+    ~DeclQualifiers()                                = default;
 
     constexpr bool operator==(const DeclQualifiers&) const = default;
 };

@@ -81,7 +81,7 @@ struct JuliaTypeCache {
     }
 
     // FEATURE: internal caching for applied types (would require smart GC rooting)
-    jl_datatype_t* vector_of(jl_datatype_t* el_type) const {
+    static jl_datatype_t* vector_of(jl_datatype_t* el_type) {
         jl_value_t* vec_val = jl_apply_array_type(reinterpret_cast<jl_value_t*>(el_type), 1);
         return safe_cast<jl_datatype_t>(vec_val);
     }

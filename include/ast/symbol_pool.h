@@ -12,7 +12,7 @@ namespace stc {
 struct SymbolId : public StrongId<uint32_t> {
     static SymbolId null_id() { return SymbolId{0U}; }
 
-    bool is_null() const { return value == null_id().value; }
+    [[nodiscard]] bool is_null() const { return value == null_id().value; }
 };
 
 class SymbolPool {
@@ -26,6 +26,8 @@ public:
     SymbolPool& operator=(const SymbolPool&) = delete;
     SymbolPool(SymbolPool&&)                 = default;
     SymbolPool& operator=(SymbolPool&&)      = default;
+
+    ~SymbolPool() = default;
 
     SymbolId get_id(std::string_view symbol_value);
     std::string_view get_symbol(SymbolId id) const;

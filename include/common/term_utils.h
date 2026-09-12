@@ -49,7 +49,7 @@ struct ColoredText {
     }
 };
 
-inline constexpr ColoredText colored(std::string_view text, std::string_view color) {
+constexpr ColoredText colored(std::string_view text, std::string_view color) {
     return {text, color};
 }
 
