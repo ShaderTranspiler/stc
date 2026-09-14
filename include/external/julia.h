@@ -21,7 +21,9 @@ static_assert(false, "min macro defined pre julia.h include");
 
 // string needs to be included before julia to fix some very specific issues under some very
 // specific configurations
+#ifdef __cplusplus
 #include <string>
+#endif
 
 #include <julia.h>
 

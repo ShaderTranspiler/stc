@@ -147,6 +147,12 @@ See the output of `stc --help` for an exhaustive list of transpiler options.
 
 The produced library (`libstc`) exposes both a C++ and a C API (the latter serving as the basis for the Julia bindings). Both live under `include/api/` and the `stc::api` namespace. The two APIs have proper documentation, available [here](https://shadertranspiler.github.io/stc/).
 
+The two are not equivalent in terms of consumption. The C++ API is the one that can be included and called directly in C++ code.
+The C API currently serves as an **ABI-only** layer: functions prefixed with `stc_` have C linkage, so programs calling directly into the produced shared library can use them. This is how Julia bindings consume this API, through `ccall` which binds symbols by name and doesn't include headers.
+Including the headers directly in C will result in compiler errors, since they will transitively pull in C++-only headers.
+
+Proper C inclusion support is planned for v1.0, along with a cleaned up result interface (e.g. merged error paths).
+
 A simple illustration for the C++ API:
 ```cpp
 #include <external/julia.h> // guarded Julia include
@@ -178,11 +184,20 @@ int main() {
 }
 ```
 
-The same thing using the C API:
+The same thing using the C API looks something like this.
+The snippet defines the used symbols explicitly via `extern` because of the aforementioned limitations with C header inclusions. They're here to demonstrate the signatures and help understanding.
+The library is not meant to be used this way currently, this only serves to demonstrate the C ABI's usage, since its resource management is important to illustrate.
 ```c
 #include <external/julia.h>
-#include <api/transpiler.h>
-// ... (stdio.h, stdlib.h, stdbool.h)
+// ... (stdio.h, stdlib.h, stdbool.h, stdint.h)
+
+extern uint8_t     stc_abi_version(void);
+extern void*       stc_create_cfg(void);
+extern void        stc_free_cfg(void* cfg_handle);
+extern void        stc_set_use_tabs(void* cfg_handle, bool value);
+extern void*       stc_transpile_code(const char* code, bool run_benchmark, void* cfg_handle);
+extern const char* stc_get_result(void* result_handle);
+extern void        stc_free_result(void* result_handle);
 
 static const char* julia_code = "...";
 
@@ -235,6 +250,7 @@ A few important notes:
 - Initializing the Julia runtime is the caller's responsibility. This is because in most use cases a Julia runtime should already be accessible to the host application.
 - It was stripped from the snippets for brevity, but if you're initializing the Julia runtime from C/C++, the `JULIA_DEFINE_FAST_TLS` macro should be defined (exactly once). It's also recommended to include `external/julia.h` instead of `julia.h` directly, since it acts as a wrapper safeguard for inclusion.
 - Linking requires both `libstc` and `libjulia`.
+- The C API is accessible in C++, but its functions remain encapsulated under the `stc::api` namespace. This means that `stc::api::transpile` is the recommended way to use the API from C++ code, but `stc::api::stc_transpile` is also available if the developer wants to deal with the C API directly.
 
 Take a look at `sandbox/sb_example_sandbox.cpp` for a slightly more robust and documented example.
 
