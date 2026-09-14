@@ -382,6 +382,7 @@ Options are documented in `Name (Default): Description` format.
 - `STC_USE_FORMAT` (`ON`): enables the formatting targets, if clang-format is installed locally
 - `STC_USE_TIDY` (`OFF`): enables static analysis through clang-tidy, if installed locally
 - `STC_USE_SAN` (`OFF`): enables ASan and UBSan for Debug builds (see the libjulia warning above)
+- `STC_OFFICIAL_BUILD` (`OFF`): marks the builds produced under this configuration as official (this isn't a validation/verification feature, it's just a flag to easily distinguish between local development builds and official releases for debugging, mostly used by CI).
 
 Not options as such, but respected:
 

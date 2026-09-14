@@ -16,6 +16,7 @@ inline constexpr uint8_t          version_patch  =  @PROJECT_VERSION_PATCH@;
 // NOLINTNEXTLINE(readability-redundant-string-init)
 inline constexpr std::string_view version_suffix = "@STC_VERSION_SUFFIX@";
 
+inline constexpr std::string_view build_origin   = "@STC_BUILD_ORIGIN@";
 inline constexpr std::string_view build_type     = "@CMAKE_BUILD_TYPE@";
 
 inline constexpr std::string_view compiler_id    = "@CMAKE_CXX_COMPILER_ID@";

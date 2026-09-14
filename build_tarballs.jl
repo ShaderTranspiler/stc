@@ -9,12 +9,24 @@ name = "stc"
 
 # a bit hacky, but keeps the CMake file as the single source of truth for versioning
 cmake_content = read("CMakeLists.txt", String)
+
 version_match = match(r"project\([^ ]+ VERSION (\d+\.\d+\.\d+)\)", cmake_content)
 if isnothing(version_match)
     error("could not strip VERSION from CMakeLists.txt file")
 end
 
-version = VersionNumber(version_match[1])
+# only unsuffixed versions are allowed to be published (unless an override is provided, useful for local deployment)
+suffix_match = match(r"set\(STC_VERSION_SUFFIX \"([^\"]*)\"\)", cmake_content)
+if isnothing(suffix_match)
+    error("could not strip STC_VERSION_SUFFIX from CMakeLists.txt file")
+end
+
+has_suffix = !isempty(suffix_match.captures) && !isempty(suffix_match[1])
+if !("--allow-suffixed-build" in ARGS) && has_suffix
+    error("cannot publish builds with STC_VERSION_SUFFIX set to a non-empty value, unless --allow-suffixed-build is provided explicitly.")
+end
+
+version = VersionNumber(has_suffix ? "$(version_match[1])-$(suffix_match[1])" : version_match[1])
 
 # try to grab git hash for versioning on the host itself
 commit_hash = try
@@ -72,7 +84,8 @@ cmake .. -DCMAKE_INSTALL_PREFIX=\${prefix} \\
          $(commit_hash === nothing ? "-DSTC_COMMIT_HASH=$commit_hash \\" : "")
          -DSTC_BUILD_TIMESTAMP=\"$build_timestamp\" \\
          -DSTC_BUILD_TESTS=OFF \\
-         -DSTC_USE_FORMAT=OFF
+         -DSTC_USE_FORMAT=OFF \\
+         -DSTC_OFFICIAL_BUILD=ON
 
 make -j\${nproc}
 make install

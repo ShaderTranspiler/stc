@@ -14,6 +14,8 @@ jobs:
     outputs:
       version: ${{ steps.extract.outputs.version }}
       is_new: ${{ steps.check.outputs.is_new }}
+      is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
+      is_draft: ${{ steps.extract.outputs.is_draft }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +25,22 @@ jobs:
         id: extract
         run: |
           VERSION=$(grep -oP '(?<=project\(ShaderTranspilerCore VERSION )[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          SUFFIX=$(grep -oP '(?<=set\(STC_VERSION_SUFFIX ")[^"]*' CMakeLists.txt)
+
+          if [ -n "$SUFFIX" ]; then
+            if ! echo "$SUFFIX" | grep -qP '^rc\.[0-9]+$'; then
+              echo "::error::Invalid STC_VERSION_SUFFIX '$SUFFIX' (expected empty or rc.N)"
+              exit 1
+            fi
+            
+            VERSION="$VERSION-$SUFFIX"
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "is_draft=false" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "is_draft=true" >> $GITHUB_OUTPUT
+          fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if Tag Exists
@@ -34,12 +52,6 @@ jobs:
             echo "is_new=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create Tag
-        if: steps.check.outputs.is_new == 'true'
-        run: |
-          git tag "v${{ steps.extract.outputs.version }}"
-          git push origin "v${{ steps.extract.outputs.version }}"
-
   build-artifacts:
     needs: check-version
     if: needs.check-version.outputs.is_new == 'true'
@@ -50,8 +62,6 @@ jobs:
         julia: ["1.11", "1.12"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -59,7 +69,7 @@ jobs:
           version: ${{ matrix.julia }}
 
       - name: Configure CMake
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSTC_BUILD_TESTS=OFF -DSTC_USE_FORMAT=OFF
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSTC_BUILD_TESTS=OFF -DSTC_USE_FORMAT=OFF -DSTC_OFFICIAL_BUILD=ON
 
       - name: Build
         run: cmake --build build --config Release -j
@@ -90,10 +100,11 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Draft Release
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: Release v${{ needs.check-version.outputs.version }}
-          draft: true
+          prerelease: ${{ needs.check-version.outputs.is_prerelease }}
+          draft: ${{ needs.check-version.outputs.is_draft }}
           files: dist/*

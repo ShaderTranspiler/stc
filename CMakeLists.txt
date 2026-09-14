@@ -17,7 +17,12 @@ set(STC_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
 project(ShaderTranspilerCore VERSION 0.8.5)
 set(STC_VERSION_SUFFIX "")
 
-if(STC_VERSION_SUFFIX)
+if(NOT STC_VERSION_SUFFIX STREQUAL "")
+    if (NOT STC_VERSION_SUFFIX MATCHES "^rc\\.[0-9]+$")
+        message(FATAL_ERROR "Invalid STC_VERSION_SUFFIX: '${STC_VERSION_SUFFIX}'.\n"
+        "Must be empty for releases, or have the form rc.N for release candidates (e.g. rc.1).")
+    endif()
+
     set(STC_VERSION "${PROJECT_VERSION}-${STC_VERSION_SUFFIX}")
 else()
     set(STC_VERSION "${PROJECT_VERSION}")
@@ -68,8 +73,15 @@ option(STC_USE_CCACHE "Use ccache for compiler caching, if it's installed locall
 option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed locally" ON)
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
+option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
 
 get_property(STC_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
+set(STC_BUILD_ORIGIN "development build")
+if (STC_OFFICIAL_BUILD)
+    set(STC_BUILD_ORIGIN "official build")
+endif()
+message(STATUS "Build origin: ${STC_BUILD_ORIGIN}")
 
 if (NOT STC_MULTI_CONFIG AND "${CMAKE_BUILD_TYPE}" STREQUAL "")
     message(STATUS "No build type specified and not in multi-config environment, defaulting to Debug")
