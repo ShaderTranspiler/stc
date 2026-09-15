@@ -75,20 +75,25 @@ option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installe
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
 option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
 
-get_property(STC_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-
 set(STC_BUILD_ORIGIN "development build")
 if (STC_OFFICIAL_BUILD)
     set(STC_BUILD_ORIGIN "official build")
 endif()
 message(STATUS "Build origin: ${STC_BUILD_ORIGIN}")
 
+get_property(STC_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
 if (NOT STC_MULTI_CONFIG AND "${CMAKE_BUILD_TYPE}" STREQUAL "")
     message(STATUS "No build type specified and not in multi-config environment, defaulting to Debug")
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
+# TODO: proper build type metadata in multi-config environments
+if (NOT STC_MULTI_CONFIG)
+    message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
+else()
+    message(STATUS "Build type is multi-config")
+endif()
 
 # Julia lookup
 

@@ -12,7 +12,8 @@
 #   - JULIA_LIB_DIR: directory of libjulia library files
 #   - STC_JULIA_VERSION: the version of Julia used
 # defines variables (cannot be explicitly specified):
-#   - JULIA_LIB: the absolute path of the libjulia file to link against
+#   - JULIA_RUNTIME_LIB: the absolute path of the libjulia file loaded at runtime (all platforms)
+#   - JULIA_IMPORT_LIB: the absolute path of the libjulia import library (Windows only)
 
 # defines target: STC::Julia (link against libjulia through this if possible, use directories for more complex ops)
 
@@ -46,35 +47,42 @@ if (NOT FJL_DIR_VARS_SPECIFIED)
         message(FATAL_ERROR "Couldn't find Julia executable (needed for locating libjulia). Please ensure Julia is installed and added to PATH, or specify JULIA_INCLUDE_DIR, JULIA_LIB_DIR, JULIA_BIN_DIR (and STC_JULIA_VERSION) explicitly.")
     endif()
 
+    # Julia's LIBDIR and INCLUDEDIR are specified relative to BINDIR
     execute_process(
-        COMMAND ${JULIA_EXEC} -e "print(VERSION)"
-        OUTPUT_VARIABLE STC_JULIA_VERSION_TMP
+        COMMAND ${JULIA_EXEC} -e "
+            println(VERSION)
+            println(Sys.BINDIR)
+            println(joinpath(Sys.BINDIR, Base.LIBDIR))
+            println(joinpath(Sys.BINDIR, Base.INCLUDEDIR, \"julia\"))
+        "
+        OUTPUT_VARIABLE FJL_JULIA_QUERY
+        ERROR_VARIABLE  FJL_JULIA_QUERY_ERR
+        RESULT_VARIABLE FJL_JULIA_QUERY_RES
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-    if (DEFINED STC_JULIA_VERSION AND NOT STC_JULIA_VERSION STREQUAL "" AND NOT STC_JULIA_VERSION STREQUAL STC_JULIA_VERSION_TMP)
-        message(FATAL_ERROR "Mismatch between the explicitly specified Julia version (${STC_JULIA_VERSION}) and the Julia executable's own version info (${STC_JULIA_VERSION_TMP}). When building with a Julia version (or install) that is separate from what the Julia executable points to, please specify all of JULIA_INCLUDE_DIR, JULIA_LIB_DIR and JULIA_BIN_DIR.")
-    else()
-        set(STC_JULIA_VERSION "${STC_JULIA_VERSION_TMP}")
+    if (NOT FJL_JULIA_QUERY_RES EQUAL 0)
+        message(FATAL_ERROR "Failed to retrieve install layout from the Julia executable (${JULIA_EXEC}):\n${FJL_JULIA_QUERY_ERR}")
     endif()
 
-    execute_process(
-        COMMAND ${JULIA_EXEC} -e "print(Sys.BINDIR)"
-        OUTPUT_VARIABLE JULIA_BIN_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+    # unify newline between CRLF and LF
+    string(REGEX REPLACE "\r?\n" ";" FJL_JULIA_QUERY "${FJL_JULIA_QUERY}")
 
-    # only used to locate the lib directory, the library file itself is resolved per-platform below
-    execute_process(
-        COMMAND ${JULIA_EXEC} -e "using Libdl; print(Libdl.dlpath(\"libjulia\"))"
-        OUTPUT_VARIABLE FJL_JULIA_DLPATH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+    list(GET FJL_JULIA_QUERY 0 FJL_JULIA_VERSION)
+    list(GET FJL_JULIA_QUERY 1 FJL_BIN_DIR_RAW)
+    list(GET FJL_JULIA_QUERY 2 FJL_LIB_DIR_RAW)
+    list(GET FJL_JULIA_QUERY 3 FJL_INCLUDE_DIR_RAW)
 
-    get_filename_component(JULIA_LIB_DIR "${FJL_JULIA_DLPATH}" DIRECTORY)
-    get_filename_component(JULIA_LIB_DIR "${JULIA_LIB_DIR}" ABSOLUTE) # dlpath doesn't normalize path
+    if (DEFINED STC_JULIA_VERSION AND NOT STC_JULIA_VERSION STREQUAL "" AND NOT STC_JULIA_VERSION STREQUAL FJL_JULIA_VERSION)
+        message(FATAL_ERROR "Mismatch between the explicitly specified Julia version (${STC_JULIA_VERSION}) and the Julia executable's own version info (${FJL_JULIA_VERSION}). When building with a Julia version (or install) that is separate from what the Julia executable points to, please specify all of JULIA_INCLUDE_DIR, JULIA_LIB_DIR and JULIA_BIN_DIR.")
+    else()
+        set(STC_JULIA_VERSION "${FJL_JULIA_VERSION}")
+    endif()
 
-    get_filename_component(JULIA_INCLUDE_DIR "${JULIA_BIN_DIR}/../include/julia" ABSOLUTE)
+    # normalize paths (Julia produces .. segments into paths and occasionally mixes \ and / on Windows)
+    get_filename_component(JULIA_BIN_DIR "${FJL_BIN_DIR_RAW}" ABSOLUTE)
+    get_filename_component(JULIA_LIB_DIR "${FJL_LIB_DIR_RAW}" ABSOLUTE)
+    get_filename_component(JULIA_INCLUDE_DIR "${FJL_INCLUDE_DIR_RAW}" ABSOLUTE)
 endif()
 
 foreach (FJL_REQ_PATH IN LISTS FJL_DIR_VARS)
@@ -89,44 +97,39 @@ if (NOT DEFINED STC_JULIA_VERSION OR STC_JULIA_VERSION STREQUAL "")
     message(FATAL_ERROR "STC_JULIA_VERSION is required. When bypassing include/lib/bin directory resolution through the julia executable, also pass -DSTC_JULIA_VERSION=x.y.z manually.")
 endif()
 
-# CLEANUP: this is way too excessive (and some of them are redundant with the new resolution system)
+# on windows we need to locate import lib and runtime lib separately, on Unix they match
 if (WIN32)
-    if (EXISTS "${JULIA_LIB_DIR}/libjulia.dll.a")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dll.a")
-    elseif (EXISTS "${JULIA_BIN_DIR}/libjulia.dll")
-        set(JULIA_LIB "${JULIA_BIN_DIR}/libjulia.dll")
-    elseif (EXISTS "${JULIA_LIB_DIR}/libjulia.lib")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.lib")
-    elseif (EXISTS "${JULIA_LIB_DIR}/julia.lib")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/julia.lib")
-    else()
-        message(FATAL_ERROR "Couldn't locate Julia library (.dll.a or .lib in \"${JULIA_LIB_DIR}\", or .dll in \"${JULIA_BIN_DIR}\")")
+    set(JULIA_IMPORT_LIB "${JULIA_LIB_DIR}/libjulia.dll.a")
+
+    if (NOT EXISTS "${JULIA_IMPORT_LIB}")
+        message(FATAL_ERROR "Couldn't locate Julia's import library (expected path: ${JULIA_IMPORT_LIB})")
     endif()
+
+    set(JULIA_RUNTIME_LIB "${JULIA_BIN_DIR}/libjulia.dll")
 else()
-    if (EXISTS "${JULIA_LIB_DIR}/libjulia.so")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.so")
-    elseif (EXISTS "${JULIA_LIB_DIR}/libjulia.dylib")
-        set(JULIA_LIB "${JULIA_LIB_DIR}/libjulia.dylib")
-    else()
-        file(GLOB JULIA_LIB_MATCHES "${JULIA_LIB_DIR}/libjulia.*")
-        if (JULIA_LIB_MATCHES)
-            list(GET JULIA_LIB_MATCHES 0 JULIA_LIB)
-        endif()
-    endif()
+    set(JULIA_RUNTIME_LIB "${JULIA_LIB_DIR}/libjulia${CMAKE_SHARED_LIBRARY_SUFFIX}")
 endif()
 
-if (NOT EXISTS "${JULIA_LIB}")
-    message(FATAL_ERROR "Couldn't locate libjulia (searched in \"${JULIA_LIB_DIR}\")")
+if (NOT EXISTS "${JULIA_RUNTIME_LIB}")
+    message(FATAL_ERROR "Couldn't locate Julia's runtime library (expected path: ${JULIA_RUNTIME_LIB})")
 endif()
 
 message(STATUS "Using Julia include dir: ${JULIA_INCLUDE_DIR}")
 message(STATUS "Using Julia bin dir: ${JULIA_BIN_DIR}")
 message(STATUS "Using Julia lib dir: ${JULIA_LIB_DIR}")
-message(STATUS "Using Julia library: ${JULIA_LIB}")
+message(STATUS "Using Julia runtime library: ${JULIA_RUNTIME_LIB}")
+if (WIN32)
+    message(STATUS "Using Julia import library: ${JULIA_IMPORT_LIB}")
+endif()
 message(STATUS "Using Julia version: ${STC_JULIA_VERSION}")
 
-add_library(STC::Julia UNKNOWN IMPORTED)
+add_library(STC::Julia SHARED IMPORTED)
 set_target_properties(STC::Julia PROPERTIES
-    IMPORTED_LOCATION             "${JULIA_LIB}"
+    IMPORTED_LOCATION             "${JULIA_RUNTIME_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${JULIA_INCLUDE_DIR}"
 )
+
+# separate import lib is only used on Windows
+if (WIN32)
+    set_target_properties(STC::Julia PROPERTIES IMPORTED_IMPLIB "${JULIA_IMPORT_LIB}")
+endif()
