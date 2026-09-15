@@ -4,6 +4,9 @@
 // getting recognized as a macro invocation. However, mingw gcc (for example) already defines
 // NOMINMAX internally, so it will start spitting out macro redef warnings for NOMINMAX, if it's
 // redefined here.
+// also, Julia 1.12.7 introduced custom compiler identification flags (or at least added them to
+// places relevant to the transpiler), which means that these have to be defined (but otherwise i
+// don't want them cluttering the codebase)
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -24,6 +27,10 @@ static_assert(false, "min macro defined pre julia.h include");
 #ifdef __cplusplus
 #include <string>
 #endif
+
+// defines metadata macros (compiler, ptr size, etc.) that julia.h relies on
+// this fixes an MSVC-only error, which shouldn't exist by looking at the code, but does
+#include <platform.h>
 
 #include <julia.h>
 
