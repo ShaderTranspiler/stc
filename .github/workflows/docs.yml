@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# GitHub Pages permits one deployment at a time; queue them rather than cancelling in flight
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pages: write

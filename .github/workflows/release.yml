@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# releases can't be interrupted, to avoid half-published state in the repo
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 

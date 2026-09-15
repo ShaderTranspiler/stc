@@ -1,11 +1,17 @@
 name: CI
 
 on:
+  # feature/**, fix/** and hotfix/** are covered by their pull request run instead of a push run
   push:
-    branches: [main, develop, "release/**", "feature/**", "fix/**", "hotfix/**"]
+    branches: [main, develop, "release/**"]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
   workflow_dispatch:
+
+# newer commits invalidate in-flight runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -33,7 +39,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup vcpkg cache (for Catch2)
+      - name: Setup vcpkg Cache (for Catch2)
         if: matrix.config.os == 'windows-latest'
         uses: actions/cache@v4
         with:
