@@ -1,13 +1,9 @@
 // ! ONLY EVER INCLUDE <julia.h> THROUGH THIS WRAPPER !
-// Reasoning:
+
 // MSVC fails to compile without NOMINMAX because of stuff like std::numeric_limits<T>::max()
 // getting recognized as a macro invocation. However, mingw gcc (for example) already defines
 // NOMINMAX internally, so it will start spitting out macro redef warnings for NOMINMAX, if it's
 // redefined here.
-// also, Julia 1.12.7 introduced custom compiler identification flags (or at least added them to
-// places relevant to the transpiler), which means that these have to be defined (but otherwise i
-// don't want them cluttering the codebase)
-
 #ifndef NOMINMAX
 #define NOMINMAX
 #define STC_DEFINED_NOMINMAX
@@ -28,11 +24,25 @@ static_assert(false, "min macro defined pre julia.h include");
 #include <string>
 #endif
 
-// defines metadata macros (compiler, ptr size, etc.) that julia.h relies on
-// this fixes an MSVC-only error, which shouldn't exist by looking at the code, but does
-#include <platform.h>
+#include <julia_version.h>
+
+// an internal header in Julia 1.12.7 broke MSVC compilation by including an __attribute__(...) in
+// one of its macros without checking for the current compiler's ID
+// 1.13.0 was rolled out soon after where this was already fixed, but the 1.12 line never got a
+// patch to address this, so we can either drop 1.12.7 support explicitly for MSVC, or apply this
+// workaround
+#if JULIA_VERSION_MAJOR == 1 && JULIA_VERSION_MINOR == 12 && JULIA_VERSION_PATCH == 7 &&           \
+    defined(_MSC_VER) && !defined(__attribute__)
+#define __attribute__(x)
+#define STC_SWALLOWED_ATTRIBUTE
+#endif
 
 #include <julia.h>
+
+#ifdef STC_SWALLOWED_ATTRIBUTE
+#undef STC_SWALLOWED_ATTRIBUTE
+#undef __attribute__
+#endif
 
 // undef NOMINMAX so that if anything else tries to define min/max, it'll be noticed and handled
 // separately, with proper context on that other include
