@@ -426,7 +426,7 @@ Not options as such, but respected:
 - `cmake/` -- build system modules. Julia resolution, dev tooling, docs and metadata generation.
 - `scripts/` -- developer helper scripts: auto builder for `PowerShell`, debug environment setup and a recommended pre-commit hook.
 - `misc/` -- suppression files for the analysis tools that libjulia upsets.
-- `.github/workflows/` -- CI, docs deployment and release automation.
+- `.github/workflows/` -- CI, version checking, docs deployment and release automation.
 
 # Transpiler Architecture
 
