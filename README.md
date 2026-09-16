@@ -66,7 +66,7 @@ A more high level Julia abstraction is available in the [ShaderTranspiler.jl](ht
 Building the transpiler requires:
 - **CMake 3.16** or newer
 - a **C++20** compiler (GCC is recommended, clang and MSVC are also supported)
-- a **v1.11** or newer **Julia** installation
+- a **v1.12** or newer **Julia** installation
 
 Everything else is optional and automatically fetched by CMake when needed, or only enabled if available (see [Building the Project](#building-the-project)).
 

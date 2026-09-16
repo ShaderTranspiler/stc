@@ -14,6 +14,11 @@ permissions:
   contents: write
 
 jobs:
+  setup:
+    uses: ./.github/workflows/julia-targets.yml
+    with:
+      mode: release
+
   check-version:
     runs-on: ubuntu-latest
     outputs:
@@ -58,20 +63,20 @@ jobs:
           fi
 
   build-artifacts:
-    needs: check-version
+    needs: [check-version, setup]
     if: needs.check-version.outputs.is_new == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        julia: ["1.11", "1.12"]
+        julia: ${{ fromJSON(needs.setup.outputs.julia) }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
-          version: ${{ matrix.julia }}
+          version: ${{ matrix.julia.build }}
 
       - name: Configure CMake
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSTC_BUILD_TESTS=OFF -DSTC_USE_FORMAT=OFF -DSTC_OFFICIAL_BUILD=ON
@@ -81,16 +86,16 @@ jobs:
 
       - name: Package Linux Artifacts
         if: runner.os == 'Linux'
-        run: tar -czvf stc-v${{ needs.check-version.outputs.version }}-linux-julia-v${{ matrix.julia }}.tar.gz -C build bin lib
+        run: tar -czvf stc-v${{ needs.check-version.outputs.version }}-linux-julia-v${{ matrix.julia.series }}.tar.gz -C build bin lib
 
       - name: Package Windows Artifacts
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path "build\bin\*", "build\lib\*" -DestinationPath "stc-v${{ needs.check-version.outputs.version }}-win-julia-v${{ matrix.julia }}.zip"
+        run: Compress-Archive -Path "build\bin\*", "build\lib\*" -DestinationPath "stc-v${{ needs.check-version.outputs.version }}-win-julia-v${{ matrix.julia.series }}.zip"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ runner.os }}-julia${{ matrix.julia }}
+          name: artifacts-${{ runner.os }}-julia-v${{ matrix.julia.series }}
           path: |
             *.tar.gz
             *.zip
