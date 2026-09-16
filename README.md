@@ -1,8 +1,8 @@
 # Shader Transpiler Core (STC)
 
-|`main`   |  `develop` | `release/0.9.0` |
-|---|---|---|
-| [![CI on main](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) | [![CI on develop](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml)  | [![CI on release/0.9.0](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=release/0.9.0)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) |
+|`main`   |  `develop` |
+|---|---|
+| [![CI on main](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) | [![CI on develop](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) |
 
 ---
 
