@@ -1,0 +1,28 @@
+name: Julia Targets
+
+# central point for resolving targeted Julia versions from julia_targets.toml dynamically
+# relies on scripts/julia_build_matrix.py and returns its output, ready for JSON parsing
+# (see the script itself for details)
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        required: true
+        type: string
+    outputs:
+      julia:
+        value: ${{ jobs.resolve.outputs.julia }}
+
+jobs:
+  resolve:
+    name: Resolve Julia Targets
+    runs-on: ubuntu-latest
+    outputs:
+      julia: ${{ steps.versions.outputs.julia }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: versions
+        env:
+          MODE: ${{ inputs.mode }}
+        run: echo "julia=$(python3 scripts/julia_build_matrix.py "$MODE")" >> "$GITHUB_OUTPUT"

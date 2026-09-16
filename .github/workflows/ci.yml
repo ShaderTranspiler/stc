@@ -1,20 +1,50 @@
 name: CI
 
 on:
+  # feature/**, fix/** and hotfix/** are covered by their pull request run instead of a push run
   push:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
+  schedule:
+    # to catch upstream Julia drift/breakage
+    - cron: "0 4 * * 1" # 4 AM, every Monday
   workflow_dispatch:
 
+# newer commits invalidate in-flight runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # job to parse target info from julia_targets.toml dynamically
+  setup:
+    uses: ./.github/workflows/julia-targets.yml
+    with:
+      # scheduled runs check against latest Julia headers
+      # other triggers run against pinned version (to not mix Julia-side errors with PR changes)
+      mode: ${{ github.event_name == 'schedule' && 'floating' || 'pinned' }}
+
+  # ensures that minimum Julia version in README.md (and in the future other docs) is kept up to date with julia_targets.toml
+  verify_readme:
+    name: Check Documented Julia Requirements
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check README.md
+        run: |
+          MIN=$(python3 scripts/julia_build_matrix.py min)
+          grep -q "v$MIN\b" README.md || {
+            echo "::error::README.md does not document v$MIN as the minimum Julia version"; exit 1; }
+
   build-and-test:
     name: Build & Test (${{ matrix.config.os }}, ${{ matrix.config.compiler }}, Julia v${{ matrix.julia }})
     runs-on: ${{ matrix.config.os }}
+    needs: setup
     strategy:
       fail-fast: false
       matrix:
-        julia: ["1.11", "1.12"]
+        julia: ${{ fromJSON(needs.setup.outputs.julia) }}
         config:
           - os: ubuntu-latest
             compiler: gcc
@@ -33,7 +63,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup vcpkg cache (for Catch2)
+      - name: Setup vcpkg Cache (for Catch2)
         if: matrix.config.os == 'windows-latest'
         uses: actions/cache@v4
         with:
@@ -95,3 +125,14 @@ jobs:
         with:
           file: coverage.info
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  # central build-and-test aggregator
+  # can be used for status check requirements without it having to be updated after CI matrix changes
+  build-and-test-gate:
+    name: Build & Test
+    needs: build-and-test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [ "${{ needs.build-and-test.result }}" = "success" ] || exit 1

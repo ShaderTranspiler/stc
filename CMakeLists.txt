@@ -14,10 +14,15 @@ set(STC_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
 
 # set current project version in these two lines
 # cascades through the entire codebase, treated as a single source of truth
-project(ShaderTranspilerCore VERSION 0.8.5)
-set(STC_VERSION_SUFFIX "")
+project(ShaderTranspilerCore VERSION 0.9.0)
+set(STC_VERSION_SUFFIX "rc.1")
 
-if(STC_VERSION_SUFFIX)
+if(NOT STC_VERSION_SUFFIX STREQUAL "")
+    if (NOT STC_VERSION_SUFFIX MATCHES "^rc\\.[0-9]+$")
+        message(FATAL_ERROR "Invalid STC_VERSION_SUFFIX: '${STC_VERSION_SUFFIX}'.\n"
+        "Must be empty for releases, or have the form rc.N for release candidates (e.g. rc.1).")
+    endif()
+
     set(STC_VERSION "${PROJECT_VERSION}-${STC_VERSION_SUFFIX}")
 else()
     set(STC_VERSION "${PROJECT_VERSION}")
@@ -68,6 +73,13 @@ option(STC_USE_CCACHE "Use ccache for compiler caching, if it's installed locall
 option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed locally" ON)
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
+option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
+
+set(STC_BUILD_ORIGIN "development build")
+if (STC_OFFICIAL_BUILD)
+    set(STC_BUILD_ORIGIN "official build")
+endif()
+message(STATUS "Build origin: ${STC_BUILD_ORIGIN}")
 
 get_property(STC_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 
@@ -76,7 +88,12 @@ if (NOT STC_MULTI_CONFIG AND "${CMAKE_BUILD_TYPE}" STREQUAL "")
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
+# TODO: proper build type metadata in multi-config environments
+if (NOT STC_MULTI_CONFIG)
+    message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
+else()
+    message(STATUS "Build type is multi-config")
+endif()
 
 # Julia lookup
 
@@ -182,6 +199,9 @@ endif()
 # dev tooling (ccache, clang-format, clang-tidy)
 
 include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
+
+# this needs to be included before main targets (lib and CLI)
+include(GNUInstallDirs)
 
 # common compiler/linker config
 
@@ -304,6 +324,8 @@ set_target_properties(${LIBSTC_TARGET} PROPERTIES
     C_VISIBILITY_PRESET                     hidden
     VISIBILITY_INLINES_HIDDEN               ON
 
+    INSTALL_RPATH                           "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+
     LIBRARY_OUTPUT_DIRECTORY                "${STC_LIB_DIR}"
     ARCHIVE_OUTPUT_DIRECTORY                "${STC_LIB_DIR}"
 
@@ -315,7 +337,7 @@ set_target_properties(${LIBSTC_TARGET} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY_DEBUG          "${STC_LIB_DIR}"
     ARCHIVE_OUTPUT_DIRECTORY_RELEASE        "${STC_LIB_DIR}"
     ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_LIB_DIR}"
-    ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_LIB_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_LIB_DIR}"    
 )
 
 if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
@@ -333,7 +355,11 @@ if (STC_BUILD_CLI)
     )
     add_dependencies(${CLI_TARGET} ${BUILD_META_TARGET})
 
-    set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc"
+    set_target_properties(${CLI_TARGET} PROPERTIES
+        OUTPUT_NAME                             "stc"
+
+        INSTALL_RPATH                           "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+
         RUNTIME_OUTPUT_DIRECTORY_DEBUG          "${STC_BIN_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE        "${STC_BIN_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_BIN_DIR}"
@@ -438,21 +464,29 @@ endif()
 
 # install lib, cli and pkg api headers
 
-include(GNUInstallDirs)
-
 install(TARGETS ${LIBSTC_TARGET}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+install(FILES ${STC_SRC_DIR}/packaging/README.txt DESTINATION .)
+
 if(STC_BUILD_CLI)
     install(TARGETS ${CLI_TARGET} 
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
+
+    # wrapper scripts for libjulia resolution on the target system
+    # both scripts shipped on windows and linux too, for simplicity
+    # planned binary launcher in v1.0
+    install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.sh DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-install(DIRECTORY ${STC_SRC_DIR}/include/api/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
-    FILES_MATCHING PATTERN "*.h"
-)
+# there's no point in shipping includes currently, since they'll be broken
+# planned include redesign in v1.0
+# install(DIRECTORY ${STC_SRC_DIR}/include/api/
+#     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
+#     FILES_MATCHING PATTERN "*.h"
+# )

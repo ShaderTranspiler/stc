@@ -1,10 +1,9 @@
 // ! ONLY EVER INCLUDE <julia.h> THROUGH THIS WRAPPER !
-// Reasoning:
+
 // MSVC fails to compile without NOMINMAX because of stuff like std::numeric_limits<T>::max()
 // getting recognized as a macro invocation. However, mingw gcc (for example) already defines
 // NOMINMAX internally, so it will start spitting out macro redef warnings for NOMINMAX, if it's
 // redefined here.
-
 #ifndef NOMINMAX
 #define NOMINMAX
 #define STC_DEFINED_NOMINMAX
@@ -21,9 +20,33 @@ static_assert(false, "min macro defined pre julia.h include");
 
 // string needs to be included before julia to fix some very specific issues under some very
 // specific configurations
+#ifdef __cplusplus
 #include <string>
+#endif
+
+#include <julia_version.h>
+
+#if !defined(STC_ANY_JULIA_VERSION) && (JULIA_VERSION_MAJOR != 1 || JULIA_VERSION_MINOR < 12)
+#error Building against a libjulia version that is not supported by stc.
+#endif
+
+// an internal header in Julia 1.12.7 broke MSVC compilation by including an __attribute__(...) in
+// one of its macros without checking for the current compiler's ID
+// 1.13.0 was rolled out soon after where this was already fixed, but the 1.12 line never got a
+// patch to address this, so we can either drop 1.12.7 support explicitly for MSVC, or apply this
+// workaround
+#if JULIA_VERSION_MAJOR == 1 && JULIA_VERSION_MINOR == 12 && JULIA_VERSION_PATCH == 7 &&           \
+    defined(_MSC_VER) && !defined(__attribute__)
+#define __attribute__(x)
+#define STC_SWALLOWED_ATTRIBUTE
+#endif
 
 #include <julia.h>
+
+#ifdef STC_SWALLOWED_ATTRIBUTE
+#undef STC_SWALLOWED_ATTRIBUTE
+#undef __attribute__
+#endif
 
 // undef NOMINMAX so that if anything else tries to define min/max, it'll be noticed and handled
 // separately, with proper context on that other include
@@ -42,6 +65,7 @@ static_assert(false, "max macro defined post julia.h include");
 static_assert(false, "min macro defined post julia.h include");
 #endif
 
+// though v1.10 is no longer officially supported, these are kept for STC_ANY_JULIA_VERSION builds
 #if JULIA_VERSION_MAJOR == 1 && JULIA_VERSION_MINOR <= 10 && !defined(jl_unwrap_unionall)
 
 static inline jl_value_t* stc_unwrap_unionall(jl_value_t* v) {

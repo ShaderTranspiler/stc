@@ -38,11 +38,12 @@ foreach ($cfg in $configs) {
 
     if ($interactive) {
         $valid_input = $false
+        $full_exit = $false
 
         while (-not $valid_input) {
             $valid_input = $true
             
-            Write-Host "`n$progress Action for $($cfg.Name): config and [b]uild, [c]onfig only, [s]kip" -ForegroundColor Magenta
+            Write-Host "`n$progress Action for $($cfg.Name): config and [b]uild, [c]onfig only, [s]kip, skip [r]est" -ForegroundColor Magenta
             $action = Read-Host "Action"
             
             switch ($action.ToLower().Trim()) {
@@ -56,11 +57,19 @@ foreach ($cfg in $configs) {
                 'b' { 
                     $do_build = $true 
                 }
+                'r' {
+                    $full_exit = $true
+                }
                 default { 
                     Write-Host "Invalid action provided (expected: b, c, s)" -ForegroundColor Yellow
                     $valid_input = $false
                 }
             }
+        }
+
+        if ($full_exit) {
+            $skipped_builds += ($configs.Count) - $current_step + 1;
+            break;
         }
 
         if ($skip_cfg) {

@@ -58,6 +58,7 @@ template <bool RunBenchmark>
 STC_API MaybeString transpile(jl_value_t* expr_v, stc::TranspilerConfig config,
                               std::string_view juliaglm_path = "Main.JuliaGLM");
 
+// CLEANUP: improve the C API (no NULL vs "" results, no API as ABI only)
 extern "C" {
     /// @brief Queries the current ABI version of the library
     /// @return The current ABI version number
@@ -72,6 +73,17 @@ extern "C" {
     /// @return A result handle pointing to the generated GLSL code on success, nullptr on failure
     /// @see stc_get_result, stc_free_result, stc_create_cfg
     STC_API void* stc_transpile(jl_value_t* expr_v, bool run_benchmark, void* cfg_handle) noexcept;
+
+    /// @brief Invokes the Julia -> GLSL transpilation pipeline on raw Julia code
+    /// @param code The raw string form of the source code to transpile
+    /// @param run_benchmark If true, times each transpilation phase and prints it to stdout at the
+    /// end
+    /// @param cfg_handle The configuration hadnle to use during transpilation (set to NULL for
+    /// default config options)
+    /// @return A result handle pointing to the generated GLSL code on success, nullptr on failure
+    /// @see stc_get_result, stc_free_result, stc_create_cfg
+    STC_API void* stc_transpile_code(const char* code, bool run_benchmark,
+                                     void* cfg_handle) noexcept;
 
     /// @brief Retrieves the C string representation of the generated code belonging to a result
     /// handle

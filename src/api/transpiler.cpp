@@ -183,26 +183,24 @@ template STC_API MaybeString transpile<false>(jl_value_t*, stc::TranspilerConfig
 
 namespace {
 
-std::string* do_transpile(jl_value_t* expr_v, bool run_benchmark, stc::TranspilerConfig& config) {
-    using namespace stc;
-    using namespace stc::jl;
+template <typename TranspileFn>
+requires std::invocable<TranspileFn&, stc::TranspilerConfig&> &&
+         std::same_as<std::invoke_result_t<TranspileFn&, stc::TranspilerConfig&>, std::string*>
+void* invoke_transpilation(void* cfg_handle, TranspileFn&& transpile_fn) noexcept {
+    try {
+        stc::TranspilerConfig config = cfg_handle != nullptr
+                                           ? *(static_cast<stc::TranspilerConfig*>(cfg_handle))
+                                           : stc::TranspilerConfig{};
 
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto get_failure_result = []() { return new std::string{}; };
-
-    if (!jl_is_expr(expr_v)) {
-        std::cerr << "received non-Expr value from Julia\n";
-        return get_failure_result();
+        return static_cast<void*>(transpile_fn(config));
+    } catch (const std::exception& ex) {
+        std::cerr << "the following std::exception was thrown during transpilation:\n";
+        std::cerr << ex.what() << '\n';
+    } catch (...) {
+        std::cerr << "an unexpected error was thrown during transpilation\n";
     }
 
-    std::optional<std::string> result = run_benchmark ? api::transpile<true>(expr_v, config)
-                                                      : api::transpile<false>(expr_v, config);
-
-    if (!result.has_value())
-        return get_failure_result();
-
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    return new std::string(std::move(*result));
+    return nullptr;
 }
 
 } // namespace
@@ -212,31 +210,37 @@ extern "C" {
         return stc::meta::version_major;
     }
 
-    // ! this returns a handle ptr, which must be read through stc_jl_cstr_from_handle and destroyed
-    // ! with free_handle
     STC_API void* stc_transpile(jl_value_t* expr_v, bool run_benchmark, void* cfg_handle) noexcept {
         if (!jl_is_expr(expr_v)) {
             std::cerr << "non-Expr julia object cannot be transpiled\n";
             return nullptr;
         }
 
-        try {
+        return invoke_transpilation(cfg_handle, [&](TranspilerConfig& config) {
+            std::optional<std::string> result = run_benchmark
+                                                    ? stc::api::transpile<true>(expr_v, config)
+                                                    : stc::api::transpile<false>(expr_v, config);
 
-            TranspilerConfig config = cfg_handle != nullptr
-                                          ? *(static_cast<TranspilerConfig*>(cfg_handle))
-                                          : TranspilerConfig{};
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            return result.has_value() ? new std::string(std::move(*result)) : new std::string{};
+        });
+    }
 
-            std::string* result_mem = do_transpile(expr_v, run_benchmark, config);
-            return static_cast<void*>(result_mem);
-
-        } catch (const std::exception& ex) {
-            std::cerr << "the following std::exception was thrown during transpilation:\n";
-            std::cerr << ex.what() << '\n';
-        } catch (...) {
-            std::cerr << "an unexpected error was thrown during transpilation\n";
+    STC_API void* stc_transpile_code(const char* code, bool run_benchmark,
+                                     void* cfg_handle) noexcept {
+        if (code == nullptr) {
+            std::cerr << "nullptr passed to stc_transpile_code as the input code\n";
+            return nullptr;
         }
 
-        return nullptr;
+        return invoke_transpilation(cfg_handle, [&](TranspilerConfig& config) {
+            std::optional<std::string> result =
+                run_benchmark ? stc::api::transpile<true>(code, std::nullopt, config)
+                              : stc::api::transpile<false>(code, std::nullopt, config);
+
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            return result.has_value() ? new std::string(std::move(*result)) : new std::string{};
+        });
     }
 
     // gets the underlying C string data of a result handle

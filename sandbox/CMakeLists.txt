@@ -7,7 +7,7 @@
 
 # needs:
 #   - STC_SRC_DIR, STC_BIN_DIR, STC_BUILD_DIR
-#   - JULIA_LIB, JULIA_BIN_DIR, JULIA_INCLUDE_DIR
+#   - JULIA_BIN_DIR, JULIA_INCLUDE_DIR
 #   - LIBSTC_TARGET
 #   - CommonConfig INTERFACE
 #   - fmt::fmt

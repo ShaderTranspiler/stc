@@ -3,6 +3,8 @@
 #include <common/term_utils.h>
 #include <meta.h>
 
+#include <fmt/format.h>
+
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -100,31 +102,30 @@ consteval auto n_chars_of(char sep) {
 inline void print_version_info() {
     static constexpr auto val_col = ansi_codes::yellow;
 
-    static constexpr std::string_view title   = "Shader Transpiler Core (STC)";
-    static constexpr std::string_view stc_ver = stc::meta::version;
+    static constexpr std::string_view title = "Shader Transpiler Core (STC)";
 
-    static constexpr uint8_t padding_width = 2;
+    static constexpr uint8_t padding_width = 5;
     static constexpr auto padding_buf      = n_chars_of<padding_width>(' ');
     static constexpr auto padding = std::string_view{padding_buf.data(), padding_buf.size()};
 
-    static constexpr size_t header_width =
-        2U * static_cast<size_t>(padding_width) + title.size() + stc_ver.size() + 2U;
+    static constexpr size_t header_width = 2U * static_cast<size_t>(padding_width) + title.size();
 
     static constexpr auto sep_line_buf = n_chars_of<header_width>('-');
     static constexpr auto sep_line     = std::string_view{sep_line_buf.data(), sep_line_buf.size()};
 
     std::cout << sep_line << '\n';
-    std::cout << padding << title << stc::colored(" v", val_col) << stc::colored(stc_ver, val_col)
-              << padding << '\n';
+    std::cout << padding << title << padding << '\n';
     std::cout << sep_line << "\n\n";
 
     // clang-format off
+    std::cout << "version:        " << stc::colored(stc::meta::version, val_col) << '\n';
     std::cout << "target:         " << stc::colored(fmt::format("{}-{}", stc::meta::system_arch, stc::meta::system_name), val_col) << '\n';
     std::cout << "compiler:       " << stc::colored(fmt::format("{} {}", stc::meta::compiler_id, stc::meta::compiler_ver), val_col) << '\n';
+    std::cout << "julia compat:   " << stc::colored(stc::meta::julia_ver, val_col) << '\n';
+    std::cout << "build origin:   " << stc::colored(stc::meta::build_origin, val_col) << '\n';
     std::cout << "build type:     " << stc::colored(stc::meta::build_type, val_col) << '\n';
     std::cout << "build commit:   " << stc::colored(stc::meta::build_commit, val_col) << '\n';
-    std::cout << "julia compat:   " << stc::colored(stc::meta::julia_ver, val_col) << '\n';
-    std::cout << "build date:     " << stc::colored(stc::meta::build_date, val_col) << '\n';
+    std::cout << "build time:     " << stc::colored(stc::meta::build_date, val_col) << '\n';
     // clang-format on
 }
 

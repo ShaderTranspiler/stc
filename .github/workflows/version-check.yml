@@ -1,0 +1,51 @@
+name: Version Check
+
+# guards the version block on the way into main, a missing bump otherwise fails silently.
+# the release workflow finds the tag already present, skips, and publishes nothing
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-step:
+    name: Version Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Determine Branch Kind
+        id: kind
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            hotfix/*)  echo "kind=hotfix"  >> $GITHUB_OUTPUT ;;
+            release/*) echo "kind=release" >> $GITHUB_OUTPUT ;;
+            *)
+              echo "::error::only release/* and hotfix/* branches may be merged into main (this one is '$HEAD_REF')"
+              exit 1
+              ;;
+          esac
+
+      - name: Fetch Base Branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+
+      - name: Extract Base Version Block
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git show "origin/$BASE_REF:CMakeLists.txt" > "$RUNNER_TEMP/base_CMakeLists.txt"
+
+      - name: Check Version Bump
+        run: >
+          python3 scripts/check_version_bump.py
+          --kind ${{ steps.kind.outputs.kind }}
+          --base "$RUNNER_TEMP/base_CMakeLists.txt"
+          --head CMakeLists.txt

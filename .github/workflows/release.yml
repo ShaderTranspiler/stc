@@ -5,15 +5,27 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# releases can't be interrupted, to avoid half-published state in the repo
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
+  setup:
+    uses: ./.github/workflows/julia-targets.yml
+    with:
+      mode: release
+
   check-version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.extract.outputs.version }}
       is_new: ${{ steps.check.outputs.is_new }}
+      is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
+      is_draft: ${{ steps.extract.outputs.is_draft }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +35,22 @@ jobs:
         id: extract
         run: |
           VERSION=$(grep -oP '(?<=project\(ShaderTranspilerCore VERSION )[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          SUFFIX=$(grep -oP '(?<=set\(STC_VERSION_SUFFIX ")[^"]*' CMakeLists.txt)
+
+          if [ -n "$SUFFIX" ]; then
+            if ! echo "$SUFFIX" | grep -qP '^rc\.[0-9]+$'; then
+              echo "::error::Invalid STC_VERSION_SUFFIX '$SUFFIX' (expected empty or rc.N)"
+              exit 1
+            fi
+            
+            VERSION="$VERSION-$SUFFIX"
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "is_draft=false" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "is_draft=true" >> $GITHUB_OUTPUT
+          fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if Tag Exists
@@ -34,48 +62,43 @@ jobs:
             echo "is_new=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create Tag
-        if: steps.check.outputs.is_new == 'true'
-        run: |
-          git tag "v${{ steps.extract.outputs.version }}"
-          git push origin "v${{ steps.extract.outputs.version }}"
-
   build-artifacts:
-    needs: check-version
+    needs: [check-version, setup]
     if: needs.check-version.outputs.is_new == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        julia: ["1.11", "1.12"]
+        julia: ${{ fromJSON(needs.setup.outputs.julia) }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
-          version: ${{ matrix.julia }}
+          version: ${{ matrix.julia.build }}
 
       - name: Configure CMake
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSTC_BUILD_TESTS=OFF -DSTC_USE_FORMAT=OFF
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSTC_BUILD_TESTS=OFF -DSTC_USE_FORMAT=OFF -DSTC_OFFICIAL_BUILD=ON
 
       - name: Build
         run: cmake --build build --config Release -j
 
+      - name: Install to staging directory
+        run: cmake --install build --config Release --prefix build/dist
+
       - name: Package Linux Artifacts
         if: runner.os == 'Linux'
-        run: tar -czvf stc-v${{ needs.check-version.outputs.version }}-linux-julia-v${{ matrix.julia }}.tar.gz -C build bin lib
+        run: tar -czvf stc-v${{ needs.check-version.outputs.version }}-linux-julia-v${{ matrix.julia.series }}.tar.gz -C "build/dist" .
 
       - name: Package Windows Artifacts
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path "build\bin\*", "build\lib\*" -DestinationPath "stc-v${{ needs.check-version.outputs.version }}-win-julia-v${{ matrix.julia }}.zip"
+        run: Compress-Archive -Path "build\dist\*" -DestinationPath "stc-v${{ needs.check-version.outputs.version }}-win-julia-v${{ matrix.julia.series }}.zip"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ runner.os }}-julia${{ matrix.julia }}
+          name: artifacts-${{ runner.os }}-julia-v${{ matrix.julia.series }}
           path: |
             *.tar.gz
             *.zip
@@ -90,10 +113,11 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Draft Release
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: Release v${{ needs.check-version.outputs.version }}
-          draft: true
+          prerelease: ${{ needs.check-version.outputs.is_prerelease }}
+          draft: ${{ needs.check-version.outputs.is_draft }}
           files: dist/*
