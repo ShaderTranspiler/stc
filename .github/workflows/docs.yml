@@ -16,7 +16,13 @@ permissions:
   id-token: write
 
 jobs:
+  setup:
+    uses: ./.github/workflows/julia-targets.yml
+    with:
+      mode: min
+
   deploy-docs:
+    needs: [setup]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -28,7 +34,7 @@ jobs:
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
-          version: "1.12"
+          version: ${{ needs.setup.outputs.julia }}
 
       - name: Install Doxygen & Graphviz
         run: sudo apt-get update && sudo apt-get install -y doxygen graphviz

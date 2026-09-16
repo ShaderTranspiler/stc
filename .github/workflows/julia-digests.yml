@@ -1,0 +1,62 @@
+name: Julia Digests
+
+# checks the pinned Julia archive digests for PRs that modify any of its related files
+# this ensures that the checksums are up to date. it also ensures that adding new Julia
+# versions requires the digests to be regenerated
+
+# NOTE:
+# Julia changing their upstream unexpectedly could break this check, but that is something that
+# will have scheduled monitoring in the future, and it's unlikely that it coincides with a PR
+# changing these files (and if it happens, it's probably better to resolve the issue before merge)
+
+# the job decides whether the check is needed internally instead of via `paths`, to not break
+# status check requirements for unrelated PRs
+
+# a manual workflow_dispatch runs regardless of modifications
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  digests:
+    name: Verify Julia Archive Digests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Relevant Changes
+        id: changed
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          CHANGED=$(git diff --name-only "origin/$BASE_REF...HEAD" -- \
+            julia_targets.toml \
+            julia_archive_digests.toml \
+            scripts/update_julia_archive_digests.jl)
+
+          if [ -n "$CHANGED" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            printf 'checking digests due to changes in file(s):\n%s\n' "$CHANGED"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "no relevant changes to Julia digests in this PR, nothing to check"
+          fi
+
+      - name: Setup Julia
+        if: steps.changed.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Check Archive Digests
+        if: steps.changed.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+        run: julia scripts/update_julia_archive_digests.jl --check
