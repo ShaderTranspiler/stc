@@ -200,6 +200,9 @@ endif()
 
 include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
 
+# this needs to be included before main targets (lib and CLI)
+include(GNUInstallDirs)
+
 # common compiler/linker config
 
 add_library(CommonConfig INTERFACE)
@@ -321,6 +324,8 @@ set_target_properties(${LIBSTC_TARGET} PROPERTIES
     C_VISIBILITY_PRESET                     hidden
     VISIBILITY_INLINES_HIDDEN               ON
 
+    INSTALL_RPATH                           "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+
     LIBRARY_OUTPUT_DIRECTORY                "${STC_LIB_DIR}"
     ARCHIVE_OUTPUT_DIRECTORY                "${STC_LIB_DIR}"
 
@@ -332,7 +337,7 @@ set_target_properties(${LIBSTC_TARGET} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY_DEBUG          "${STC_LIB_DIR}"
     ARCHIVE_OUTPUT_DIRECTORY_RELEASE        "${STC_LIB_DIR}"
     ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_LIB_DIR}"
-    ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_LIB_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL     "${STC_LIB_DIR}"    
 )
 
 if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
@@ -350,7 +355,11 @@ if (STC_BUILD_CLI)
     )
     add_dependencies(${CLI_TARGET} ${BUILD_META_TARGET})
 
-    set_target_properties(${CLI_TARGET} PROPERTIES OUTPUT_NAME "stc"
+    set_target_properties(${CLI_TARGET} PROPERTIES
+        OUTPUT_NAME                             "stc"
+
+        INSTALL_RPATH                           "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+
         RUNTIME_OUTPUT_DIRECTORY_DEBUG          "${STC_BIN_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE        "${STC_BIN_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${STC_BIN_DIR}"
@@ -455,21 +464,29 @@ endif()
 
 # install lib, cli and pkg api headers
 
-include(GNUInstallDirs)
-
 install(TARGETS ${LIBSTC_TARGET}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+install(FILES ${STC_SRC_DIR}/packaging/README.txt DESTINATION .)
+
 if(STC_BUILD_CLI)
     install(TARGETS ${CLI_TARGET} 
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
+
+    # wrapper scripts for libjulia resolution on the target system
+    # both scripts shipped on windows and linux too, for simplicity
+    # planned binary launcher in v1.0
+    install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.sh DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-install(DIRECTORY ${STC_SRC_DIR}/include/api/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
-    FILES_MATCHING PATTERN "*.h"
-)
+# there's no point in shipping includes currently, since they'll be broken
+# planned include redesign in v1.0
+# install(DIRECTORY ${STC_SRC_DIR}/include/api/
+#     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
+#     FILES_MATCHING PATTERN "*.h"
+# )

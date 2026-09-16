@@ -84,13 +84,16 @@ jobs:
       - name: Build
         run: cmake --build build --config Release -j
 
+      - name: Install to staging directory
+        run: cmake --install build --config Release --prefix build/dist
+
       - name: Package Linux Artifacts
         if: runner.os == 'Linux'
-        run: tar -czvf stc-v${{ needs.check-version.outputs.version }}-linux-julia-v${{ matrix.julia.series }}.tar.gz -C build bin lib
+        run: tar -czvf stc-v${{ needs.check-version.outputs.version }}-linux-julia-v${{ matrix.julia.series }}.tar.gz -C "build/dist" .
 
       - name: Package Windows Artifacts
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path "build\bin\*", "build\lib\*" -DestinationPath "stc-v${{ needs.check-version.outputs.version }}-win-julia-v${{ matrix.julia.series }}.zip"
+        run: Compress-Archive -Path "build\dist\*" -DestinationPath "stc-v${{ needs.check-version.outputs.version }}-win-julia-v${{ matrix.julia.series }}.zip"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
