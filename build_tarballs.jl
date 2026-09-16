@@ -15,10 +15,10 @@ using TOML
 const REPO_ROOT = @__DIR__
 
 # files and directories copied into the sandbox for building
-const STAGED_FILES::Vector{String} = String["include", "src", "cli", "cmake", "CMakeLists.txt", "LICENSE"]
+const STAGED_FILES::Vector{String} = String["include", "src", "cli", "cmake", "packaging", "CMakeLists.txt", "LICENSE"]
 
 const IS_PUBLISHING::Bool = any(arg -> startswith(arg, "--deploy") && arg != "--deploy=local", ARGS)
-const ALLOW_SUFFIXED_BUILD_ARG::String = "--allow-suffixed-build"
+const SUFFIXED_BUILD_ARG::String = "--suffixed-build" # strips prerelease info from version (BinaryBuilder doesn't support it)
 const ALLOW_NO_COMMIT_HASH_ARG::String = "--allow-no-commit-hash"
 const ALLOW_DIRTY_TREE_ARG::String = "--allow-dirty-tree"
 
@@ -82,11 +82,18 @@ if isnothing(suffix_match)
 end
 
 has_suffix = !isempty(suffix_match.captures) && !isempty(suffix_match[1])
-if has_suffix && !arg_active(ALLOW_SUFFIXED_BUILD_ARG)
-    error("cannot publish builds with STC_VERSION_SUFFIX set to a non-empty value, unless $ALLOW_SUFFIXED_BUILD_ARG is provided explicitly for a non-publishing run.")
-end
 
 version = VersionNumber(has_suffix ? "$(version_match[1])-$(suffix_match[1])" : version_match[1])
+
+if version.prerelease != () || version.build != ()
+    if !arg_active(SUFFIXED_BUILD_ARG)
+        error("cannot publish builds with STC_VERSION_SUFFIX set to a non-empty value, unless $SUFFIXED_BUILD_ARG is provided explicitly for a non-publishing run." *
+            "This will strip prerelease and build data from the version (which will have to be handled manually during deployment)")
+    end
+
+    # strips prerelease and build info
+    version = VersionNumber(version.major, version.minor, version.patch)
+end
 
 # try to grab git hash for versioning on the host itself
 commit_hash = try
@@ -226,7 +233,7 @@ name = "stc"
 # BinaryBuilder requires stripping of custom args
 stripped_args = String[]
 for arg in ARGS
-    if !(arg in (ALLOW_SUFFIXED_BUILD_ARG, ALLOW_NO_COMMIT_HASH_ARG, ALLOW_DIRTY_TREE_ARG))
+    if !(arg in (SUFFIXED_BUILD_ARG, ALLOW_NO_COMMIT_HASH_ARG, ALLOW_DIRTY_TREE_ARG))
         push!(stripped_args, arg)
     end
 end
