@@ -26,6 +26,10 @@ static_assert(false, "min macro defined pre julia.h include");
 
 #include <julia_version.h>
 
+#if !defined(STC_ANY_JULIA_VERSION) && (JULIA_VERSION_MAJOR != 1 || JULIA_VERSION_MINOR < 12)
+#error Building against a libjulia version that is not supported by stc.
+#endif
+
 // an internal header in Julia 1.12.7 broke MSVC compilation by including an __attribute__(...) in
 // one of its macros without checking for the current compiler's ID
 // 1.13.0 was rolled out soon after where this was already fixed, but the 1.12 line never got a
@@ -61,6 +65,7 @@ static_assert(false, "max macro defined post julia.h include");
 static_assert(false, "min macro defined post julia.h include");
 #endif
 
+// though v1.10 is no longer officially supported, these are kept for STC_ANY_JULIA_VERSION builds
 #if JULIA_VERSION_MAJOR == 1 && JULIA_VERSION_MINOR <= 10 && !defined(jl_unwrap_unionall)
 
 static inline jl_value_t* stc_unwrap_unionall(jl_value_t* v) {

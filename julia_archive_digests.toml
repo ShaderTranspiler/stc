@@ -1,0 +1,15 @@
+# GENERATED FILE, DO NOT EDIT BY HAND
+# Regenerate with: julia scripts/update_julia_archive_digests.jl
+#
+# SHA256 sums of the official Julia binaries, retrieved from the official archives at
+# https://julialang-s3.julialang.org/bin/checksums/julia-<version>.sha256
+
+["1.12.7"]
+linux-x86_64 = "4e7e9e776634d24835250de67cde39b0d4af15bc432eb20697e6be6c28ea69e8"
+linux-aarch64 = "9243c0b524c7f300883240a1ee5ea3916a30e070bff718acf8ccaee31a731ef2"
+win64 = "c374f00e8cf257515e10133829f05d39ce3411b46131ba6a9f3cbfb5e247cd71"
+
+["1.13.0"]
+linux-x86_64 = "8975da61c128a5e5ded3e719e868da8c8781deb7ad7913d37fb99be02a81904b"
+linux-aarch64 = "6cd4a3e4baa2dc5f55638c28e9835fc294f41c78ada4a740dc408436778ab8b4"
+win64 = "1c7a9e1455ed2ca204a797b0677040585977a9e62a3ec138118245058fed8580"

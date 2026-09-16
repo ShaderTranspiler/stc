@@ -1,0 +1,52 @@
+# Pins what Julia versions the transpiler supports
+#
+# [[series]] are split per ABI boundary, relying on libjulia's SONAME (using <major>.<minor>)
+# every patch release within a series should be interchangeable at the lib binary's level
+# ===> JLLs are built once per series
+#
+# [[archive]] specifies a platform target stc is built for (as JLL)
+# this unifies platform data for Julia archives and BinaryBuilder
+# three different representations exist, since different tools use different ones
+#
+# data here propagates across distribution and CI
+
+# == SERIES FORMAT ==
+# [[series]]
+# tag   = "1.12.0"               --> lib tag identifying the series
+# build = "1.12.7"               --> the exact Julia version the series JLL is compiled against
+# test  = ["1.12.0", "1.12.7"]   --> patches the Julia CI matrices pin (e.g. testing)
+
+[[series]]
+tag = "1.12.0"
+build = "1.12.7"
+test = [
+    "1.12.0",
+    "1.12.6", # 1.12.7 introduces header bugs on MSVC, so 1.12.6 remains pinned
+    "1.12.7",
+]
+
+[[series]]
+tag = "1.13.0"
+build = "1.13.0"
+test = ["1.13.0"]
+
+# == ARCHIVE FORMAT ==
+# [[archive]]
+# flavour = "linux-x86_64"      --> filename section in Julia archives, and key in julia_archive_digests.toml
+# url_dir = "linux/x64"         --> directory on the Julia archives upstream
+# target  = "x86_64-linux-gnu"  --> BinaryBuilder target triplet pattern that this [[archive]] belongs to
+
+[[archive]]
+flavour = "linux-x86_64"
+url_dir = "linux/x64"
+target = "x86_64-linux-gnu"
+
+[[archive]]
+flavour = "linux-aarch64"
+url_dir = "linux/aarch64"
+target = "aarch64-linux-gnu"
+
+[[archive]]
+flavour = "win64"
+url_dir = "winnt/x64"
+target = "x86_64-w64-mingw32"

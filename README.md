@@ -1,8 +1,14 @@
 # Shader Transpiler Core (STC)
 
-[![CI](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml)
+|`main`   |  `develop` | `release/0.9.0` |
+|---|---|---|
+| [![CI on main](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) | [![CI on develop](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml)  | [![CI on release/0.9.0](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=release/0.9.0)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) |
 
-**NOTE:** This project is being developed as my CS BSc thesis at ELTE.
+---
+
+This project is being developed as my Computer Science BSc thesis at ELTE.
+
+---
 
 _Shader Transpiler Core_ (STC) is a Julia to GLSL transpiler that aims to help GPU-side parallelization of regular, generic Julia code. The goal is to be able to take code snippets written as regular, CPU-side Julia code and be able to run them on the GPU. The motivation came from the [Juliagebra](https://github.com/Csabix/Juliagebra) project, where this allowed the implementation of a faster tessellation model for parametric curves and surfaces. These geometries have functions that come from the end user, and thus cannot be previously written up as regular OpenGL shaders. By using STC, Juliagebra can use transpiled compute shaders for GPU-parallelized tessellation, without requiring the end user to write any GPU code. This use case also fuelled the high performance nature of the transpiler (achieving 0.5-2 ms transpilations during typical usage), as a fast transpilation time means only a small time cost is added to Juliagebra's geometry initialization pipeline.
 
@@ -60,7 +66,7 @@ A more high level Julia abstraction is available in the [ShaderTranspiler.jl](ht
 Building the transpiler requires:
 - **CMake 3.16** or newer
 - a **C++20** compiler (GCC is recommended, clang and MSVC are also supported)
-- a **v1.11** or newer **Julia** installation
+- a **v1.12** or newer **Julia** installation
 
 Everything else is optional and automatically fetched by CMake when needed, or only enabled if available (see [Building the Project](#building-the-project)).
 
@@ -426,6 +432,7 @@ Not options as such, but respected:
 - `cmake/` -- build system modules. Julia resolution, dev tooling, docs and metadata generation.
 - `scripts/` -- developer helper scripts: auto builder for `PowerShell`, debug environment setup and a recommended pre-commit hook.
 - `misc/` -- suppression files for the analysis tools that libjulia upsets.
+- `packaging/` -- files that are shipped as release artifacts alongside the library and executable.
 - `.github/workflows/` -- CI, version checking, docs deployment and release automation.
 
 # Transpiler Architecture

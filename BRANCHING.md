@@ -98,10 +98,11 @@ Steps 5 and 8 are guarded: a pull request into `main` from a release branch must
 | **CI** (build & test) | `push` | `main`, `develop`, `release/**` |
 | **CI** (build & test) | `pull_request` | targeting `main`, `develop` or `release/**` |
 | **Version Check** | `pull_request` | targeting `main` |
+| **Julia Digests** | `pull_request` | any target; checks only when the Julia manifest changed |
 | **Release** | `push` | `main` only |
 | **Docs** | `push` | `main` only |
 
-CI, Release and Docs also accept `workflow_dispatch`, so any of them can be run by hand. Version Check cannot, since it has nothing to compare without a pull request's branches.
+CI, Release, Docs and Julia Digests also accept `workflow_dispatch`, so any of them can be run by hand. Version Check cannot, since it has nothing to compare without a pull request's branches.
 
 Consequences worth knowing:
 
