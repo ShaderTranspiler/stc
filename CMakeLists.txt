@@ -14,8 +14,8 @@ set(STC_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
 
 # set current project version in these two lines
 # cascades through the entire codebase, treated as a single source of truth
-project(ShaderTranspilerCore VERSION 0.8.5)
-set(STC_VERSION_SUFFIX "")
+project(ShaderTranspilerCore VERSION 0.9.0)
+set(STC_VERSION_SUFFIX "rc.0")
 
 if(NOT STC_VERSION_SUFFIX STREQUAL "")
     if (NOT STC_VERSION_SUFFIX MATCHES "^rc\\.[0-9]+$")
