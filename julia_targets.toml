@@ -34,7 +34,7 @@ test = ["1.13.0"]
 # [[archive]]
 # flavour = "linux-x86_64"      --> filename section in Julia archives, and key in julia_archive_digests.toml
 # url_dir = "linux/x64"         --> directory on the Julia archives upstream
-# target = "x86_64-linux-gnu"   --> BinaryBuilder target triplet pattern that this [[archive]] belongs to
+# target  = "x86_64-linux-gnu"  --> BinaryBuilder target triplet pattern that this [[archive]] belongs to
 
 [[archive]]
 flavour = "linux-x86_64"
@@ -50,4 +50,3 @@ target = "aarch64-linux-gnu"
 flavour = "win64"
 url_dir = "winnt/x64"
 target = "x86_64-w64-mingw32"
-
