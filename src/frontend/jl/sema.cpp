@@ -661,6 +661,12 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
         result_type = infer(vdecl.initializer);
     }
 
+    if (!result_type.is_null() && !is_materializable_type(result_type)) {
+        return fail(fmt::format("cannot use non-materializable type '{}' in a variable declaration",
+                                type_str(result_type)),
+                    vdecl);
+    }
+
     NodeId decl_id = ctx.calculate_node_id(vdecl);
 
     assert(expected_st == actual_st);
@@ -702,6 +708,13 @@ TypeId JLSema::visit_ParamDecl(ParamDecl& pdecl) {
         result_type = pdecl.annot_type;
     } else {
         result_type = infer(pdecl.default_initializer);
+    }
+
+    if (!result_type.is_null() && !is_materializable_type(result_type)) {
+        return fail(
+            fmt::format("cannot use non-materializable type '{}' in a parameter declaration",
+                        type_str(result_type)),
+            pdecl);
     }
 
     NodeId decl_id = ctx.calculate_node_id(pdecl);
@@ -1240,17 +1253,12 @@ void JLSema::visit_method_body(MethodDecl& method) {
 
 TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
     if (fdecl.type.is_null())
-        return fail("field declarations without an explicit type annotation are not supported",
+        return fail("field declarations must have explicit type annotation", fdecl);
+
+    if (!is_materializable_type(fdecl.type)) {
+        return fail(fmt::format("cannot use non-materializable type '{}' in a field declaration",
+                                type_str(fdecl.type)),
                     fdecl);
-
-    const auto& td = tpool.get_td(fdecl.type);
-    bool valid_field_type =
-        td.is_scalar() || td.is_vector() || td.is_matrix() || td.is_matrix() || td.is_array();
-
-    if (!valid_field_type) {
-        return fail(
-            fmt::format("field declarations with type {} are not supported", type_str(fdecl.type)),
-            fdecl);
     }
 
     return fdecl.type;
@@ -1273,6 +1281,16 @@ TypeId JLSema::visit_StructDecl(StructDecl& sdecl) {
         return fail(fmt::format("redefinition of struct '{}' is not allowed",
                                 ctx.get_sym(sdecl.identifier)),
                     sdecl);
+    }
+
+    for (NodeId fdecl_id : sdecl.field_decls) {
+        if (fdecl_id.is_null())
+            return fail("invalid field declaration in struct definition", sdecl);
+
+        if (!ctx.isa<FieldDecl>(fdecl_id))
+            return fail("only field declarations supported inside a struct definition", sdecl);
+
+        visit(fdecl_id);
     }
 
     return s_type;
@@ -1534,8 +1552,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
             return el_type;
 
         if (idx->type != ctx.jl_String_t() && idx->type != ctx.jl_Symbol_t())
-            return fail(fmt::format("invalid vector indexer type '{}'",
-                                    type_to_string(idx->type, ctx, ctx)),
+            return fail(fmt::format("invalid vector indexer type '{}'", type_str(idx->type)),
                         idx_expr);
 
         // SWIZZLE

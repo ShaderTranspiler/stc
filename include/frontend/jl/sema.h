@@ -275,6 +275,18 @@ private:
         return current_scope().st_find_sym(sym);
     }
 
+    bool is_materializable_type(TypeId id) const {
+        if (id.is_null())
+            return false;
+
+        if (tpool.is_any_func(id) || tpool.is_vec_any_size(id) || tpool.is_mat_any_size(id) ||
+            tpool.is_array_any_size(id))
+            return false;
+
+        const TypeDescriptor& td = tpool.get_td(id);
+        return !(td.is_void() || td.is_builtin() || td.is_function() || td.is_method());
+    }
+
     void dump_scopes() const {
         for (const JLScope& scope : scopes)
             scope.dump(ctx);
