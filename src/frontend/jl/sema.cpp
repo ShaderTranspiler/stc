@@ -1589,6 +1589,8 @@ TypeId JLSema::visit_SymbolLiteral(SymbolLiteral& sym) {
     return fail("symbol literal in illegal position", sym);
 }
 
+// CLEANUP: swizzle should be transformed into its own NodeKind instead of forcing it through the
+// FieldAccess pipeline (this can be done by catching it at the dot chain level for example)
 TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (!acc.type.is_null())
         return acc.type;
@@ -2045,6 +2047,13 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
     }
 
     TypeId target_type = infer(assign.target);
+    if (target_type.is_null()) {
+        if (_success)
+            return fail("couldn't infer type for assignment whose lhs is not a new binding",
+                        assign);
+
+        return TypeId::null_id();
+    }
 
     if (const auto* dc = ctx.get_and_dyn_cast<DotChain>(assign.target)) {
         if (!dc->is_resolved()) {
@@ -2057,11 +2066,30 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         auto* dc_res_node = ctx.get_node(dc->resolved_expr);
 
         if (const auto* acc = dyn_cast<FieldAccess>(dc_res_node)) {
+            const TypeDescriptor& target_td = tpool.get_td(target_type);
+
+            if (ctx.isa<SymbolLiteral>(acc->field_decl)) {
+                // (this is a temporary QoL error, see CLEANUP on FieldAccess visitor)
+                if (target_td.is_vector()) {
+                    return fail(
+                        "swizzle expression on assigment lhs is not allowed, to follow JuliaGLM "
+                        "semantics, e.g. my_vec.xz = Vec2(0)",
+                        assign);
+                }
+
+                // "single component swizzle", i.e. vector field assignment on Julia side
+                if (target_td.is_scalar()) {
+                    return fail("assignment to vector field is not allowed, to follow JuliaGLM "
+                                "semantics (vectors types are immutable), i.e. my_vec.x = 0",
+                                assign);
+                }
+            }
+
             auto* target_decl = ctx.get_and_dyn_cast<Decl>(acc->target_type_decl);
 
             if (target_decl == nullptr)
                 return internal_error("unresolved target type declaration in FieldAccess node",
-                                      *acc);
+                                      *dc);
 
             if (const auto* sdecl = dyn_cast<StructDecl>(target_decl)) {
                 if (!sdecl->is_mutable()) {
@@ -2075,14 +2103,6 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         } else {
             return fail("assignment to non-field-accessing dot chain is not allowed", assign);
         }
-    }
-
-    if (target_type.is_null()) {
-        if (_success)
-            return fail("couldn't infer type for assignment, whose lhs is not a new binding",
-                        assign);
-
-        return TypeId::null_id();
     }
 
     if (assign.value.is_null()) {
