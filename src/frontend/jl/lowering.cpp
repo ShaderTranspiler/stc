@@ -548,31 +548,7 @@ SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
             if (sir_ctx.type_pool.is_type_of<IntTD>(idx_t))
                 return visit_and_wrap_minus_one(idx, idx_node);
 
-            // swizzle
-            if (auto* idx_sym = dyn_cast<SymbolLiteral>(idx_node)) {
-                std::string_view swizzle = sir_ctx.get_sym(idx_sym->value);
-                size_t swizzle_n         = swizzle.length();
-
-                if (swizzle_n == 0 || swizzle_n > 4)
-                    return internal_error("invalid swizzle component count not caught by sema");
-
-                std::array<uint8_t, 4> comps = {0, 0, 0, 0};
-                for (size_t i = 0; i < swizzle_n; i++) {
-                    comps[i] = parse_swizzle_component(swizzle[i]).first;
-
-                    if (comps[i] == INVALID_SWIZZLE)
-                        return internal_error("invalid swizzle component not caught by sema");
-                }
-
-                SIRNodeId lowered_swizzle = emplace_node<sir::SwizzleLiteral>(
-                    idx_node->location, static_cast<uint8_t>(swizzle_n), comps[0], comps[1],
-                    comps[2], comps[3]);
-
-                return emplace_node<sir::IndexerExpr>(idx_expr.location, lowered_target,
-                                                      lowered_swizzle);
-            }
-
-            return fail("non-integer, non-swizzle indexer on vector is not allowed");
+            return fail("non-integer indexer on vector is not allowed");
         }
     }
 
@@ -587,16 +563,33 @@ SIRNodeId JLLoweringVisitor::visit_FieldAccess(FieldAccess& acc) {
     const auto* field_node = ctx.get_and_dyn_cast<SymbolLiteral>(acc.field_decl);
     SymbolId field_sym     = field_node != nullptr ? field_node->value : SymbolId::null_id();
 
-    if (target_td.is_vector() &&
-        (field_sym == sym_x || field_sym == sym_y || field_sym == sym_z || field_sym == sym_w)) {
-        // convert vector field access to regular swizzle indexer and re-lower
-        // more or less this is where v.x -> v[:x] happens
+    // CLEANUP: currently swizzles are forced through the field decl
+    // either 'field_decl' should be renamed to reflect this or they should have their own type in
+    // the Julia AST
+    if (target_td.is_vector() && !field_sym.is_null()) {
+        assert(field_node != nullptr);
 
-        NodeId sym_lit = ctx.emplace_node<SymbolLiteral>(acc.location, field_sym).first;
-        NodeId indexer =
-            ctx.emplace_node<IndexerExpr>(acc.location, acc.target, std::vector{sym_lit}).first;
+        // swizzle
+        std::string_view swizzle = sir_ctx.get_sym(field_sym);
+        size_t swizzle_n         = swizzle.length();
 
-        return visit_and_check(indexer);
+        if (swizzle_n == 0 || swizzle_n > 4)
+            return internal_error("invalid swizzle component count not caught by sema");
+
+        std::array<uint8_t, 4> comps = {0, 0, 0, 0};
+        for (size_t i = 0; i < swizzle_n; i++) {
+            comps[i] = parse_swizzle_component(swizzle[i]).first;
+
+            if (comps[i] == INVALID_SWIZZLE)
+                return internal_error("invalid swizzle component not caught by sema");
+        }
+
+        SIRNodeId lowered_swizzle =
+            emplace_node<sir::SwizzleLiteral>(field_node->location, static_cast<uint8_t>(swizzle_n),
+                                              comps[0], comps[1], comps[2], comps[3]);
+
+        return emplace_node<sir::IndexerExpr>(acc.location, visit_and_check(acc.target),
+                                              lowered_swizzle);
     }
 
     return emplace_node<sir::FieldAccess>(acc.location, visit_and_check(acc.target),
