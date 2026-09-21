@@ -15,7 +15,7 @@ $interactive = ($args -contains "-i") -or ($args -contains "--interactive");
 $configs = @(
     @{ Name = "gcc-dbg";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
     @{ Name = "gcc-rel";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Release";        Tidy = $false; Profile = $false; Install = $true },
-    @{ Name = "msvc-dbg";    Gen = "";      CC = "";      CXX = "";        Type = "Debug";          Tidy = $false; Profile = $false; Install = $false },
+    @{ Name = "msvc-dbg";    Gen = "";      CC = "";      CXX = "";        Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
     @{ Name = "msvc-rel";    Gen = "";      CC = "";      CXX = "";        Type = "Release";        Tidy = $false; Profile = $false; Install = $true },
     @{ Name = "clang-dbg";   Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
     @{ Name = "clang-rel";   Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Release";        Tidy = $false; Profile = $false; Install = $true },
@@ -222,7 +222,7 @@ foreach ($cfg in $configs) {
 
     if ($do_install) {
         $install_dir = Join-Path $build_dir "install"
-        $cmake_install_args = @("--install", $build_dir, "--prefix", $install_dir)
+        $cmake_install_args = @("--install", $build_dir, "--config", $($cfg.Type), "--prefix", $install_dir)
 
         Write-Host "`n$progress >> installing $($cfg.Name)..." -ForegroundColor Cyan
         Write-Host "$progress >> cmake $($cmake_install_args -join ' ')`n" -ForegroundColor Yellow
