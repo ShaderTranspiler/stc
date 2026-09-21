@@ -9,11 +9,11 @@ function hash3(n::Float32)
 end
 
 function qSquare(a::Vec4)
-    vec4(a[:x] * a[:x] - dot(a[:yzw], a[:yzw]), 2.0 * a[:x] .* a[:yzw])
+    vec4(a.x * a.x - dot(a.yzw, a.yzw), 2.0 * a.x .* a.yzw)
 end
 
 function qCube(a::Vec4)
-    a .* (4.0 * a[:x] * a[:x] .- dot(a, a) .* vec4(3.0, 1.0, 1.0, 1.0))
+    a .* (4.0 * a.x * a.x .- dot(a, a) .* vec4(3.0, 1.0, 1.0, 1.0))
 end
 
 function lengthSquared(z::Vec4)
@@ -39,7 +39,7 @@ function map_(p::Vec3, c::Vec4)
             break
         end
 
-        t = min(t, vec2(m2, abs(z[:x])))
+        t = min(t, vec2(m2, abs(z.x)))
 
         i += 1
     end
@@ -65,9 +65,9 @@ function raycast(ro::Vec3, rd::Vec3, c::Vec4)
 
         t += h
         res = map_(ro + rd * t, c)
-        h = res[:x]
-        d = res[:y]
-        m = res[:z]
+        h = res.x
+        d = res.y
+        m = res.z
 
         i += 1
     end
@@ -83,43 +83,43 @@ function calcNormal(pos::Vec3, e::Float32, c::Vec4)
     eps = vec3(e, 0.0, 0.0)
 
     normalize(vec3(
-        map_(pos + eps[:xyy], c)[:x] - map_(pos - eps[:xyy], c)[:x],
-        map_(pos + eps[:yxy], c)[:x] - map_(pos - eps[:yxy], c)[:x],
-        map_(pos + eps[:yyx], c)[:x] - map_(pos - eps[:yyx], c)[:x],
+        map_(pos + eps.xyy, c).x - map_(pos - eps.xyy, c).x,
+        map_(pos + eps.yxy, c).x - map_(pos - eps.yxy, c).x,
+        map_(pos + eps.yyx, c).x - map_(pos - eps.yyx, c).x,
     ))
 end
 
 function calcPixel(_pi::Vec2, _time::Float32)
     c = vec4(-0.1, 0.6, 0.9, -0.3) + 0.1 * sin(vec4(3, 0, 1, 2) + 0.5 * vec4(1.0, 1.3, 1.7, 2.1) * _time)
 
-    q = _pi ./ resolution[:xy]
+    q = _pi ./ resolution.xy
     p = -1.0 .+ 2.0 * q
-    p[:x] *= Float32(resolution[:x]) / Float32(resolution[:y])
+    p.x *= Float32(resolution.x) / Float32(resolution.y)
 
     m = vec2(0.5)
-    if mouse[:z] > 0.0
-        m = mouse[:xy] ./ resolution[:xy]
+    if mouse.z > 0.0
+        m = mouse.xy ./ resolution.xy
     end
 
-    an = -2.4 + 0.2 * _time - 6.2 * m[:x]
+    an = -2.4 + 0.2 * _time - 6.2 * m.x
     ro = 4.0 * vec3(sin(an), 0.25, cos(an))
     ta = vec3(0.0, 0.08, 0.0)
     ww = normalize(ta - ro)
     uu = normalize(cross(ww, vec3(0, 1, 0)))
     vv = normalize(cross(uu, ww))
-    rd = normalize(p[:x] * uu + p[:y] * vv + 4.1 * ww)
+    rd = normalize(p.x * uu + p.y * vv + 4.1 * ww)
 
     tmat = raycast(ro, rd, c)
 
     col = vec3(0)
-    if tmat[:z] > -0.5
-        pos = ro + tmat[:x] * rd
+    if tmat.z > -0.5
+        pos = ro + tmat.x * rd
         _nor = calcNormal(pos, 0.001, c)
         sor = calcNormal(pos, 0.01, c)
 
-        mate = 0.5 .+ 0.5 * sin(tmat[:z] * 4.0 .+ 4.0 .+ vec3(3.0, 1.5, 2.0) + _nor * 0.2)[:xzy]
+        mate = 0.5 .+ 0.5 * sin(tmat.z * 4.0 .+ 4.0 .+ vec3(3.0, 1.5, 2.0) + _nor * 0.2).xzy
 
-        occ = clamp(tmat[:y] * 0.5 + 0.5 * (tmat[:y] * tmat[:y]), 0.0, 1.0) * (1.0 + 0.1 * _nor[:y])
+        occ = clamp(tmat.y * 0.5 + 0.5 * (tmat.y * tmat.y), 0.0, 1.0) * (1.0 + 0.1 * _nor.y)
 
         col = vec3(0)
         i = 0
@@ -159,8 +159,8 @@ function main()
     while i < samples
         r = 0.35234
         h = hash3(r + Float32(i) + time)
-        p = gl_FragCoord[:xy] + h[:xy]
-        t = time + 0.5 * h[:z] / 24.0
+        p = gl_FragCoord.xy + h.xy
+        t = time + 0.5 * h.z / 24.0
         col += calcPixel(p, t)
 
         i += 1

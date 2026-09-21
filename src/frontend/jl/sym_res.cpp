@@ -310,9 +310,10 @@ void SymbolRes::visit_DotChain(DotChain& dc) {
             sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(dre->decl);
     }
 
-    assert(sym_lit != nullptr);
-
-    try_register(sym_lit->value, dc, ScopeInferSrc::Access);
+    if (sym_lit != nullptr)
+        try_register(sym_lit->value, dc, ScopeInferSrc::Access);
+    else
+        visit(dc.chain[0]);
 }
 
 EMPTY_VISITOR_DEF(NothingLiteral)

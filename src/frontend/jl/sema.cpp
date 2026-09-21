@@ -1551,71 +1551,19 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
         if (ctx.type_pool.is_type_of<IntTD>(idx->type))
             return el_type;
 
-        if (idx->type != ctx.jl_String_t() && idx->type != ctx.jl_Symbol_t())
-            return fail(fmt::format("invalid vector indexer type '{}'", type_str(idx->type)),
-                        idx_expr);
-
-        // SWIZZLE
-
-        // centralize swizzles into symbol literals
-        if (const auto* str_idx = dyn_cast<const StringLiteral>(idx)) {
-            SymbolId sym_id = ctx.sym_pool.get_id(str_idx->value);
-
-            std::tie(idx_expr.indexers[0], idx) =
-                ctx.emplace_node<SymbolLiteral>(idx->location, sym_id);
-
-            prev_vis_idx     = visiting_indexer;
-            visiting_indexer = true;
-            infer(idx_expr.indexers[0]);
-            visiting_indexer = prev_vis_idx;
+        // my_vec["xyz"] and my_vec[:xyz] are no longer supported
+        bool idx_isa_str = idx->type == ctx.jl_String_t();
+        bool idx_isa_sym = idx->type == ctx.jl_Symbol_t();
+        if (idx_isa_str || idx_isa_sym) {
+            return fail(
+                fmt::format("swizzle expressions may no longer use {} as an indexer type, "
+                            "i.e. {}. Use the property based approach instead: 'my_vec.xyz'",
+                            idx_isa_str ? "String" : "Symbol",
+                            idx_isa_str ? "my_vec[\"xyz\"]" : "my_vec[:xyz]"),
+                idx_expr);
         }
 
-        if (const auto* sym_idx = dyn_cast<const SymbolLiteral>(idx)) {
-            std::string_view swizzle = ctx.get_sym(sym_idx->value);
-
-            size_t swizzle_n = swizzle.length();
-            if (swizzle_n == 0 || swizzle_n > 4)
-                return fail(fmt::format("invalid swizzle expression length for '{}'", swizzle),
-                            idx_expr);
-
-            uint32_t vec_n = coll_td.as<VectorTD>().component_count;
-            SwizzleSet set = SwizzleSet::Invalid;
-
-            for (size_t i = 0; i < swizzle_n; i++) {
-                auto [comp, cur_set] = parse_swizzle_component(swizzle[i]);
-
-                if (comp == INVALID_SWIZZLE)
-                    return fail(
-                        fmt::format("invalid swizzle expression component '{}'", swizzle[i]),
-                        idx_expr);
-
-                if (cur_set == SwizzleSet::Invalid)
-                    return internal_error(
-                        "invalid swizzle set returned for valid swizzle component", idx_expr);
-
-                if (set == SwizzleSet::Invalid)
-                    set = cur_set;
-                else if (set != cur_set)
-                    return fail(
-                        fmt::format(
-                            "mixing components from different swizzle sets is not allowed ('{}')",
-                            swizzle),
-                        idx_expr);
-
-                assert(vec_n != 0);
-                if (comp > vec_n - 1)
-                    return fail(fmt::format("swizzle component '{}' points outside "
-                                            "vector bounds (vector component count is {})",
-                                            swizzle[i], vec_n),
-                                idx_expr);
-            }
-
-            return swizzle_n == 1
-                       ? el_type
-                       : ctx.type_pool.vector_td(el_type, static_cast<uint32_t>(swizzle_n));
-        }
-
-        return fail("swizzle expressions must be literals", idx_expr);
+        return fail(fmt::format("invalid vector indexer type '{}'", type_str(idx->type)), idx_expr);
     }
 
     if (coll_td.is_matrix()) {
@@ -1638,11 +1586,11 @@ TypeId JLSema::visit_SymbolLiteral(SymbolLiteral& sym) {
     if (visiting_indexer)
         return ctx.jl_Symbol_t();
 
-    return fail("symbol literal in unexpected position (only supported inside swizzle "
-                "expressions)",
-                sym);
+    return fail("symbol literal in illegal position", sym);
 }
 
+// CLEANUP: swizzle should be transformed into its own NodeKind instead of forcing it through the
+// FieldAccess pipeline (this can be done by catching it at the dot chain level for example)
 TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (!acc.type.is_null())
         return acc.type;
@@ -1658,33 +1606,55 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (target_sym_lit == nullptr)
         return internal_error("unexpected node kind in rhs of a FieldAccess expression", acc);
 
-    // CLEANUP: this is GLSL-specific rn (x/y/z field access on vec-s)
+    // CLEANUP: this is GLSL-specific rn (x/y/z/w field access on vec-s)
     if (target_td.is_vector()) {
-        SymbolId field_sym = target_sym_lit->value;
+        // SWIZZLE
 
-        uint8_t req_comp_count = 0;
+        std::string_view swizzle = ctx.get_sym(target_sym_lit->value);
 
-        if (field_sym == sym_x || field_sym == sym_y)
-            req_comp_count = 2;
-        else if (field_sym == sym_z)
-            req_comp_count = 3;
-        else if (field_sym == sym_w)
-            req_comp_count = 4;
+        size_t swizzle_n = swizzle.length();
+        if (swizzle_n == 0 || swizzle_n > 4)
+            return fail(fmt::format("invalid swizzle expression length in '{}'", swizzle), acc);
 
-        if (req_comp_count == 0) {
-            return fail(fmt::format("vector types have no field '{}'", ctx.get_sym(field_sym)),
-                        acc);
+        auto vec_td    = target_td.as<VectorTD>();
+        uint32_t vec_n = vec_td.component_count;
+        SwizzleSet set = SwizzleSet::Invalid;
+
+        for (size_t i = 0; i < swizzle_n; i++) {
+            auto [comp, cur_set] = parse_swizzle_component(swizzle[i]);
+
+            if (comp == INVALID_SWIZZLE) {
+                return fail(fmt::format("invalid swizzle expression component '{}' in swizzle '{}'",
+                                        swizzle[i], swizzle),
+                            acc);
+            }
+
+            if (cur_set == SwizzleSet::Invalid)
+                return internal_error("invalid swizzle set returned for valid swizzle component",
+                                      acc);
+
+            if (set == SwizzleSet::Invalid) {
+                set = cur_set;
+            } else if (set != cur_set) {
+                return fail(
+                    fmt::format(
+                        "mixing components from different swizzle sets is not allowed (in '{}')",
+                        swizzle),
+                    acc);
+            }
+
+            assert(vec_n != 0);
+            if (comp > vec_n - 1)
+                return fail(
+                    fmt::format("swizzle component '{}' points outside "
+                                "vector bounds in swizzle '{}' (vector component count is {})",
+                                swizzle[i], swizzle, vec_n),
+                    acc);
         }
 
-        auto vec_td = target_td.as<VectorTD>();
-
-        if (vec_td.component_count < req_comp_count) {
-            return fail(fmt::format("field '{}' is out of bounds for vector type {}",
-                                    ctx.get_sym(field_sym), type_str(target_ty)),
-                        acc);
-        }
-
-        return vec_td.component_type_id;
+        return swizzle_n == 1 ? vec_td.component_type_id
+                              : ctx.type_pool.vector_td(vec_td.component_type_id,
+                                                        static_cast<uint32_t>(swizzle_n));
     }
 
     if (!target_td.is_struct()) {
@@ -2077,6 +2047,13 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
     }
 
     TypeId target_type = infer(assign.target);
+    if (target_type.is_null()) {
+        if (_success)
+            return fail("couldn't infer type for assignment whose lhs is not a new binding",
+                        assign);
+
+        return TypeId::null_id();
+    }
 
     if (const auto* dc = ctx.get_and_dyn_cast<DotChain>(assign.target)) {
         if (!dc->is_resolved()) {
@@ -2089,11 +2066,30 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         auto* dc_res_node = ctx.get_node(dc->resolved_expr);
 
         if (const auto* acc = dyn_cast<FieldAccess>(dc_res_node)) {
+            const TypeDescriptor& target_td = tpool.get_td(target_type);
+
+            if (ctx.isa<SymbolLiteral>(acc->field_decl)) {
+                // (this is a temporary QoL error, see CLEANUP on FieldAccess visitor)
+                if (target_td.is_vector()) {
+                    return fail(
+                        "swizzle expression on assigment lhs is not allowed, to follow JuliaGLM "
+                        "semantics, e.g. my_vec.xz = Vec2(0)",
+                        assign);
+                }
+
+                // "single component swizzle", i.e. vector field assignment on Julia side
+                if (target_td.is_scalar()) {
+                    return fail("assignment to vector field is not allowed, to follow JuliaGLM "
+                                "semantics (vectors types are immutable), i.e. my_vec.x = 0",
+                                assign);
+                }
+            }
+
             auto* target_decl = ctx.get_and_dyn_cast<Decl>(acc->target_type_decl);
 
             if (target_decl == nullptr)
                 return internal_error("unresolved target type declaration in FieldAccess node",
-                                      *acc);
+                                      *dc);
 
             if (const auto* sdecl = dyn_cast<StructDecl>(target_decl)) {
                 if (!sdecl->is_mutable()) {
@@ -2107,14 +2103,6 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         } else {
             return fail("assignment to non-field-accessing dot chain is not allowed", assign);
         }
-    }
-
-    if (target_type.is_null()) {
-        if (_success)
-            return fail("couldn't infer type for assignment, whose lhs is not a new binding",
-                        assign);
-
-        return TypeId::null_id();
     }
 
     if (assign.value.is_null()) {
