@@ -76,7 +76,7 @@ jobs:
           version: ${{ matrix.julia }}
 
       - name: Install JuliaGLM
-        run: julia -e 'using Pkg; Pkg.add(url="https://github.com/Csabix/JuliaGLM", rev="glsl-functions")'
+        run: julia -e 'using Pkg; Pkg.add(url="https://github.com/Csabix/JuliaGLM#33cd74d")' # v0.0.2 (swizzle update, mat n/m fix, general rework)
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
