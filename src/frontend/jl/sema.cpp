@@ -1557,17 +1557,12 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
         // SWIZZLE
 
-        // centralize swizzles into symbol literals
-        if (const auto* str_idx = dyn_cast<const StringLiteral>(idx)) {
-            SymbolId sym_id = ctx.sym_pool.get_id(str_idx->value);
-
-            std::tie(idx_expr.indexers[0], idx) =
-                ctx.emplace_node<SymbolLiteral>(idx->location, sym_id);
-
-            prev_vis_idx     = visiting_indexer;
-            visiting_indexer = true;
-            infer(idx_expr.indexers[0]);
-            visiting_indexer = prev_vis_idx;
+        // my_vec["xyz"] is no longer supported
+        if (isa<StringLiteral>(idx)) {
+            return fail("swizzle expressions may no longer use String as an indexer type, i.e. "
+                        "my_vec[\"xyz\"]. Use the property and Symbol based approaches: "
+                        "'my_vec.xyz' or 'my_vec[:xyz]'",
+                        idx_expr);
         }
 
         if (const auto* sym_idx = dyn_cast<const SymbolLiteral>(idx)) {
