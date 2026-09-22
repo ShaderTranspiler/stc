@@ -157,6 +157,9 @@ Decl* SymbolRes::get_prev_decl(SymbolId sym) const {
 }
 
 void SymbolRes::visit_VarDecl(VarDecl& vdecl) {
+    if (!vdecl.initializer.is_null())
+        visit(vdecl.initializer);
+
     Decl* prev_decl = get_prev_decl(vdecl.identifier);
 
     // initial declaration of variable
@@ -310,9 +313,10 @@ void SymbolRes::visit_DotChain(DotChain& dc) {
             sym_lit = ctx.get_and_dyn_cast<SymbolLiteral>(dre->decl);
     }
 
-    assert(sym_lit != nullptr);
-
-    try_register(sym_lit->value, dc, ScopeInferSrc::Access);
+    if (sym_lit != nullptr)
+        try_register(sym_lit->value, dc, ScopeInferSrc::Access);
+    else
+        visit(dc.chain[0]);
 }
 
 EMPTY_VISITOR_DEF(NothingLiteral)

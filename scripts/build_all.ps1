@@ -13,14 +13,14 @@ $interactive = ($args -contains "-i") -or ($args -contains "--interactive");
 # if this is not the case and cl is in path, it can simply be added here
 # otherwise, msvc configs can also just be removed
 $configs = @(
-    @{ Name = "gcc-dbg";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Debug";          Tidy = $false; Profile = $false },
-    @{ Name = "gcc-rel";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Release";        Tidy = $false; Profile = $false },
-    @{ Name = "msvc-dbg";    Gen = "";      CC = "";      CXX = "";        Type = "Debug";          Tidy = $false; Profile = $false },
-    @{ Name = "msvc-rel";    Gen = "";      CC = "";      CXX = "";        Type = "Release";        Tidy = $false; Profile = $false },
-    @{ Name = "clang-dbg";   Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Debug";          Tidy = $false; Profile = $false },
-    @{ Name = "clang-rel";   Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Release";        Tidy = $false; Profile = $false },
-    @{ Name = "tidy";        Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Debug";          Tidy = $true;  Profile = $false },
-    @{ Name = "gcc-rwdi";    Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "RelWithDebInfo"; Tidy = $false; Profile = $true }
+    @{ Name = "gcc-dbg";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
+    @{ Name = "gcc-rel";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Release";        Tidy = $false; Profile = $false; Install = $true },
+    @{ Name = "msvc-dbg";    Gen = "";      CC = "";      CXX = "";        Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
+    @{ Name = "msvc-rel";    Gen = "";      CC = "";      CXX = "";        Type = "Release";        Tidy = $false; Profile = $false; Install = $true },
+    @{ Name = "clang-dbg";   Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
+    @{ Name = "clang-rel";   Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Release";        Tidy = $false; Profile = $false; Install = $true },
+    @{ Name = "tidy";        Gen = "Ninja"; CC = "clang"; CXX = "clang++"; Type = "Debug";          Tidy = $true;  Profile = $false; Install = $false },
+    @{ Name = "gcc-rwdi";    Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "RelWithDebInfo"; Tidy = $false; Profile = $true;  Install = $true }
 )
 
 $build_timer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -28,6 +28,8 @@ $build_timer = [System.Diagnostics.Stopwatch]::StartNew()
 $successful_builds = 0
 $skipped_builds = 0
 $current_step = 0
+$successful_installs = 0
+$skipped_installs = 0
 
 foreach ($cfg in $configs) {
     $current_step++
@@ -141,7 +143,7 @@ foreach ($cfg in $configs) {
     }
 
     if (-Not $do_build) {
-        Write-Host "`n$progress >> only configuration requested for $($cfg.Name), skipping build." -ForegroundColor Green
+        Write-Host "`n$progress >> only configuration requested for $($cfg.Name), skipping build." -ForegroundColor DarkGray
         $successful_builds++;
         continue
     }
@@ -184,11 +186,57 @@ foreach ($cfg in $configs) {
     Write-Host "$progress >> cmake $($cmake_build_args -join ' ')`n" -ForegroundColor Yellow
     & cmake $cmake_build_args
 
-    if ($LASTEXITCODE -eq 0) {
-        $successful_builds++;
-        Write-Host "`n$progress >> build successful for $($cfg.Name)" -ForegroundColor Green
-    } else {
+    if ($LASTEXITCODE -ne 0) {
         Write-Host "`n$progress >> build failed for $($cfg.Name)" -ForegroundColor Red
+        continue;
+    }
+
+    $successful_builds++;
+    Write-Host "`n$progress >> build successful for $($cfg.Name)" -ForegroundColor Green
+
+    $do_install = $cfg.Install
+
+    if ($interactive) {
+        $valid_input = $false
+
+        while (-not $valid_input) {
+            $valid_input = $true
+
+            Write-Host "`n$progress Install $($cfg.Name): [y]es, [n]o" -ForegroundColor Magenta
+            $action = Read-Host "Action"
+
+            switch ($action.ToLower().Trim()) {
+                'y' { 
+                    $do_install = $true
+                }
+                'n' { 
+                    $do_install = $false 
+                }
+                default { 
+                    Write-Host "Invalid action provided (expected: y, n)" -ForegroundColor Yellow
+                    $valid_input = $false
+                }
+            }
+        }
+    }
+
+    if ($do_install) {
+        $install_dir = Join-Path $build_dir "install"
+        $cmake_install_args = @("--install", $build_dir, "--config", $($cfg.Type), "--prefix", $install_dir)
+
+        Write-Host "`n$progress >> installing $($cfg.Name)..." -ForegroundColor Cyan
+        Write-Host "$progress >> cmake $($cmake_install_args -join ' ')`n" -ForegroundColor Yellow
+        & cmake $cmake_install_args
+
+        if ($LASTEXITCODE -eq 0) {
+            $successful_installs++
+            Write-Host "`n$progress >> installation successful for $($cfg.Name)" -ForegroundColor Green
+        } else {
+            Write-Host "`n$progress >> installation failed for $($cfg.Name)" -ForegroundColor Red
+        }
+    } else {
+        $skipped_installs++
+        Write-Host "`n$progress >> installation not requested for $($cfg.Name), skipping install." -ForegroundColor DarkGray
     }
 }
 
@@ -201,4 +249,7 @@ if (($successful_builds -eq 0) -and ($attempted_builds -ne 0)) { $report_col = "
 
 Write-Host "`n--- build report ---" -ForegroundColor Cyan
 Write-Host "total time: $elapsed_str`n" -ForegroundColor Cyan
-Write-Host "$successful_builds/$attempted_builds builds succeeded, $skipped_builds targets skipped`n" -ForegroundColor $report_col
+Write-Host "$successful_builds/$attempted_builds builds succeeded`n" -ForegroundColor $report_col
+Write-Host "$skipped_builds build targets skipped`n" -ForegroundColor $report_col
+Write-Host "$successful_installs/$($successful_builds - $skipped_installs) installations succeeded`n" -ForegroundColor $report_col
+Write-Host "$skipped_installs installations skipped`n" -ForegroundColor $report_col

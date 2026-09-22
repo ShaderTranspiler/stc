@@ -257,6 +257,7 @@ void JLDumper::visit_FieldAccess(FieldAccess& acc) {
 
     dump_with_label("target", acc.target);
     dump_with_label("field", acc.field_decl);
+    dump_with_label("target type decl", acc.target_type_decl);
 }
 
 void JLDumper::visit_DotChain(DotChain& dc) {

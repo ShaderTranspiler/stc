@@ -5,8 +5,8 @@
 @gl_uniform global resolution::IVec2
 
 function main()
-    p = (2.0 * gl_FragCoord[:xy] - resolution["xy"]) ./ resolution["y"]
-    m = (2.0 * mouse["xy"] - resolution["xy"]) ./ resolution["y"]
+    p = (2.0 * gl_FragCoord.xy - resolution.xy) ./ resolution.y
+    m = (2.0 * mouse.xy - resolution.xy) ./ resolution.y
 
     d = length(p) - 0.5
 
@@ -21,7 +21,7 @@ function main()
     col *= 0.8 + 0.2 * cos(150 * d)
     col = mix(col, Vec3(1), 1.0 - smoothstep(0.0, 0.01, abs(d)))
 
-    if (mouse["z"] > MOUSE_EPS)
+    if (mouse.z > MOUSE_EPS)
         d = length(m) - 0.5
         col = mix(col, Vec3(1, 1, 0), 1.0 - smoothstep(0.0, 0.005, abs(length(p - m) - abs(d)) - 0.0025))
         col = mix(col, Vec3(1, 1, 0), 1.0 - smoothstep(0.0, 0.005, length(p - m) - 0.015))

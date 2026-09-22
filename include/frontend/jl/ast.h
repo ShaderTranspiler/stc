@@ -462,6 +462,9 @@ struct SymbolLiteral : public Expr {
 struct FieldAccess : public Expr {
     NodeId target;
     NodeId field_decl;
+
+    // points to the type declaration of the struct this accessor points into (if its target is a
+    // user-defined type)
     NodeId target_type_decl = NodeId::null_id();
 
     explicit FieldAccess(SrcLocationId location, NodeId target, NodeId field_decl)

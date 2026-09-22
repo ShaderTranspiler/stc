@@ -10,7 +10,7 @@
 
 set -e
 
-cur_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cur_dir=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
 
 if [ -n "$STC_JULIA_LIBDIR" ]; then
     julia_libdir=$STC_JULIA_LIBDIR

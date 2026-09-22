@@ -137,6 +137,8 @@ private:
 
     using MaybeArgListRef = std::optional<std::reference_wrapper<std::vector<NodeId>>>;
 
+    std::string arg_types_to_str(const std::vector<TypeId>& arg_types) const;
+
     // the presence of args controls whether arg rewriting is allowed
     // e.g. casting args to floats to properly mimic Julia's float division on ints
     // if args is not provided, arg_types will NOT be modified (it basically can be treated like a
@@ -273,6 +275,18 @@ private:
         assert_scopes_notempty();
 
         return current_scope().st_find_sym(sym);
+    }
+
+    bool is_materializable_type(TypeId id) const {
+        if (id.is_null())
+            return false;
+
+        if (tpool.is_any_func(id) || tpool.is_vec_any_size(id) || tpool.is_mat_any_size(id) ||
+            tpool.is_array_any_size(id))
+            return false;
+
+        const TypeDescriptor& td = tpool.get_td(id);
+        return !(td.is_void() || td.is_builtin() || td.is_function() || td.is_method());
     }
 
     void dump_scopes() const {
