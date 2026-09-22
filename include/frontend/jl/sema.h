@@ -137,6 +137,8 @@ private:
 
     using MaybeArgListRef = std::optional<std::reference_wrapper<std::vector<NodeId>>>;
 
+    std::string arg_types_to_str(const std::vector<TypeId>& arg_types) const;
+
     // the presence of args controls whether arg rewriting is allowed
     // e.g. casting args to floats to properly mimic Julia's float division on ints
     // if args is not provided, arg_types will NOT be modified (it basically can be treated like a

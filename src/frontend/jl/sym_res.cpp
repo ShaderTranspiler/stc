@@ -157,6 +157,9 @@ Decl* SymbolRes::get_prev_decl(SymbolId sym) const {
 }
 
 void SymbolRes::visit_VarDecl(VarDecl& vdecl) {
+    if (!vdecl.initializer.is_null())
+        visit(vdecl.initializer);
+
     Decl* prev_decl = get_prev_decl(vdecl.identifier);
 
     // initial declaration of variable
