@@ -5,6 +5,8 @@
 #include "frontend/jl/rt/utils.h"
 #include "types/type_to_string.h"
 
+#include <sstream>
+
 namespace stc::jl {
 
 void JLSema::dump(const Expr& expr) const {
@@ -38,7 +40,7 @@ TypeId JLSema::fail(std::string_view msg, const Expr& expr) {
     _success = false;
 
     if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        std::cerr << "The above error was emitted while processing the following node:\n";
+        report("\nThe above error was emitted while processing the following node:");
         dump(expr);
     }
 
@@ -2172,6 +2174,21 @@ TypeId JLSema::visit_UpdateAssignment(UpdateAssignment& up_assign) {
     return rhs_ty;
 }
 
+std::string JLSema::arg_types_to_str(const std::vector<TypeId>& arg_types) const {
+    if (arg_types.empty())
+        return "Argument list is empty.";
+
+    std::stringstream result{};
+
+    result << "Argument types are:\n";
+    for (size_t i = 0; i < arg_types.size(); i++) {
+        result << fmt::format("- {}{}", type_str(arg_types[i]),
+                              i + 1 == arg_types.size() ? "" : "\n");
+    }
+
+    return result.str();
+}
+
 TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, SymbolId fn_name, std::vector<TypeId>& arg_types,
                                    bool is_broadcast, MaybeArgListRef args, const Expr& base_expr) {
     assert(fn != nullptr);
@@ -2179,7 +2196,8 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, SymbolId fn_name, std::vector
 
     // only actually alloc and init string if needed for an error msg
     LazyInit error_suffix{[&]() -> std::string {
-        return fmt::format("(in call to function '{}')", get_jl_fn_name(fn));
+        return fmt::format("(in call to function '{}')\n{}", get_jl_fn_name(fn),
+                           arg_types_to_str(arg_types));
     }};
 
     // try to resolve as a builtin operator first
@@ -2274,9 +2292,11 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, SymbolId fn_name, std::vector
 
     if (!ctx.config.forward_fns) {
         return fail(
-            fmt::format("couldn't resolve call to '{}'. To use Julia queried information "
-                        "and blindly pass it down the pipeline, enable function forwarding.",
-                        ctx.get_sym(fn_name)),
+            fmt::format("couldn't resolve call to '{}' without querying Julia for return type "
+                        "information. To use Julia queried information and blindly pass it down "
+                        "the pipeline, enable function forwarding. Note that function forwarding "
+                        "may produce invalid code {}",
+                        ctx.get_sym(fn_name), error_suffix.get()),
             base_expr);
     }
 
@@ -2604,10 +2624,9 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             return TypeId::null_id();
 
         if (*target_method == nullptr) {
-            return fail(
-                fmt::format("no method matches inferred argument types for function call to '{}'",
-                            ctx.get_sym(fn_decl->identifier)),
-                fn_call);
+            return fail(fmt::format("no method matches inferred argument types in call to '{}'\n{}",
+                                    ctx.get_sym(fn_decl->identifier), arg_types_to_str(arg_types)),
+                        fn_call);
         }
 
         return (*target_method)->ret_type;
@@ -2633,19 +2652,19 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
                 ctx.target_info->builtin_fn_ret_ty_with_impl_cast(fn_name_str, arg_el_types).first;
 
             if (!ret_ty.is_null() && el_ret_ty.is_null()) {
-                return fail(fmt::format("broadcast call is invalid according to the target "
-                                        "language, i.e. it has a "
-                                        "collection-level overload, but not an "
-                                        "element-level one (in call to '{}')",
-                                        fn_name_str),
-                            fn_call);
+                return fail(
+                    fmt::format("broadcast call is invalid according to the target language, i.e. "
+                                "it has a collection-level overload, but not an element-level one "
+                                "(in call to '{}')\n{}",
+                                fn_name_str, arg_types_to_str(arg_types)),
+                    fn_call);
             }
         }
 
         if (ret_ty.is_null()) {
             return fail(fmt::format("builtin function does not have an overload for the inferred "
-                                    "argument types (in call to '{}')",
-                                    fn_name_str),
+                                    "argument types (in call to '{}')\n{}",
+                                    fn_name_str, arg_types_to_str(arg_types)),
                         fn_call);
         }
 
@@ -2653,15 +2672,14 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
     }
 
     if (struct_decl != nullptr) {
-        if (struct_decl->field_decls.size() > arg_types.size())
-            return fail(fmt::format("not enough arguments in constructor call for struct '{}'",
-                                    ctx.get_sym(struct_decl->identifier)),
+        if (struct_decl->field_decls.size() != arg_types.size()) {
+            return fail(fmt::format("invalid number of arguments in constructor of struct '{}' "
+                                    "(expected {}, got {})\n{}",
+                                    ctx.get_sym(struct_decl->identifier),
+                                    struct_decl->field_decls.size(), arg_types.size(),
+                                    arg_types_to_str(arg_types)),
                         fn_call);
-
-        if (struct_decl->field_decls.size() < arg_types.size())
-            return fail(fmt::format("too many arguments in constructor call for struct '{}'",
-                                    ctx.get_sym(struct_decl->identifier)),
-                        fn_call);
+        }
 
         bool valid_call = true;
         for (size_t i = 0; i < arg_types.size(); i++) {
@@ -2673,8 +2691,8 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
         }
 
         if (!valid_call) {
-            return fail(fmt::format("invalid constructor argument types for {}",
-                                    type_str(struct_decl->type)),
+            return fail(fmt::format("invalid constructor argument types for {}\n{}",
+                                    type_str(struct_decl->type), arg_types_to_str(arg_types)),
                         fn_call);
         }
 
@@ -2698,6 +2716,12 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             opaq_fn->set_is_ctor(true);
 
             return target_type;
+        } else {
+            return fail(
+                fmt::format("The target language doesn't recognize a constructor call for {} "
+                            "with the inferred argument types.\n{}",
+                            type_str(target_type), arg_types_to_str(arg_types)),
+                fn_call);
         }
     }
 
