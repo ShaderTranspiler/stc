@@ -65,7 +65,7 @@ SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
     auto* global_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(global_cmpd_id);
     if (global_cmpd == nullptr)
         return internal_error(
-            "Null id passed to Julia -> SIR lowering pass as the global scope body");
+            "null id passed to Julia -> SIR lowering pass as the global scope body");
 
     auto& body = global_cmpd->body;
 

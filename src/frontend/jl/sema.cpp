@@ -622,21 +622,52 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
         if (glob_decl->type.is_null())
             return internal_error("found unresolved declaration in symbol table", *glob_decl);
 
+        // Julia throws on non-top-level type annotations for global declarations
         if (!vdecl.annot_type.is_null()) {
-            TypeCheckResult tcr = check_type_against(vdecl.annot_type, glob_decl->type, vdecl);
+            return fail(
+                fmt::format(
+                    "type declaration for global symbol '{}' is not allowed in local scopes",
+                    ctx.get_sym(vdecl.identifier)),
+                vdecl);
 
-            if (tcr != TypeCheckResult::Match) {
-                return fail(fmt::format("invalid type in local binding for global symbol '{}' "
-                                        "(expected {}, got {})",
-                                        ctx.get_sym(vdecl.identifier), type_str(glob_decl->type),
-                                        type_str(vdecl.annot_type)),
-                            vdecl);
-            }
+            // TypeCheckResult tcr = check_type_against(vdecl.annot_type, glob_decl->type, vdecl);
+            // if (tcr != TypeCheckResult::Match) {
+            //     return fail(fmt::format("invalid type in local binding for global symbol '{}' "
+            //                             "(expected {}, got {})",
+            //                             ctx.get_sym(vdecl.identifier), type_str(glob_decl->type),
+            //                             type_str(vdecl.annot_type)),
+            //                 vdecl);
+            // }
         }
 
         vdecl.set_is_silent_decl(true);
 
         return glob_decl->type;
+    }
+
+    // TODO: allow these
+    if (actual_st == ScopeType::Global && !vdecl.is_builtin() &&
+        (&current_scope() != &global_scope())) {
+        // block defining new globals in local scope
+        // this would introduce too many cross-scope dependency checking and lifting for now
+        if (!global_scope().st_contains(vdecl.identifier)) {
+            return fail(fmt::format("introducing new globals from inside a local scope is "
+                                    "currently not supported (in declaration of '{}')",
+                                    ctx.get_sym(vdecl.identifier)),
+                        vdecl);
+        }
+
+        // global x::Float32 = 0.0f0
+        // prefer:
+        // this would require (conditionally) splicing an assignment into the AST
+        if (has_init) {
+            return fail(
+                fmt::format("declaring a symbol global and assigning a value to it in a single "
+                            "statement is currently not supported (in declaration of "
+                            "'{}').\nInstead of:\nglobal x = 0.0f0\nUse:\nglobal x\nx = 0.0f0",
+                            ctx.get_sym(vdecl.identifier)),
+                vdecl);
+        }
     }
 
     // TODO: lazy infer declared var type
@@ -675,7 +706,7 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
     JLScope& target_scope = expected_st == ScopeType::Global ? global_scope() : current_scope();
 
     bool added = target_scope.st_add_sym(vdecl.identifier, decl_id);
-    if (!added) {
+    if (!added && &target_scope != &global_scope()) {
         return fail(fmt::format("redeclaration of symbol '{}' in the same scope (as a variable)",
                                 ctx.get_sym(vdecl.identifier)),
                     vdecl);

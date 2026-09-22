@@ -166,6 +166,6 @@ function main()
         i += 1
     end
 
-    global frag_col::Vec4
+    global frag_col
     frag_col = vec4(col / Float32(samples), 1.0)
 end
