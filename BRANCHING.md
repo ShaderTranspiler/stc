@@ -34,6 +34,8 @@ Because branches land with their commits intact, `main` holds the full history o
 
 The integration branch, and the default target for everyday work. `feature/*` and `fix/*` branches are opened from it and merged back into it. It holds work that is finished but not yet part of a version.
 
+For the version number, `develop` holds the next planned version with the `-dev` suffix, updated when a release branch is opened from it.
+
 After `main` advances (with a `hotfix/*` or release), `develop` is brought back up to it so that `develop` never diverges too far with new features that are incompatible with the released state.
 
 ## Release Branches
@@ -46,7 +48,9 @@ Opened from `develop` when a version's scope is settled. From that point the bra
 
 The branch stays open for the whole candidate cycle and is only deleted after the final release is merged into `main` (i.e. published).
 
-It (or equivalently `main`) should be merged back into `develop` after every publish, whether it's a candidate or a final release. This is to ensure that release branches don't introduce any changes that are specific to that given version only, and are incompatible with features planned for the next release. Not merging per commit, only per release is meant to reduce the frequency of having to integrate target version changes into next-release ones, while maintaining a consistent routine.
+It (or equivalently `main`) should be merged back into `develop` after every publish, whether it's a candidate or a final release. This is to ensure that release branches don't introduce any changes that are specific to that given version only, and are incompatible with features planned for the next release. When merging back release changes into `develop`, make sure the `-dev` suffix is not overwritten with `-rc.N`, though this should surface as a merge conflict.
+
+Not merging back release work per commit, only per release is meant to reduce the frequency of having to integrate target version changes into next-release ones, while maintaining a consistent routine.
 
 ## Short-lived Branches
 
@@ -74,7 +78,7 @@ This is the only path other than a release branch that may touch `main`.
 
 ## The Release Cycle
 
-1. **Open `release/x.y.z` from `develop`**, once the version's scope is settled, and set the version block to `x.y.z` with the `rc.0` suffix in its first commit. The branch is not expected to be stable yet, it is a preview that can be tried out, not something to build on, and an `rc.0` build is meant to state exactly that.
+1. **Open `release/x.y.z` from `develop`**, once the version's scope is settled, and set the version block to `x.y.z` with the `rc.0` suffix in its first commit. The branch is not expected to be stable yet, it is a preview that can be tried out, not something to build on, and an `rc.0` build is meant to state exactly that. Bump `develop` to the next planned release version, with the `-dev` suffix.
 2. **Land release work on it.** Release-finalisation commits, stability fixes and the rare last-minute features, each through a `fix/*` or `feature/*` branch opened from the release branch and merged back into it.
 3. **Reach a candidate-ready state.** Feature-complete and stable: as far as the tests and developer testing can tell, this code would work if it were pulled into production as-is. From here consumers can expect nothing but fixes.
 4. **Declare the candidate:** raise the version suffix from `rc.N` to `rc.N+1` (`rc.1` for the first candidate). See [VERSIONING.md](VERSIONING.md#choosing-the-release-version) for how the version itself is chosen.
@@ -87,7 +91,7 @@ This is the only path other than a release branch that may touch `main`.
 11. **Merge back into `develop`**, from `main` or equivalently from the release branch, which is at the same commit.
 12. **Delete the release branch.** The tags and releases remain as the markers of what was published.
 
-Steps 5 and 8 are guarded by the version-step rules in [VERSIONING.md](VERSIONING.md#choosing-the-release-version), which CI checks on every pull request into `main`.
+Steps 5 and 8 are guarded by the version-step rules in [VERSIONING.md](VERSIONING.md#choosing-the-release-version), which CI checks on every pull request into `main`. `develop` and release branches are guarded by a suffix-guard job in CI.
 
 Publishing the JLL and bringing the downstream packages up to the new version happen after step 5 or step 10, outside the branch model and CI entirely (see [VERSIONING.md](VERSIONING.md#the-jll)).
 
@@ -97,12 +101,13 @@ Publishing the JLL and bringing the downstream packages up to the new version ha
 |---|---|---|
 | **CI** (build & test) | `push` | `main`, `develop`, `release/**` |
 | **CI** (build & test) | `pull_request` | targeting `main`, `develop` or `release/**` |
-| **Version Check** | `pull_request` | targeting `main` |
+| **Version Check** | `push` | `develop`, `release/**` |
+| **Version Check** | `pull_request` | targeting `main` or `develop` |
 | **Julia Digests** | `pull_request` | any target; checks only when the Julia manifest changed |
 | **Release** | `push` | `main` only |
 | **Docs** | `push` | `main` only |
 
-CI, Release, Docs and Julia Digests also accept `workflow_dispatch`, so any of them can be run by hand. Version Check cannot, since it has nothing to compare without a pull request's branches.
+CI, Release, Docs and Julia Digests also accept `workflow_dispatch`, so any of them can be run by hand.
 
 Consequences worth knowing:
 

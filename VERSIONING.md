@@ -4,16 +4,19 @@ How Shader Transpiler Core numbers its releases, what those numbers promise to c
 
 ## Version Information
 
-Two lines in `CMakeLists.txt` are the single source of truth for STC's current version. Nothing else in the repository stores a version number directly:
-
-```cmake
-project(ShaderTranspilerCore VERSION 0.9.0)
-set(STC_VERSION_SUFFIX "")
+The root-level file `VERSION.txt` is the single source of truth for STC's current version. Nothing else in the repository stores a version number directly.
+```txt
+0.9.0-rc.3
 ```
 
-Everything downstream derives from them: the generated compile-time metadata, the library's `SOVERSION`, the docs PDF's filename, the git tag, the GitHub release, and the JLL. To change the version of a build, change these lines and nothing else.
+Everything downstream derives from it: the generated compile-time metadata, the library's `SOVERSION`, the docs PDF's filename, the git tag, the GitHub release, and the JLL. To change the version of a build, change that single file and nothing else.
 
-The two compose into `STC_VERSION`: an empty suffix leaves `0.9.0` alone, `rc.0` makes `0.9.0-rc.0`, `rc.1` makes `0.9.0-rc.1`, etc. The suffix is validated at configure time and rejects anything that is not empty or of the form `rc.N`.
+The format can be one of the following:
+- **final release:** `X.Y.Z`
+- **release candidate:** `X.Y.Z-rc.N`
+- **for development:** `X.Y.Z-dev`
+
+The suffix is validated at CMake configure-time and in CI, rejecting anything not matching the above forms.
 
 ## Version Numbers
 
@@ -27,11 +30,15 @@ Releases follow [semantic versioning](https://semver.org): `MAJOR.MINOR.PATCH`.
 
 ### Pre-release Suffixes
 
-The only permitted suffix form is `rc.N`. Alpha, beta or other prerelease stages are currently not used.
+One of the pre-release suffixes allowed is `-dev`. This is used for active development, and is meant to indicate that development is working towards a given release.
+`X.Y.Z-dev` indicates that the next planned release is `X.Y.Z`, but that can change if new changes require a stricter bump (e.g. an API breaking change takes version from `X.Y.Z-dev` to `(X+1).0.0-dev`). **A `-dev` build is never published:** its purpose is so that build metadata for dev builds is clear about where it sits in the history, while also helping keep track of what the next release will be numbered as. `-dev` should never be relied on as dependencies, a new commit may completely break compared to a build with the exact same `X.Y.Z-dev` version.
 
+The other permitted suffix form is `rc.N`.
 Release candidates are numbered from 1. A release candidate is a build that is believed to be the final release, published so that it can be tested against real consumers rather than as a preview of unfinished work. Feature work does not normally land during a candidate cycle.
 
-`rc.0` is reserved and means something different: it marks a release branch that is *preparing* its first candidate. It exists so that a preview build can report the version it is heading for without claiming to be a candidate, and it is deliberately ordered below `rc.1`, so `0.8.5` < `0.9.0-rc.0` < `0.9.0-rc.1` < `0.9.0` all hold. **An `rc.0` build is never published:** it carries no tag and no release, it stays on the release branch, and a pull request carrying it into `main` is rejected by CI.
+`rc.0` is reserved and means something different: it marks a release branch that is *preparing* its first candidate. It exists so that a preview build can differentiate itself from development versions, while still reporting the version they're heading for, without claiming to be a proper candidate. It is deliberately ordered between `-dev` and `rc.1`, so `0.8.5` < `0.9.0-dev` < `0.9.0-rc.0` < `0.9.0-rc.1` < ... < `0.9.0` all hold. **An `rc.0` build is never published:** it carries no tag and no release, it stays on the release branch, and a pull request carrying it into `main` is rejected by CI.
+
+See [BRANCHING.md](BRANCHING.md) for a more detailed breakdown of where these suffixes fit into the branching model.
 
 ### ABI Version
 
@@ -47,6 +54,8 @@ if (stc_abi_version() != EXPECTED_STC_ABI_VERSION)
 A value of `0` is similarly an explicit statement that **no forwards or backwards compatibility is guaranteed**. Consumers acknowledge that they're responsible for keeping their usage of the library up-to-date when updating between 0.x versions. It will become `1` when 1.0 is released, and from then on a change to it means a genuine break.
 
 The shared library's `SOVERSION` is set from the same number, so linkers enforce the same boundary.
+
+Note that `-dev` suffixed versions provide no guarantee for ABI version. They indicate the ABI version being worked towards for the next release, even if the build itself is breaking the contract.
 
 ### Julia Compatibility
 
@@ -75,14 +84,18 @@ A hotfix is always a patch step, but patch steps are not exclusive to hotfixes. 
 
 Every merge into `main` is guarded on this. A release branch must be exactly one patch, minor or major step ahead of `main`, or at the same version with the candidate number moving forward, and it may not still be carrying `rc.0`. A hotfix must be exactly one patch step ahead and carry no suffix at all. Without those checks a forgotten bump fails silently, because the release workflow finds the tag already present and skips.
 
+`develop` (and work branching from it) name the release version being worked towards, with a `-dev` suffix. `develop` should always stay above `main`, bumping the version as soon as a release cycle begins.
+
 ### Version Number Through a Release Cycle
 
 | stage | suffix | composed | reaching `main` |
 |---|---|---|---|
-| release branch opened | `rc.0` | `x.y.z-rc.0` | rejected by CI on PR |
+| release branch opened | `rc.0` | `x.y.z-rc.0` | rejected by CI and branch protection |
 | first candidate declared | `rc.1` | `x.y.z-rc.1` | pre-release, published immediately |
 | further candidates | `rc.2`, `rc.3`, ... | `x.y.z-rc.2`, `x.y.z-rc.3`, ... | pre-release, published immediately |
 | finalized | *(empty)* | `x.y.z` | full release, created as a draft |
+
+Note that the release branch opening also bumps the version on `develop` to the next planned release, with a `-dev` suffix. So when `release/0.9.0` is opened from `develop` (with version `0.9.0-rc.0`), `develop` is immediately bumped to the next version, e.g. `0.10.0-dev`.
 
 ### The JLL
 
@@ -92,7 +105,7 @@ The JLL is built separately and manually. This is a deliberate choice until the 
 
 **Building.** Start from a checkout of the release tag with a clean staging area and working directory, and with `BinaryBuilder` available in the Julia environment you're using. Delete `$DEVDIR/stc_jll/` first if it exists, otherwise `BinaryBuilder` will generate the wrapper additively over the previous version, which is **NOT** something we want.
 
-`julia build_tarballs.jl --deploy=local` then builds both. For candidates, `--suffixed-build` is also required, which strips the prerelease component from the version info before forwarding it to `BinaryBuilder`, since it doesn't allow prerelease builds. This means the produced JLL artifacts lack prerelease information, which has to be added back later manually. The artifacts are placed in `./products/`, while the wrapper is generated at `$DEVDIR/stc_jll`.
+`julia build_tarballs.jl --deploy=local` then builds both. For any build performed under a suffixed version, `--suffixed-build` is also required, which strips the prerelease component from the version info before forwarding it to `BinaryBuilder`, which doesn't allow prerelease builds. This means the produced JLL artifacts lack prerelease information, which has to be added back later manually. The artifacts are placed in `./products/`, while the wrapper is generated at `$DEVDIR/stc_jll`.
 
 **Uploading the artifacts.** The artifacts are renamed on the way out, from the `products/stc.v<stripped-version>.<triplet>.tar.gz` files `BinaryBuilder` produced into `products/stc_jll.vX.Y.Z[-rc.N].<triplet>.tar.gz`. Copying the files is recommended over a move, since that preserves the file structure `BinaryBuilder` generated the wrapper for, if any manual testing or debugging is required. For candidates, make sure the version suffix is included in the new names.
 
@@ -132,7 +145,7 @@ Every build records how it was produced, readable through `stc --version` and th
 |---|---|
 | `version` | the composed `STC_VERSION`, suffix included |
 | `version_major` / `_minor` / `_patch` | the numeric components |
-| `version_suffix` | `rc.N`, or empty |
+| `version_suffix` | `rc.N`, `dev`, or empty |
 | `build_origin` | `official build` or `development build` |
 | `build_type` | the CMake configuration |
 | `compiler_id` / `compiler_ver` | the compiler used |

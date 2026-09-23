@@ -15,7 +15,11 @@ using TOML
 const REPO_ROOT = @__DIR__
 
 # files and directories copied into the sandbox for building
-const STAGED_FILES::Vector{String} = String["include", "src", "cli", "cmake", "packaging", "CMakeLists.txt", "LICENSE"]
+const STAGED_FILES::Vector{String} = String[
+    "include", "src", "cli",
+    "cmake", "packaging", "CMakeLists.txt",
+    "LICENSE", "VERSION.txt"
+]
 
 const IS_PUBLISHING::Bool = any(arg -> startswith(arg, "--deploy") && arg != "--deploy=local", ARGS)
 const SUFFIXED_BUILD_ARG::String = "--suffixed-build" # strips prerelease info from version (BinaryBuilder doesn't support it)
@@ -23,6 +27,8 @@ const ALLOW_NO_COMMIT_HASH_ARG::String = "--allow-no-commit-hash"
 const ALLOW_DIRTY_TREE_ARG::String = "--allow-dirty-tree"
 
 arg_active(arg)::Bool = !IS_PUBLISHING && arg in ARGS
+
+const VERSION_INFO_TXT = joinpath(REPO_ROOT, "VERSION.txt")
 
 # supported Julia builds
 const TARGETS_TOML = joinpath(REPO_ROOT, "julia_targets.toml")
@@ -67,27 +73,22 @@ function get_julia_archive_sources()
     return sources
 end
 
-# a bit hacky, but keeps the CMake file as the single source of truth for versioning
-cmake_content = read("CMakeLists.txt", String)
-
-version_match = match(r"project\([^ ]+ VERSION (\d+\.\d+\.\d+)\)", cmake_content)
-if isnothing(version_match)
-    error("could not strip VERSION from CMakeLists.txt file")
+try
+    global version = strip(read(VERSION_INFO_TXT, String)) |> VersionNumber
+catch err
+    if err isa SystemError
+        error("couldn't open version information file at $VERSION_INFO_TXT")
+    elseif err isa ArgumentError
+        error("couldn't parse version format in $VERSION_INFO_TXT (use x.y.z[-rc.N|-dev])")
+    else
+        rethrow()
+    end
 end
 
 # only unsuffixed versions are allowed to be published (unless an override is provided, useful for local deployment)
-suffix_match = match(r"set\(STC_VERSION_SUFFIX \"([^\"]*)\"\)", cmake_content)
-if isnothing(suffix_match)
-    error("could not strip STC_VERSION_SUFFIX from CMakeLists.txt file")
-end
-
-has_suffix = !isempty(suffix_match.captures) && !isempty(suffix_match[1])
-
-version = VersionNumber(has_suffix ? "$(version_match[1])-$(suffix_match[1])" : version_match[1])
-
 if version.prerelease != () || version.build != ()
     if !arg_active(SUFFIXED_BUILD_ARG)
-        error("cannot publish builds with STC_VERSION_SUFFIX set to a non-empty value, unless $SUFFIXED_BUILD_ARG is provided explicitly for a non-publishing run." *
+        error("cannot publish builds with version suffix set to a non-empty value, unless $SUFFIXED_BUILD_ARG is provided explicitly for a non-publishing run." *
             "This will strip prerelease and build data from the version (which will have to be handled manually during deployment)")
     end
 

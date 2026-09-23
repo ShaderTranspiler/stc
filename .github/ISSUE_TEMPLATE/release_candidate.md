@@ -15,7 +15,7 @@ The detailed procedure lives in [VERSIONING.md](https://github.com/ShaderTranspi
 - [ ] `release/X.Y.Z` is candidate-ready: feature-complete and stable as far as the tests and developer testing can tell
 - [ ] CI is green on `release/X.Y.Z`
 - [ ] `julia_targets.toml` is current, and `julia_archive_digests.toml` has been regenerated if any archives changed upstream (`julia scripts/update_julia_archive_digests.jl --check`)
-- [ ] the suffix in `CMakeLists.txt` is raised to `rc.N` (`rc.0` -> `rc.1` for the first candidate)
+- [ ] the suffix in `VERSION.txt` is raised to `rc.N` (`rc.0` -> `rc.1` for the first candidate)
 
 ## Publish stc
 
@@ -39,6 +39,6 @@ NOTE: `$DEVDIR` lives at `~/.julia/dev` by default.
 
 ## Close out
 
-- [ ] `release/X.Y.Z` merged back into `develop`
+- [ ] `release/X.Y.Z` merged back into `develop`, making sure the `-dev` suffix remains intact
 
 `release/X.Y.Z` and the version milestone stay open!

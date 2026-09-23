@@ -15,7 +15,7 @@ The detailed procedure lives in [VERSIONING.md](https://github.com/ShaderTranspi
 - [ ] all work targeting the release is merged into `release/X.Y.Z`, and CI is green on it
 - [ ] every issue in the milestone is closed, other than this one
 - [ ] `julia_targets.toml` is current, and `julia_archive_digests.toml` has been regenerated if any archives changed upstream (`julia scripts/update_julia_archive_digests.jl --check`)
-- [ ] the version block in `CMakeLists.txt` is at `X.Y.Z` with the suffix cleared
+- [ ] the version in `VERSION.txt` is at `X.Y.Z` with the suffix cleared
 
 ## Publish stc
 
@@ -41,7 +41,7 @@ NOTE: `$DEVDIR` lives at `~/.julia/dev` by default.
 
 ## Close out
 
-- [ ] `main` merged back into `develop`
+- [ ] `main` merged back into `develop`, making sure the `-dev` suffix remains intact
 - [ ] milestone closed in `stc` and in `ShaderTranspiler.jl`
 - [ ] next milestone created in `stc` (with a due date) and in `ShaderTranspiler.jl` (without one), identically named
 - [ ] Release-specific Project views and charts filtered to the new milestone

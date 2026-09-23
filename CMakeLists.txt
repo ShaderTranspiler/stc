@@ -1,5 +1,3 @@
-# TODO: set up CMakePresets instead of CMakeSettings
-
 cmake_minimum_required(VERSION 3.16)
 
 include(FetchContent)
@@ -12,21 +10,20 @@ set(STC_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
 
 # Version info
 
-# set current project version in these two lines
-# cascades through the entire codebase, treated as a single source of truth
-project(ShaderTranspilerCore VERSION 0.9.0)
-set(STC_VERSION_SUFFIX "rc.2")
+# the full version lives in VERSION.txt and cascades through the entire codebase from there
+file(READ "${STC_SRC_DIR}/VERSION.txt" STC_VERSION_RAW)
+string(STRIP "${STC_VERSION_RAW}" STC_VERSION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${STC_SRC_DIR}/VERSION.txt")
 
-if(NOT STC_VERSION_SUFFIX STREQUAL "")
-    if (NOT STC_VERSION_SUFFIX MATCHES "^rc\\.[0-9]+$")
-        message(FATAL_ERROR "Invalid STC_VERSION_SUFFIX: '${STC_VERSION_SUFFIX}'.\n"
-        "Must be empty for releases, or have the form rc.N for release candidates (e.g. rc.1).")
-    endif()
-
-    set(STC_VERSION "${PROJECT_VERSION}-${STC_VERSION_SUFFIX}")
-else()
-    set(STC_VERSION "${PROJECT_VERSION}")
+if (NOT STC_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-(rc\\.[0-9]+|dev))?$")
+    message(FATAL_ERROR "Invalid version '${STC_VERSION}' in VERSION.txt\n"
+    "Must be x.y.z optionally followed by -rc.N for release candidates and -dev for non-final, non-candidate builds.")
 endif()
+
+set(STC_VERSION_CORE "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+set(STC_VERSION_SUFFIX "${CMAKE_MATCH_5}")
+
+project(ShaderTranspilerCore VERSION "${STC_VERSION_CORE}")
 
 set(STC_SOVERSION "${PROJECT_VERSION_MAJOR}") # ! ABI version is linked to semver's major version
 
