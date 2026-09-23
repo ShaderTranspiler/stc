@@ -8,7 +8,7 @@ assignees: szgerii
 
 Version: `X.Y.Z`
 
-The detailed procedure lives in [VERSIONING.md](https://github.com/ShaderTranspiler/stc/blob/main/VERSIONING.md#the-version-through-a-release) and [BRANCHING.md](https://github.com/ShaderTranspiler/stc/blob/main/BRANCHING.md#the-release-cycle). This is the checklist, not the instructions.
+The detailed procedure lives in [VERSIONING.md](https://github.com/ShaderTranspiler/stc/blob/main/VERSIONING.md#publishing-a-release) and [BRANCHING.md](https://github.com/ShaderTranspiler/stc/blob/main/BRANCHING.md#the-release-cycle). This is the checklist, not the instructions.
 
 ## Prerequisites
 
