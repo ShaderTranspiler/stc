@@ -26,7 +26,7 @@ main ───────────●─────────────
 
 The released state. Nothing is developed here directly: `main` only ever advances by merging a `release/*` or `hotfix/*` branch, and it is protected so that it cannot advance any other way.
 
-Every such merge publishes. The release workflow reads the version block off what arrives and cuts the tag and the GitHub release from it, so reaching `main` is what makes a version real.
+Every such merge publishes — the release workflow reads the version block off what arrives and cuts the tag and the GitHub release from it, so reaching `main` is what makes a version real.
 
 Because branches land with their commits intact, `main` holds the full history of everything merged into it rather than one commit per version. The tags, not the commits, are what mark the published versions.
 
@@ -44,7 +44,7 @@ New functionality. Branches from `develop`, merges back into `develop`.
 
 Name them after what they add: `feature/hlsl-backend`, `feature/struct-lowering`.
 
-**NOTE:** in very rare and justifiable situations, `release/*` branches may open a new feature branch for last-minute functionality that **CANNOT** wait for the next release. These feature branches are merged back into the release branch first, and then into `develop` when a release candidate is published.
+**NOTE:** in very rare and justifiable situations, `release/*` branches may open a new feature branch for last-minute functionality that **CANNOT** wait for the next release. These feature branches are merged back into the release branch first, and then into `develop` via `main` when a release candidate is published.
 
 ### `fix/*`
 
@@ -60,7 +60,7 @@ Opened from `develop` when a version's scope is settled. From that point the bra
 
 The branch stays open for the whole candidate cycle and is deleted after the final release merges.
 
-The release branch should be merged back into `develop` after every publish (be that for a release candidate or a proper release). This is to ensure that release branches don't introduce any changes that are specific to that given version only, and `develop` doesn't diverge far from the release fixes with incompatible changes.
+It should be merged back into `develop` after every publish, candidate or final. This is to ensure that release branches don't introduce any changes that are specific to that given version only, and that `develop` doesn't diverge far from the release fixes with incompatible changes.
 
 ### `hotfix/*`
 
@@ -68,18 +68,14 @@ An urgent correction to something already published. Branches from `main` at the
 
 **`main` is the distribution point for a hotfix.** The hotfix branch merges into `main` and nowhere else. `main` is then merged into `develop`, and into any release branch that is currently open, so every line picks the fix up from one place instead of the same branch being merged into three.
 
-Merging `main` into an open release branch is safe in a way that merging `develop` into it would not be. `main` carries only released code and hotfixes, so the merge brings the fix and nothing else — none of `develop`'s work aimed at the next version.
-
-Leaving an open release branch to pick the fix up implicitly, when it eventually merges into `main`, does also work: `main` never loses the hotfix, so the published artifacts are correct either way. What it costs is that the release branch's own CI then runs against code missing the fix, and that any conflict between the hotfix and the release work surfaces during the merge into `main`, which is publish time. Merging `main` in straight away moves that discovery somewhere cheaper.
-
 This is the only path other than a release branch that may touch `main`.
 
 ## The release cycle
 
-1. **Open `release/x.y.z` from `develop`**, once the version's scope is settled, and set the version block to `x.y.z` with the `rc.0` suffix in its first commit. The branch is not expected to be stable yet — it is a preview others can try out, not something to build on, and `rc.0` says exactly that.
+1. **Open `release/x.y.z` from `develop`**, once the version's scope is settled, and set the version block to `x.y.z` with the `rc.0` suffix in its first commit. The branch is not expected to be stable yet, it is a preview others can try out, not something to build on, and `rc.0` says exactly that.
 2. **Land release work on it.** Release-finalisation commits, stability fixes and the rare last-minute feature, each through a `fix/*` or `feature/*` branch opened from the release branch and merged back into it.
 3. **Reach a candidate-ready state.** Feature-complete and stable: as far as the tests and developer testing can tell, this code would work if it were pulled into production as-is. From here consumers can expect nothing but fixes.
-4. **Declare the candidate:** raise the suffix from `rc.0` to `rc.1`, or from `rc.N` to `rc.N+1` on a later pass. See [VERSIONING.md](VERSIONING.md) for how the version itself was chosen.
+4. **Declare the candidate:** raise the suffix from `rc.0` to `rc.1`, or from `rc.N` to `rc.N+1` on a later pass. See [VERSIONING.md](VERSIONING.md#choosing-the-number) for how the version itself was chosen.
 5. **Merge into `main`**, and confirm the pre-release was published and tagged.
 6. **Merge the release branch into `develop`.** Every candidate's fixes go back immediately, so `develop` never drifts far from what is being stabilised and the two cannot accumulate incompatible changes.
 7. **Fix whatever the candidate surfaces**, on the release branch, then repeat from step 4 with the next `rc.N`.
@@ -89,7 +85,9 @@ This is the only path other than a release branch that may touch `main`.
 11. **Merge back into `develop`**, from `main` or equivalently from the release branch, which is at the same commit.
 12. **Delete the release branch.** The tags and releases remain as the markers of what was published.
 
-Steps 5 and 8 are guarded: a pull request into `main` from a release branch must move the version by exactly one patch, minor or major step, or keep the version and move the candidate number forward, and it may not still be carrying `rc.0`. A hotfix pull request must move the version by exactly one patch step. A forgotten bump would otherwise fail silently, since the release workflow finds the tag already present and skips.
+Steps 5 and 8 are guarded by the version-step rules in [VERSIONING.md](VERSIONING.md#choosing-the-number), which CI checks on every pull request into `main`.
+
+Publishing the JLL and bringing the downstream packages up to the new version happen after step 5 or step 10, outside the branch model entirely — see [VERSIONING.md](VERSIONING.md#the-jll).
 
 ## What CI does
 
@@ -110,8 +108,7 @@ Consequences worth knowing:
 
 **A newer commit cancels the run it supersedes.** CI and Version Check cancel any run still in flight for the same ref, so pushing a fix on top of a broken commit does not leave the old run occupying a slot. Release and Docs deliberately do not cancel: they queue instead, because interrupting a publish half-way can leave a tag cut with artifacts missing, and GitHub Pages permits only one deployment at a time.
 
-**Anything reaching `main` publishes.** The release workflow runs on every push to `main` and reads the version block to decide what to do. It skips silently when the composed version already has a tag, so pushing to `main` without a version change is harmless, but it does mean the version block
-is the thing standing between a merge and a public release. The docs workflow likewise redeploys the Doxygen documentation to GitHub Pages from every push to `main`.
+**Anything reaching `main` publishes.** Pushing without a version change is harmless, since the release workflow skips silently when the composed version already has a tag, but it does mean the version block is the thing standing between a merge and a public release. The docs workflow likewise redeploys the Doxygen documentation to GitHub Pages from every push to `main`.
 
 ## Merge policy
 
