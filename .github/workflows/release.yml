@@ -31,27 +31,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract Version from CMake
+      - name: Extract Version
         id: extract
         run: |
-          VERSION=$(grep -oP '(?<=project\(ShaderTranspilerCore VERSION )[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
-          SUFFIX=$(grep -oP '(?<=set\(STC_VERSION_SUFFIX ")[^"]*' CMakeLists.txt)
+          VERSION=$(tr -d '[:space:]' < VERSION.txt)
 
-          if [ -n "$SUFFIX" ]; then
-            if ! echo "$SUFFIX" | grep -qP '^rc\.[0-9]+$'; then
-              echo "::error::Invalid STC_VERSION_SUFFIX '$SUFFIX' (expected empty or rc.N)"
-              exit 1
-            fi
-            
-            VERSION="$VERSION-$SUFFIX"
+          if [[ "$VERSION" == *-dev ]]; then
+            echo "::error::Refusing to publish development version '$VERSION', only x.y.z and x.y.z-rc.N versions may reach main"
+            exit 1
+          fi
+
+          if ! echo "$VERSION" | grep -qP '^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'; then
+            echo "::error::Invalid version '$VERSION' in VERSION.txt (expected x.y.z or x.y.z-rc.N)"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          if [[ "$VERSION" == *-* ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
             echo "is_draft=false" >> $GITHUB_OUTPUT
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
             echo "is_draft=true" >> $GITHUB_OUTPUT
           fi
-
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if Tag Exists
         id: check

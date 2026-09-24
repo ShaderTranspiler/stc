@@ -1,11 +1,18 @@
 name: Version Check
 
+# version-step:
 # guards the version block on the way into main, a missing bump otherwise fails silently.
 # the release workflow finds the tag already present, skips, and publishes nothing
 
+# suffix-guard:
+# guards develop and release branches from using invalid suffixes. develop should always
+# have a dev suffixed version, while releases should have a non-dev version
+
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+  push:
+    branches: [develop, "release/**"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,8 +20,9 @@ concurrency:
 
 jobs:
   version-step:
-    name: Version Check
+    name: Version Bump Guard
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -37,15 +45,43 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-
-      - name: Extract Base Version Block
+      
+      - name: Extract Base Version
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: git show "origin/$BASE_REF:CMakeLists.txt" > "$RUNNER_TEMP/base_CMakeLists.txt"
+        run: git show "origin/$BASE_REF:VERSION.txt" > "$RUNNER_TEMP/base_VERSION.txt"
 
       - name: Check Version Bump
         run: >
           python3 scripts/check_version_bump.py
           --kind ${{ steps.kind.outputs.kind }}
-          --base "$RUNNER_TEMP/base_CMakeLists.txt"
-          --head CMakeLists.txt
+          --base "$RUNNER_TEMP/base_VERSION.txt"
+          --head VERSION.txt
+
+  suffix-guard:
+    name: Version Suffix Guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.base_ref == 'develop'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Determine Branch Kind
+        id: kind
+        env:
+          REF: ${{ github.event_name == 'push' && github.ref_name || github.base_ref }}
+        run: |
+          case "$REF" in
+            develop)   echo "kind=develop"        >> $GITHUB_OUTPUT ;;
+            release/*) echo "kind=release-branch" >> $GITHUB_OUTPUT ;;
+            *)
+              echo "::error::suffix guard ran on an unexpected ref ('$REF')"
+              exit 1
+              ;;
+          esac
+
+      - name: Check Version Suffix
+        run: >
+          python3 scripts/check_version_bump.py
+          --kind ${{ steps.kind.outputs.kind }}
+          --head VERSION.txt
