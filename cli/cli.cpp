@@ -12,6 +12,7 @@ JULIA_DEFINE_FAST_TLS
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <sstream>
 
 namespace stc::cli {
@@ -47,7 +48,7 @@ int run(int argc, char* argv[]) {
 
     TranspilerConfig config{};
     std::string out_path{};
-    uint16_t ite_count = 1U;
+    uint32_t ite_count = 1U;
     bool run_benchmark = true;
     bool no_out        = false;
 
@@ -125,11 +126,16 @@ int run(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
 
+            using IteTy = std::remove_cvref_t<decltype(ite_count)>;
+
             std::string next_arg{argv[i + 1]};
-            auto maybe_ite_count = try_parse_u16(next_arg);
+            auto maybe_ite_count = try_parse_num<IteTy>(next_arg);
 
             if (!maybe_ite_count.has_value()) {
-                std::cerr << "--it followed by a non-numeric string\n";
+                std::cerr << fmt::format(
+                    "--it followed by an invalid argument (expected range: {}-{})\n",
+                    std::numeric_limits<IteTy>::min(), std::numeric_limits<IteTy>::max());
+
                 return EXIT_FAILURE;
             }
 
@@ -142,10 +148,15 @@ int run(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
 
-            auto maybe_cg_indent = try_parse_u16(std::string{argv[i + 1]});
+            using CgIndentTy = std::remove_cvref_t<decltype(config.code_gen_indent)>;
+
+            auto maybe_cg_indent = try_parse_num<CgIndentTy>(std::string{argv[i + 1]});
 
             if (!maybe_cg_indent.has_value()) {
-                std::cerr << "--cg-indent followed by a non-numeric string\n";
+                std::cerr << fmt::format(
+                    "--cg-indent followed by an invalid argument (expected range: {}-{})\n",
+                    std::numeric_limits<CgIndentTy>::min(), std::numeric_limits<CgIndentTy>::max());
+
                 return EXIT_FAILURE;
             }
 
