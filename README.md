@@ -64,13 +64,13 @@ A more high level Julia abstraction is available in the [ShaderTranspiler.jl](ht
 # Requirements
 
 Building the transpiler requires:
-- **CMake 3.16** or newer
+- **CMake 3.21** or newer (this is what BinaryBuilder pins so it's tested at every release)
 - a **C++20** compiler (GCC is recommended, clang and MSVC are also supported)
-- a **v1.12** or newer **Julia** installation
+- a **v1.12** or newer **Julia** installation (for specifics, see [julia_targets.toml](julia_targets.toml))
 
 Everything else is optional and automatically fetched by CMake when needed, or only enabled if available (see [Building the Project](#building-the-project)).
 
-Note that transpilation currently requires [JuliaGLM](https://github.com/Csabix/JuliaGLM) to be available in the Julia environment, since the shader types and builtins the transpiler refers to are all defined there.
+Note that transpilation currently requires [JuliaGLM](https://github.com/Csabix/JuliaGLM) v0.0.2 to be available in the Julia environment, since the shader types and builtins the transpiler refers to are all defined there.
 This requirement is completely independent from building, JuliaGLM is needed during the runtime of the transpiler.
 
 # Getting Started

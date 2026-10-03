@@ -12,6 +12,7 @@ $interactive = ($args -contains "-i") -or ($args -contains "--interactive");
 # assumes msvc is the default c/cpp compiler
 # if this is not the case and cl is in path, it can simply be added here
 # otherwise, msvc configs can also just be removed
+# TODO: use cl properly through CC/CXX with Ninja (this will enable ccache usage, but needs VS dev env stuff, so left as-is for now)
 $configs = @(
     @{ Name = "gcc-dbg";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Debug";          Tidy = $false; Profile = $false; Install = $true },
     @{ Name = "gcc-rel";     Gen = "Ninja"; CC = "gcc";   CXX = "g++";     Type = "Release";        Tidy = $false; Profile = $false; Install = $true },

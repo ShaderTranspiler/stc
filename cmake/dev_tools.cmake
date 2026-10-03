@@ -1,17 +1,27 @@
 # dev tools: ccache, clang-format, clang-tidy
 
-# needs: ALL_SOURCES defined and populated before inclusion
-# sets: CMAKE_{C/CXX}_COMPILER_LAUNCHER [ccache]
+# needs: ALL_SOURCES defined and populated before inclusion, ccache located into CCACHE_EXEC
+# sets: CMAKE_{C/CXX}_COMPILER_LAUNCHER, CMAKE_MSVC_DEBUG_INFORMATION_FORMAT [ccache]
 # sets: CLANG_TIDY_CMD [clang-tidy]
 # adds targets: check_format, fix_format [clang-format]
 
-# ccache
+# ccache (also see base CMakeLists's prelude for this)
 
 if (STC_USE_CCACHE)
     find_program(CCACHE_EXEC ccache)
-    if (CCACHE_EXEC)
+
+    if (CCACHE_EXEC AND CMAKE_GENERATOR MATCHES "Visual Studio")
+        message(WARNING "ccache found and has not been explicitly disabled, but the '${CMAKE_GENERATOR}' generator does not support its usage. "
+                        "Prefer a generator like Ninja if ccache usage is desired, or pass -DSTC_USE_CCACHE=OFF to suppress this warning.")
+    elseif (CCACHE_EXEC) # ccache should already be located by CMakeLists
         set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXEC}")
         set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_EXEC}")
+
+        # MSVC storing debug info in separate .pdb files is not supported by ccache
+        # this disables that (unless the user specifically overwrites it)
+        if (MSVC AND NOT DEFINED CMAKE_MSVC_DEBUG_INFORMATION_FORMAT)
+            set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
+        endif()
 
         message(STATUS "ccache found and enabled for compiler caching")
     else()
