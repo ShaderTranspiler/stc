@@ -70,7 +70,7 @@ Building the transpiler requires:
 
 Everything else is optional and automatically fetched by CMake when needed, or only enabled if available (see [Building the Project](#building-the-project)).
 
-Note that transpilation currently requires [JuliaGLM](https://github.com/Csabix/JuliaGLM) to be available in the Julia environment, since the shader types and builtins the transpiler refers to are all defined there.
+Note that transpilation currently requires [JuliaGLM](https://github.com/Csabix/JuliaGLM) v0.0.2 to be available in the Julia environment, since the shader types and builtins the transpiler refers to are all defined there.
 This requirement is completely independent from building, JuliaGLM is needed during the runtime of the transpiler.
 
 # Getting Started
