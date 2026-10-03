@@ -63,12 +63,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup vcpkg Cache (for Catch2)
-        if: matrix.config.os == 'windows-latest'
-        uses: actions/cache@v4
-        with:
-          path: C:\vcpkg\installed
-          key: ${{ runner.os }}-vcpkg-catch2
+      # Ninja needs cl.exe and other things from the dev environment
+      - name: Setup MSVC Dev Environment
+        if: matrix.config.compiler == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -88,13 +86,14 @@ jobs:
         with:
           cmake-version: "4.2.3"
 
+      # Ninja is used, since MSVC needs it for ccache (and other compilers also benefit from using it)
       - name: Configure CMake
         run: >
           cmake -B build -S . 
+          -G Ninja
           -DCMAKE_BUILD_TYPE=Debug 
           -DSTC_BUILD_TESTS=ON
           -DSTC_USE_FORMAT=OFF
-          ${{ matrix.config.os == 'windows-latest' && '-DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"' || '' }}
           ${{ matrix.config.compiler == 'gcc' && '-DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_FLAGS="--coverage"' || '' }}
 
       - name: Build

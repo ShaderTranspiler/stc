@@ -1,4 +1,8 @@
-cmake_minimum_required(VERSION 3.16)
+# raising CMake version has to be handled carefully, since BinaryBuilder's sandbox uses 3.21.7
+# we can make the build script install a newer version if ever required, but currently the only issue is CMP0141, which isn't meaningful for JLL builds anyways (see ccache prelude)
+cmake_minimum_required(VERSION 3.21)
+
+message(STATUS "Generator: ${CMAKE_GENERATOR}")
 
 include(FetchContent)
 
@@ -7,6 +11,11 @@ set(STC_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(STC_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(STC_BIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/bin)
 set(STC_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
+
+# dev_tools.cmake relies on this for msvc + ccache stuff
+if (POLICY CMP0141) # requires CMake 3.25
+    cmake_policy(SET CMP0141 NEW) # store debug flags (like /Zi) in the MSVC_DEBUG_INFORMATION_FORMAT property instead of CMAKE_<LANG>_FLAGS_<CONFIG>
+endif()
 
 # Version info
 
@@ -148,6 +157,11 @@ add_custom_target(${BUILD_META_TARGET}
 
 file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
 
+# dev tooling (ccache, clang-format, clang-tidy)
+# needed before dependencies, since compiler caching should propagate to those
+
+include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
+
 # fmt
 
 find_package(fmt QUIET)
@@ -193,10 +207,6 @@ if (STC_ENABLE_PROFILING)
     FetchContent_MakeAvailable(tracy)
 endif()
 
-# dev tooling (ccache, clang-format, clang-tidy)
-
-include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
-
 # this needs to be included before main targets (lib and CLI)
 include(GNUInstallDirs)
 
@@ -209,7 +219,7 @@ if (MSVC)
     # /Zc:preprocessor needed for X-macro system (__VA_ARGS__ expansion)
     target_compile_options(CommonConfig INTERFACE
         /W4 /Zc:preprocessor /GR-
-        $<$<CONFIG:RelWithDebInfo>:/Zi /Oy->
+        $<$<CONFIG:RelWithDebInfo>:/Oy->
     )
 
     target_link_options(CommonConfig INTERFACE 
