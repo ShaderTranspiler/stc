@@ -109,14 +109,12 @@ jobs:
           sudo apt-get install -y lcov
           lcov --capture --directory build \
             --exclude '/usr/*' \
+            --exclude "$(realpath build)/*" \
             --exclude '*/test/*' \
             --exclude '*/sandbox/*' \
-            --exclude '*/generated/*' \
-            --exclude '*/_deps/*' \
             --ignore-errors unused \
             --output-file coverage.info
-          lcov --ignore-errors unused --remove coverage.info '/usr/*' '*/test/*' '*/sandbox/*' '*/generated/*' '*/_deps/*' \
-            --output-file coverage.info
+          lcov --ignore-errors unused --remove coverage.info '/usr/*' "$(realpath build)/*" '*/test/*' '*/sandbox/*' --output-file coverage.info
 
       - name: Upload Coverage
         if: matrix.config.compiler == 'gcc'
