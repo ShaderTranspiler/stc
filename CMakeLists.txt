@@ -447,7 +447,13 @@ if (STC_BUILD_TESTS)
 
     enable_testing()
     include(Catch)
-    catch_discover_tests(${UNIT_TESTS_TARGET})
+
+    if (WIN32) # lib RPATH should take care of this on Linux automatically
+        message(STATUS "${JULIA_BIN_DIR}")
+        catch_discover_tests(${UNIT_TESTS_TARGET} DL_PATHS "${JULIA_BIN_DIR}")
+    else()
+        catch_discover_tests(${UNIT_TESTS_TARGET})
+    endif()
 
     message(STATUS "Catch2 found, ${UNIT_TESTS_TARGET} target enabled for testing")
 else()
