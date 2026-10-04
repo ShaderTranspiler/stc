@@ -442,6 +442,11 @@ if (STC_BUILD_TESTS)
     target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE ${LIBSTC_OBJ_TARGET})
     target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Catch2::Catch2WithMain)
 
+    if (NOT WIN32)
+        # see CLI_TARGET's identical option for reasoning
+        target_compile_options(${UNIT_TESTS_TARGET} PRIVATE -fPIC)
+    endif()
+
     if (STC_ENABLE_PROFILING)
         target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Tracy::TracyClient)
         target_compile_definitions(${UNIT_TESTS_TARGET} PRIVATE STC_PROFILING=1)
@@ -460,7 +465,6 @@ if (STC_BUILD_TESTS)
     include(Catch)
 
     if (WIN32) # lib RPATH should take care of this on Linux automatically
-        message(STATUS "${JULIA_BIN_DIR}")
         catch_discover_tests(${UNIT_TESTS_TARGET} DL_PATHS "${JULIA_BIN_DIR}")
     else()
         catch_discover_tests(${UNIT_TESTS_TARGET})
