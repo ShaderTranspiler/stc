@@ -4,8 +4,7 @@
 #include <string_view>
 
 #ifdef _WIN32
-    #include <io.h>
-    #include <windows.h>
+    #include <external/io_windows.h>
 #else
     #include <unistd.h>
 #endif

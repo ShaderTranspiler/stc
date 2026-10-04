@@ -10,12 +10,8 @@
 #endif
 
 // sanity check #1
-#ifdef max
-static_assert(false, "max macro defined pre julia.h include");
-#endif
-
-#ifdef min
-static_assert(false, "min macro defined pre julia.h include");
+#if defined(min) || defined(max)
+static_assert(false, "min or max macro defined before julia.h include");
 #endif
 
 // string needs to be included before julia to fix some very specific issues under some very
@@ -57,12 +53,8 @@ static_assert(false, "min macro defined pre julia.h include");
 #endif
 
 // sanity check #2
-#ifdef max
-static_assert(false, "max macro defined post julia.h include");
-#endif
-
-#ifdef min
-static_assert(false, "min macro defined post julia.h include");
+#if defined(min) || defined(max)
+static_assert(false, "min or max macro defined after julia.h include");
 #endif
 
 // though v1.10 is no longer officially supported, these are kept for STC_ANY_JULIA_VERSION builds
