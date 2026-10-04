@@ -43,6 +43,10 @@ public:
     SymbolPool sym_pool;
     QualifierPool qual_pool;
 
+protected:
+    size_t usym_counter = 0U;
+
+public:
     explicit ASTCtx(
         const std::vector<types::BuiltinTD>& type_builtins = std::vector<types::BuiltinTD>{},
         const TargetInfo* target_info = nullptr, NodeIdTy::id_type node_arena_kb = 128U,
@@ -152,6 +156,19 @@ public:
     operator const types::TypePool&() const { return type_pool; }
     operator const SrcInfoPool&() const { return src_info_pool; }
     operator const SymbolPool&() const { return sym_pool; }
+
+    SymbolId get_usym_for(SymbolId sym_id) {
+        if (sym_id.is_null())
+            throw std::logic_error{"Trying to create usym for null symbol"};
+
+        auto sym_str = sym_pool.get_symbol_maybe(sym_id);
+        if (!sym_str.has_value())
+            throw std::logic_error{"Trying to create usym for symbol not in symbol pool"};
+
+        std::string usym_str{fmt::format("{}_stc_usym_{}", *sym_str, usym_counter++)};
+
+        return sym_pool.get_id(usym_str);
+    }
 };
 
 }; // namespace stc

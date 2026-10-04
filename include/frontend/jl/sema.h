@@ -180,25 +180,6 @@ private:
         return scopes.emplace_back(scope_kind, body, scopes.size(), ctx);
     }
 
-    static SymbolId get_usym_for(SymbolId sym_id, SymbolPool& sym_pool) {
-        static size_t current_usym_idx = 0U;
-
-        if (sym_id.is_null())
-            throw std::logic_error{"Trying to create usym for null symbol"};
-
-        auto sym_str = sym_pool.get_symbol_maybe(sym_id);
-        if (!sym_str.has_value())
-            throw std::logic_error{"Trying to create usym for symbol not in symbol pool"};
-
-        std::string usym_str =
-            std::string{*sym_str} + "_stc_usym_" + std::to_string(current_usym_idx);
-
-        SymbolId id = sym_pool.get_id(usym_str);
-
-        current_usym_idx++;
-        return id;
-    }
-
     // should be called just before a scope is popped
     bool mangle_scope(JLScope& scope);
 

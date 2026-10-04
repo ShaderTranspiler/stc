@@ -202,7 +202,7 @@ bool JLSema::mangle_scope(JLScope& scope) {
         if (!rewrite)
             continue;
 
-        SymbolId usym = get_usym_for(decl->identifier, ctx.sym_pool);
+        SymbolId usym = ctx.get_usym_for(decl->identifier);
         if (usym.is_null()) {
             internal_error("couldn't generate unique symbol for declaration", *decl);
             return false;
