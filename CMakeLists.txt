@@ -357,6 +357,7 @@ set(CLI_TARGET stc_cli)
 if (STC_BUILD_CLI)
     add_executable(${CLI_TARGET}
         "cli/cli.cpp"
+        "cli/cli_utils.cpp"
         "src/common/term_utils.cpp"
         "src/common/utils.cpp"
     )
