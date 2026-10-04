@@ -94,6 +94,8 @@ STC_FORCE_INLINE bool check_exceptions() {
 
     jl_exception_clear();
 
+    bool showed_error = false;
+
     jl_value_t* showerror_fn = jl_get_function(jl_base_module, "showerror");
     jl_value_t* stderr_obj   = jl_stderr_obj();
 
@@ -101,11 +103,13 @@ STC_FORCE_INLINE bool check_exceptions() {
         jl_call2(showerror_fn, stderr_obj, ex);
 
         // we swallow potential showerror exceptions and fall back to jl_static_show
-        if (jl_exception_occurred() != nullptr) {
+        showed_error = jl_exception_occurred() == nullptr;
+        if (!showed_error)
             jl_exception_clear();
-            jl_static_show(jl_stderr_stream(), ex);
-        }
     }
+
+    if (!showed_error)
+        jl_static_show(jl_stderr_stream(), ex);
 
     std::cerr << '\n';
 
