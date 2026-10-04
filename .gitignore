@@ -18,6 +18,7 @@ vs_install/
 
 # Temporary Julia test scripts
 /tmp.jl
+/pre_eval.jl
 
 # Transpiler output
 /out.*

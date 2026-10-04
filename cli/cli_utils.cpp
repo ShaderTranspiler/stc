@@ -78,7 +78,8 @@ constexpr std::array general_entries{
     HelpEntry{"--no-out",          "do not output the generated code to stdout or disk"},
     HelpEntry{"--gl-version <N>",  "set OpenGL version for #version directive (default: \"460\")"},
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
-    HelpEntry{"--no-benchmark",    "disable the measuring and printing of a transpilation time measurements"}
+    HelpEntry{"--no-benchmark",    "disable the measuring and printing of transpilation time benchmarks"},
+    HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"}
 };
 
 constexpr std::array transpilation_behavior_entries{
@@ -133,11 +134,8 @@ void stc::cli::print_help() {
 
         assert(!category.entries.empty() && "help category without entries");
         size_t max_width = category.entries[0].name.size();
-        for (size_t j = 1; j < category.entries.size(); j++) {
-            size_t cur_size = category.entries[j].name.size();
-            if (cur_size > max_width)
-                max_width = cur_size;
-        }
+        for (size_t j = 1; j < category.entries.size(); j++)
+            max_width = std::max(category.entries[j].name.size(), max_width);
 
         std::cout << stc::colored(fmt::format("{}:\n", category.name), title_col);
 
@@ -150,4 +148,18 @@ void stc::cli::print_help() {
         if (i != help_categories.size() - 1)
             std::cout << '\n';
     }
+}
+
+std::filesystem::path stc::cli::tail_from_cwd(const std::filesystem::path& p) {
+    namespace fs = std::filesystem;
+
+    fs::path abs = fs::absolute(p);
+    fs::path cwd = fs::current_path();
+
+    fs::path rel = abs.lexically_relative(cwd);
+
+    if (!rel.empty())
+        return rel;
+
+    return abs;
 }

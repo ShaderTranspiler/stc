@@ -85,14 +85,31 @@ STC_FORCE_INLINE T* try_cast(jl_value_t* value) {
 
 [[nodiscard]]
 STC_FORCE_INLINE bool check_exceptions() {
-    if (jl_value_t* ex = jl_exception_occurred()) {
-        jl_static_show(jl_stderr_stream(), ex);
-        std::cerr << '\n';
-        jl_exception_clear();
-        return true;
+    jl_value_t* ex = jl_exception_occurred();
+    if (ex == nullptr)
+        return false;
+
+    JL_GC_PUSH1(&ex);
+    ScopeGuard gc_pop_guard{[]() { JL_GC_POP(); }};
+
+    jl_exception_clear();
+
+    jl_value_t* showerror_fn = jl_get_function(jl_base_module, "showerror");
+    jl_value_t* stderr_obj   = jl_stderr_obj();
+
+    if (showerror_fn != nullptr && stderr_obj != nullptr) {
+        jl_call2(showerror_fn, stderr_obj, ex);
+
+        // we swallow potential showerror exceptions and fall back to jl_static_show
+        if (jl_exception_occurred() != nullptr) {
+            jl_exception_clear();
+            jl_static_show(jl_stderr_stream(), ex);
+        }
     }
 
-    return false;
+    std::cerr << '\n';
+
+    return true;
 }
 
 [[nodiscard]]

@@ -12,19 +12,7 @@ void print_help();
 
 void print_version_info();
 
-std::filesystem::path tail_from_cwd(const std::filesystem::path& p) {
-    namespace fs = std::filesystem;
-
-    fs::path abs = fs::absolute(p);
-    fs::path cwd = fs::current_path();
-
-    fs::path rel = abs.lexically_relative(cwd);
-
-    if (!rel.empty())
-        return rel;
-
-    return abs;
-}
+std::filesystem::path tail_from_cwd(const std::filesystem::path& p);
 
 template <typename T>
 requires requires (const char* c, T t) { std::from_chars(c, c, t); }

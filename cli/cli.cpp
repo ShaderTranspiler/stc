@@ -10,10 +10,40 @@ JULIA_DEFINE_FAST_TLS
 #include "cli_utils.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
+
+#define STC_CHECK_EXCEPTIONS                                                                       \
+    if (jl::check_exceptions()) {                                                                  \
+        std::cerr << "\nan error occured while initializing Julia\n";                              \
+        return EXIT_FAILURE;                                                                       \
+    }
+
+#define STC_EVAL_AND_CHECK(str)                                                                    \
+    jl_eval_string(str);                                                                           \
+    STC_CHECK_EXCEPTIONS
+
+namespace {
+
+std::optional<std::string> open_julia_file_as_cmpd(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "couldn't open Julia file at '" << path << "'\n";
+        return std::nullopt;
+    }
+
+    std::stringstream code_stream;
+    code_stream << "begin ";
+    code_stream << file.rdbuf();
+    code_stream << " end";
+    return std::move(code_stream).str();
+}
+
+} // namespace
 
 namespace stc::cli {
 
@@ -48,6 +78,7 @@ int run(int argc, char* argv[]) {
 
     TranspilerConfig config{};
     std::string out_path{};
+    std::string pre_eval_path{};
     uint32_t ite_count = 1U;
     bool run_benchmark = true;
     bool no_out        = false;
@@ -178,6 +209,14 @@ int run(int argc, char* argv[]) {
 
             config.target_version = std::string{argv[i + 1]};
             i++;
+        } else if (arg == "--pre-eval") {
+            if (i + 1 >= argc) {
+                std::cerr << "--pre-eval must be followed by the path of a Julia file\n";
+                return EXIT_FAILURE;
+            }
+
+            pre_eval_path = std::string{argv[i + 1]};
+            i++;
         } else {
             std::cerr << fmt::format("unknown argument: {}\n", arg);
             return EXIT_FAILURE;
@@ -193,27 +232,10 @@ int run(int argc, char* argv[]) {
                   << "no output will be created after transpilation.\n";
     }
 
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "couldn't open input file at '" << path << "'\n";
+    auto maybe_code = open_julia_file_as_cmpd(path);
+    if (!maybe_code.has_value())
         return EXIT_FAILURE;
-    }
-
-    std::stringstream code_stream;
-    code_stream << "begin ";
-    code_stream << file.rdbuf();
-    code_stream << " end";
-    std::string code{code_stream.str()};
-
-#define STC_CHECK_EXCEPTIONS                                                                       \
-    if (jl::check_exceptions()) {                                                                  \
-        std::cerr << "\nan error occured while initializing Julia\n";                              \
-        return EXIT_SUCCESS;                                                                       \
-    }
-
-#define STC_EVAL_AND_CHECK(str)                                                                    \
-    jl_eval_string(str);                                                                           \
-    STC_CHECK_EXCEPTIONS
+    std::string code = std::move(*maybe_code);
 
     std::cout << "Initializing Julia environment for transpilation...\n";
 
@@ -223,6 +245,33 @@ int run(int argc, char* argv[]) {
     const ScopeGuard jl_guard{[]() { jl_atexit_hook(0); }};
 
     STC_EVAL_AND_CHECK("using JuliaGLM");
+
+    if (!pre_eval_path.empty()) {
+        if (!std::filesystem::exists(pre_eval_path)) {
+            std::cerr << fmt::format(
+                "no file exists at the path provided for the pre-eval script ('{}')\n",
+                pre_eval_path);
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "Running pre-eval Julia script...\n";
+
+        jl_value_t* include_fn_ptr = jl_get_function(jl_base_module, "include");
+        if (include_fn_ptr == nullptr) {
+            std::cerr << "couldn't locate include function inside the Base module\n";
+            return EXIT_FAILURE;
+        }
+
+        jl_value_t* path_jl_str = jl_cstr_to_string(pre_eval_path.c_str());
+
+        jl_call2(include_fn_ptr, reinterpret_cast<jl_value_t*>(jl_main_module), path_jl_str);
+
+        // doesn't use the macro to provide a custom error msg
+        if (jl::check_exceptions()) {
+            std::cerr << "an error occured while running the pre-eval script\n";
+            return EXIT_FAILURE;
+        }
+    }
 
     std::cout << "Starting transpilation...\n";
 
@@ -277,9 +326,6 @@ int run(int argc, char* argv[]) {
 #endif
 
     return EXIT_SUCCESS;
-
-#undef STC_EVAL_AND_CHECK
-#undef STC_CHECK_EXCEPTIONS
 }
 
 } // namespace stc::cli
@@ -296,3 +342,6 @@ int main(int argc, char* argv[]) {
 
     return EXIT_FAILURE;
 }
+
+#undef STC_EVAL_AND_CHECK
+#undef STC_CHECK_EXCEPTIONS
