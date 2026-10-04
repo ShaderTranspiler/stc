@@ -381,6 +381,17 @@ if (STC_BUILD_CLI)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/cli)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_BUILD_DIR}/generated)
 
+    if (NOT WIN32)
+        # okay so I'm not gonna pretend to fully understand what's happening here since I'm neither too familiar with ELF or dynamic linking, but:
+        # if the CLI exec uses libjulia globals (e.g. jl_base_module) they receive their own R_X86_64_COPY (or whatever arch) copy relocation thingy
+        # in the BSS, which the dynamic linker then propagates to libstc symbols too
+        # but at load-time only NULL is copied into them, and libjulia probably does some address/storage tricky thing internally that bypasses the symbols
+        # themselves, so our copies end up stale, while they write the actual values into their own storage we cannot look up, meaning we can't access the
+        # actual, initialized values of these globals post-jl_init()
+        # -fPIC disables copy relocations regardless of arch/compiler (platform-wise this is a linux-only issue)
+        target_compile_options(${CLI_TARGET} PRIVATE -fPIC)
+    endif()
+
     if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
         set_target_properties(${CLI_TARGET} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
     endif()
