@@ -69,12 +69,11 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
         if (tsym == sym_cache.Nothing) return ctx.jl_Nothing_t();
         // clang-format on
 
-        static_assert((sizeof(void*) == 4U || sizeof(void*) == 8U),
-                      "unsupported environment (sizeof(void*) is not 32 or 64 bits)");
-
         if (tsym == sym_cache.Int && ctx.config.coerce_to_i32)
             return ctx.jl_Int32_t();
 
+        static_assert((sizeof(void*) == 4U || sizeof(void*) == 8U),
+                      "unsupported environment (sizeof(void*) is not 32 or 64 bits)");
         if constexpr (sizeof(void*) == 4U) {
             if (tsym == sym_cache.Int)
                 return ctx.jl_Int32_t();
@@ -99,7 +98,11 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
                 return parsed;
         }
 
-        // TODO: check for struct/iface types to allow them in explicit type declarations
+        SymbolId type_sym_id = ctx.sym_pool.get_id(jl_symbol_name(tsym));
+        TypeId struct_id     = ctx.type_pool.get_struct_td(type_sym_id);
+        if (!struct_id.is_null())
+            return struct_id;
+
         fail(fmt::format("unsupported Julia type: {}", jl_symbol_name(tsym)));
         return TypeId::null_id();
     }
