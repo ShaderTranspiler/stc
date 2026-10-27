@@ -34,7 +34,8 @@ TEST_CASE("SymbolPool basics", "[SymbolPool]") {
         REQUIRE(opt_str.has_value());
         REQUIRE(opt_str.value() == "string data");
 
-        REQUIRE(pool.has_id(id));
+        REQUIRE(pool.contains(id));
+        REQUIRE(pool.contains("string data"));
         REQUIRE(pool.get_symbol(id) == "string data");
 
         // view to same string
@@ -44,7 +45,7 @@ TEST_CASE("SymbolPool basics", "[SymbolPool]") {
     SECTION("invalid ids") {
         SymbolId fake_id{9999};
 
-        REQUIRE_FALSE(pool.has_id(fake_id));
+        REQUIRE_FALSE(pool.contains(fake_id));
         REQUIRE_FALSE(pool.get_symbol_maybe(fake_id).has_value());
     }
 }

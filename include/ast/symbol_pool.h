@@ -31,7 +31,8 @@ public:
 
     SymbolId get_id(std::string_view symbol_value);
     std::string_view get_symbol(SymbolId id) const;
-    bool has_id(SymbolId id) const;
+    bool contains(SymbolId id) const;
+    bool contains(std::string_view symbol) const;
     std::optional<std::string_view> get_symbol_maybe(SymbolId id) const;
 
 private:

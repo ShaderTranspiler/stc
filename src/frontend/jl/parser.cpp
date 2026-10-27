@@ -11,7 +11,6 @@
 
 namespace {
 
-[[maybe_unused]]
 STC_FORCE_INLINE jl_sym_t* is_sym(jl_value_t* value, jl_sym_t* checked_sym) {
     if (value == nullptr || !jl_is_symbol(value))
         return nullptr;
@@ -32,12 +31,15 @@ STC_FORCE_INLINE bool is_expr(jl_value_t* value, jl_sym_t* head) {
     return to_expr_if(value, head) != nullptr;
 }
 
-stc::SymbolId get_tmp_sym(stc::SymbolPool& sym_pool) {
-    static uint32_t counter = 0;
-
-    std::string temp_name{fmt::format("stc_tmp_sym_{}", counter++)};
-
-    return sym_pool.get_id(temp_name);
+// so that symbol rejection remains in a central place for future modifications
+// the stc_tmp substring is reserved for symbols introduced by the transpiler
+// gl would lead to usyms of form gl_n, which are reserved in GLSL
+// TODO: these could be worked around, but for now us rejecting them is better than letting GLSL
+// compilation fail later
+constexpr std::string_view invalid_user_symbol_msg_suffix =
+    "(identifiers cannot be 'gl' or contain the substring 'stc_tmp')";
+STC_FORCE_INLINE bool is_valid_user_symbol(std::string_view symbol) {
+    return symbol != "gl" && symbol.find("stc_tmp") == std::string_view::npos;
 }
 
 } // namespace
@@ -98,7 +100,14 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
                 return parsed;
         }
 
-        SymbolId type_sym_id = ctx.sym_pool.get_id(jl_symbol_name(tsym));
+        const char* type_sym_name = jl_symbol_name(tsym);
+        if (!is_valid_user_symbol(type_sym_name)) {
+            fail(fmt::format("invalid identifier as type name: '{}' {}", type_sym_name,
+                             invalid_user_symbol_msg_suffix));
+            return TypeId::null_id();
+        }
+
+        SymbolId type_sym_id = ctx.sym_pool.get_id(type_sym_name);
         TypeId struct_id     = ctx.type_pool.get_struct_td(type_sym_id);
         if (!struct_id.is_null())
             return struct_id;
@@ -265,7 +274,13 @@ NodeId JLParser::parse(jl_value_t* node) {
         // ! name::Symbol
         auto* name   = safe_cast<jl_sym_t>(safe_fieldref(node, 1, "name"));
 
-        SymbolId name_id = ctx.sym_pool.get_id(jl_symbol_name(name));
+        const char* name_str = jl_symbol_name(name);
+        if (!is_valid_user_symbol(name_str)) {
+            return fail(fmt::format("invalid identifier in GlobalRef: '{}' {}", name_str,
+                                    invalid_user_symbol_msg_suffix));
+        }
+
+        SymbolId name_id = ctx.sym_pool.get_id(name_str);
 
         NodeId glob_ref = emplace_node<GlobalRef>(cur_loc, module, name_id);
 
@@ -282,7 +297,13 @@ NodeId JLParser::parse(jl_value_t* node) {
 
         auto* sym = reinterpret_cast<jl_sym_t*>(inner_v);
 
-        SymbolId sym_id = ctx.sym_pool.get_id(jl_symbol_name(sym));
+        const char* sym_name = jl_symbol_name(sym);
+        if (!is_valid_user_symbol(sym_name)) {
+            return fail(fmt::format("invalid identifier: '{}' {}", sym_name,
+                                    invalid_user_symbol_msg_suffix));
+        }
+
+        SymbolId sym_id = ctx.sym_pool.get_id(sym_name);
         return emplace_node<SymbolLiteral>(cur_loc, sym_id);
     }
 
@@ -368,8 +389,12 @@ NodeId JLParser::parse(jl_value_t* node) {
     // sema can decide what to do with these later
     // for known datatypes, they can be captured with their current value, or an error can be thrown
 
-    auto* datatype     = safe_cast<jl_datatype_t>(jl_typeof(node));
-    auto* type_name    = jl_symbol_name(datatype->name->name);
+    auto* datatype  = safe_cast<jl_datatype_t>(jl_typeof(node));
+    auto* type_name = jl_symbol_name(datatype->name->name);
+    if (!is_valid_user_symbol(type_name)) {
+        return fail(fmt::format("invalid identifier in type name: '{}' {}", type_name,
+                                invalid_user_symbol_msg_suffix));
+    }
     SymbolId tname_sid = ctx.sym_pool.get_id(type_name);
 
     return emplace_node<OpaqueNode>(cur_loc, tname_sid, node);
@@ -400,6 +425,27 @@ NodeId JLParser::parse_code(std::string_view code) {
         return fail("Julia exception while trying to parse code string using Meta.parse");
 
     return parse(parsed_expr);
+}
+
+NodeId JLParser::emplace_decl_ref(SrcLocationId loc, SymbolId sym) {
+    NodeId sym_lit = emplace_node<SymbolLiteral>(loc, sym);
+    if (sym_lit.is_null())
+        return NodeId::null_id();
+
+    return emplace_node<DeclRefExpr>(loc, sym_lit);
+}
+
+NodeId JLParser::emplace_decl_ref(SrcLocationId loc, std::string_view sym) {
+    if (!is_valid_user_symbol(sym)) {
+        return fail(
+            fmt::format("invalid identifier: '{}' {}", sym, invalid_user_symbol_msg_suffix));
+    }
+
+    return emplace_decl_ref(loc, ctx.sym_pool.get_id(sym));
+}
+
+NodeId JLParser::emplace_decl_ref(SrcLocationId loc, jl_sym_t* sym) {
+    return emplace_decl_ref(loc, jl_symbol_name(sym));
 }
 
 std::pair<jl_value_t*, TypeId> JLParser::parse_type_annotation(jl_expr_t* annot) {
@@ -722,7 +768,12 @@ NodeId JLParser::parse_var_decl(jl_expr_t* expr, size_t nargs) {
         return internal_error(
             "invalid variable declaration expression, couldn't unwrap identifier symbol");
 
-    SymbolId id_sym = ctx.sym_pool.get_id(jl_symbol_name(safe_cast<jl_sym_t>(id)));
+    const char* sym_name = jl_symbol_name(safe_cast<jl_sym_t>(id));
+    if (!is_valid_user_symbol(sym_name)) {
+        return fail(fmt::format("invalid identifier used as variable name: '{}' {}", sym_name,
+                                invalid_user_symbol_msg_suffix));
+    }
+    SymbolId id_sym = ctx.sym_pool.get_id(sym_name);
 
     return emplace_node<VarDecl>(decl_loc, id_sym,
                                  type != nullptr ? resolve_type(type) : TypeId::null_id(), scope,
@@ -785,7 +836,12 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
         return internal_error("unexpected non-symbol name in function header");
     auto* name = reinterpret_cast<jl_sym_t*>(name_v);
 
-    SymbolId fn_name = ctx.sym_pool.get_id(jl_symbol_name(name));
+    const char* sym_name = jl_symbol_name(name);
+    if (!is_valid_user_symbol(sym_name)) {
+        return fail(fmt::format("invalid function identifier used: '{}' {}", sym_name,
+                                invalid_user_symbol_msg_suffix));
+    }
+    SymbolId fn_name = ctx.sym_pool.get_id(sym_name);
 
     std::vector<NodeId> param_decls{};
     param_decls.reserve(header_nargs - 1);
@@ -824,8 +880,13 @@ NodeId JLParser::parse_param_decl(jl_value_t* param) {
 
     auto create_param = [this, param_loc](jl_sym_t* sym, TypeId type = TypeId::null_id(),
                                           NodeId init = NodeId::null_id()) -> NodeId {
-        return this->emplace_node<ParamDecl>(param_loc, ctx.sym_pool.get_id(jl_symbol_name(sym)),
-                                             type, false, init);
+        const char* sym_name = jl_symbol_name(sym);
+        if (!is_valid_user_symbol(sym_name)) {
+            return fail(fmt::format("invalid identifier used as parameter name: '{}' {}", sym_name,
+                                    invalid_user_symbol_msg_suffix));
+        }
+        return this->emplace_node<ParamDecl>(param_loc, ctx.sym_pool.get_id(sym_name), type, false,
+                                             init);
     };
 
     if (jl_is_symbol(param))
@@ -949,7 +1010,7 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
             continue;
         }
 
-        SymbolId tmp_sym = get_tmp_sym(ctx.sym_pool);
+        SymbolId tmp_sym = ctx.get_tmp_sym();
 
         NodeId tmp_dre_rhs = emplace_decl_ref(assign_loc, tmp_sym);
         NodeId rhs_to_tmp  = emplace_node<Assignment>(assign_loc, tmp_dre_rhs, rhs);
@@ -1273,7 +1334,11 @@ NodeId JLParser::parse_field_decl(jl_value_t* field_decl_v) {
     if (!jl_is_symbol(field_id_v))
         return internal_error("unexpected field declaration layout (lhs is not a symbol)");
 
-    std::string_view field_id{jl_symbol_name(safe_cast<jl_sym_t>(field_id_v))};
+    const char* field_id = jl_symbol_name(safe_cast<jl_sym_t>(field_id_v));
+    if (!is_valid_user_symbol(field_id)) {
+        return fail(fmt::format("invalid identifier used as field name: '{}' {}", field_id,
+                                invalid_user_symbol_msg_suffix));
+    }
     SymbolId field_id_sym = ctx.sym_pool.get_id(field_id);
 
     NodeId parsed_decl = emplace_node<FieldDecl>(cur_loc, field_id_sym, field_type);
@@ -1318,7 +1383,12 @@ NodeId JLParser::parse_struct(jl_expr_t* expr, size_t nargs, bool register_td) {
             "unexpected struct definition layout (second arg is an expr, but not {T} or <:)");
     }
 
-    std::string_view struct_id{jl_symbol_name(safe_cast<jl_sym_t>(struct_id_arg))};
+    const char* struct_id = jl_symbol_name(safe_cast<jl_sym_t>(struct_id_arg));
+    if (!is_valid_user_symbol(struct_id)) {
+        return fail(fmt::format("invalid identifier used as struct name: '{}' {}", struct_id,
+                                invalid_user_symbol_msg_suffix));
+    }
+
     SymbolId struct_id_sym = ctx.sym_pool.get_id(struct_id);
 
     if (!ctx.type_pool.get_struct_td(struct_id_sym).is_null())

@@ -44,7 +44,8 @@ public:
     QualifierPool qual_pool;
 
 protected:
-    size_t usym_counter = 0U;
+    size_t tmp_sym_counter = 0U;
+    size_t usym_counter    = 0U;
 
 public:
     explicit ASTCtx(
@@ -89,7 +90,9 @@ protected:
           type_pool{std::move(other.type_pool)},
           src_info_pool{std::move(other.src_info_pool)},
           sym_pool{std::move(other.sym_pool)},
-          qual_pool{std::move(other.qual_pool)} {}
+          qual_pool{std::move(other.qual_pool)},
+          tmp_sym_counter{other.get_tmp_sym_counter()},
+          usym_counter{other.get_usym_counter()} {}
 
 public:
     template <typename T, typename U>
@@ -157,17 +160,47 @@ public:
     operator const SrcInfoPool&() const { return src_info_pool; }
     operator const SymbolPool&() const { return sym_pool; }
 
+    size_t get_usym_counter() const { return usym_counter; }
+    size_t get_tmp_sym_counter() const { return tmp_sym_counter; }
+
+    // note that this is meant to be used post-parser where all user symbols are all already in the
+    // symbol pool (so that we can skip them)
     SymbolId get_usym_for(SymbolId sym_id) {
         if (sym_id.is_null())
-            throw std::logic_error{"Trying to create usym for null symbol"};
+            throw std::logic_error{"Trying to generate usym for null symbol"};
 
         auto sym_str = sym_pool.get_symbol_maybe(sym_id);
         if (!sym_str.has_value())
-            throw std::logic_error{"Trying to create usym for symbol not in symbol pool"};
+            throw std::logic_error{"Trying to generate usym for invalid SymbolId"};
 
-        std::string usym_str{fmt::format("{}_stc_usym_{}", *sym_str, usym_counter++)};
+        // skip suffixes that come from the end user (otherwise collision between mangled and
+        // unmangled symbols may occur)
+        std::string usym_name{};
+        do {
+            usym_name = fmt::format("{}_{}", *sym_str, usym_counter++);
+        } while (sym_pool.contains(usym_name));
 
-        return sym_pool.get_id(usym_str);
+        return sym_pool.get_id(usym_name);
+    }
+
+    SymbolId get_tmp_sym_for(SymbolId sym_id) {
+        return wrap_sym(sym_id, fmt::format("_stc_tmp_{}", tmp_sym_counter++));
+    }
+
+    SymbolId get_tmp_sym() { return sym_pool.get_id(fmt::format("stc_tmp_{}", tmp_sym_counter++)); }
+
+private:
+    SymbolId wrap_sym(SymbolId sym_id, std::string_view suffix) {
+        if (sym_id.is_null())
+            throw std::logic_error{"Trying to wrap null symbol"};
+
+        auto sym_str = sym_pool.get_symbol_maybe(sym_id);
+        if (!sym_str.has_value())
+            throw std::logic_error{"Trying to wrap sym for symbol not found in pool"};
+
+        std::string wrapped_sym_str{fmt::format("{}{}", *sym_str, suffix)};
+
+        return sym_pool.get_id(wrapped_sym_str);
     }
 };
 

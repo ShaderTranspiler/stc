@@ -87,21 +87,9 @@ private:
         return ctx.emplace_node<T>(std::forward<Args>(args)...).first;
     }
 
-    NodeId emplace_decl_ref(SrcLocationId loc, SymbolId sym) {
-        NodeId sym_lit = emplace_node<SymbolLiteral>(loc, sym);
-        if (sym_lit.is_null())
-            return NodeId::null_id();
-
-        return emplace_node<DeclRefExpr>(loc, sym_lit);
-    }
-
-    NodeId emplace_decl_ref(SrcLocationId loc, std::string_view sym) {
-        return emplace_decl_ref(loc, ctx.sym_pool.get_id(sym));
-    }
-
-    NodeId emplace_decl_ref(SrcLocationId loc, jl_sym_t* sym) {
-        return emplace_decl_ref(loc, jl_symbol_name(sym));
-    }
+    NodeId emplace_decl_ref(SrcLocationId loc, SymbolId sym);
+    NodeId emplace_decl_ref(SrcLocationId loc, std::string_view sym);
+    NodeId emplace_decl_ref(SrcLocationId loc, jl_sym_t* sym);
 
     TypeId resolve_type(jl_value_t* type);
     NodeId fail(std::string_view msg, SrcLocationId loc_id = SrcLocationId::null_id());
