@@ -16,6 +16,10 @@ vs_install/
 # CLion
 .idea/
 
+# Emacs
+.clangd
+.dir-locals.el
+
 # Temporary Julia test scripts
 /tmp.jl
 /pre_eval.jl

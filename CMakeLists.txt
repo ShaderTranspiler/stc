@@ -218,7 +218,8 @@ if (MSVC)
     # apparently MSVC preprocessor is not standard-confirming by default
     # /Zc:preprocessor needed for X-macro system (__VA_ARGS__ expansion)
     target_compile_options(CommonConfig INTERFACE
-        /W4 /Zc:preprocessor /GR-
+        /W4 /GR-
+        $<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>
         $<$<CONFIG:RelWithDebInfo>:/Oy->
     )
 
