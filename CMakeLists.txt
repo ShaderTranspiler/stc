@@ -426,7 +426,7 @@ if (STC_BUILD_TESTS)
         message(FATAL_ERROR "Catch2 could not be fetched, but testing has been explicitly requested.")
     endif()
 
-    file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/*.cpp")
+    file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/unit/*.cpp")
 
     add_executable(${UNIT_TESTS_TARGET} ${TEST_SOURCES})
     add_dependencies(${UNIT_TESTS_TARGET} ${BUILD_META_TARGET})
@@ -471,9 +471,35 @@ if (STC_BUILD_TESTS)
         catch_discover_tests(${UNIT_TESTS_TARGET})
     endif()
 
-    message(STATUS "Catch2 found, ${UNIT_TESTS_TARGET} target enabled for testing")
+    # conformance tests
+    if (STC_BUILD_CLI)
+        find_package(Python3 3.12 COMPONENTS Interpreter REQUIRED)
+
+        set(CONFORMANCE_DIR "${STC_SRC_DIR}/test/conformance")
+        file(GLOB_RECURSE CONFORMANCE_TEST_FILES CONFIGURE_DEPENDS "${CONFORMANCE_DIR}/*.jl")
+
+        set(CONFORMANCE_PLATFORM_ARGS "")
+        if (WIN32)
+            set(CONFORMANCE_PLATFORM_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
+        endif()
+
+        foreach (file IN LISTS CONFORMANCE_TEST_FILES)
+            file(RELATIVE_PATH file_rel "${CONFORMANCE_DIR}" "${file}")
+            string(REGEX REPLACE "\\.jl$" "" test_name "${file_rel}")
+
+            add_test(NAME "conformance/${test_name}"
+                     COMMAND ${Python3_EXECUTABLE} "${CONFORMANCE_DIR}/run_conformance_test.py"
+                             --path "${file}" --cli $<TARGET_FILE:${CLI_TARGET}>
+                             ${CONFORMANCE_PLATFORM_ARGS})
+            set_tests_properties("conformance/${test_name}" PROPERTIES LABELS conformance SKIP_RETURN_CODE 77)
+        endforeach()
+    else()
+        message(WARNING "Tests are enabled, but CLI building is not. Running conformance tests relies on the CLI as an stc API, so conformance tests will not be enabled")
+    endif()
+
+    message(STATUS "Catch2 found, test targets enabled")
 else()
-    message(STATUS "Skipping Catch2 build and ${UNIT_TESTS_TARGET} target")
+    message(STATUS "Skipping Catch2 build and test targets")
 endif()
 
 # Doxygen (+ Graphviz)
