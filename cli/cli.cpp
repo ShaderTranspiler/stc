@@ -19,7 +19,7 @@ JULIA_DEFINE_FAST_TLS
 
 #define STC_CHECK_EXCEPTIONS                                                                       \
     if (jl::check_exceptions()) {                                                                  \
-        std::cerr << "\nan error occured while initializing Julia\n";                              \
+        std::cerr << "\nAn error occured while initializing Julia\n";                              \
         return EXIT_FAILURE;                                                                       \
     }
 
@@ -32,7 +32,7 @@ namespace {
 std::optional<std::string> open_julia_file_as_cmpd(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "couldn't open Julia file at '" << path << "'\n";
+        std::cerr << "Couldn't open Julia file at '" << path << "'\n";
         return std::nullopt;
     }
 
@@ -52,9 +52,9 @@ int run(int argc, char* argv[]) {
     using namespace stc;
 
     if (argc < 2) {
-        std::cerr << stc::colored("not enough arguments\n", ansi_codes::red);
-        std::cerr << "usage: stc <input file> [OPTIONS]\n";
-        std::cerr << "run with " << stc::colored("--help", ansi_codes::yellow) << " or "
+        std::cerr << stc::colored("Not enough arguments\n", ansi_codes::red);
+        std::cerr << "Usage: stc <input file> [OPTIONS]\n";
+        std::cerr << "Run with " << stc::colored("--help", ansi_codes::yellow) << " or "
                   << stc::colored("-h", ansi_codes::yellow) << " for a list of available options\n";
         return EXIT_FAILURE;
     }
@@ -82,6 +82,7 @@ int run(int argc, char* argv[]) {
     uint32_t ite_count = 1U;
     bool run_benchmark = true;
     bool no_out        = false;
+    bool quiet         = false;
 
     for (int i = 2; i < argc; i++) {
         std::string arg{argv[i]};
@@ -98,6 +99,8 @@ int run(int argc, char* argv[]) {
 
         if (arg == "--no-benchmark")
             run_benchmark = false;
+        else if (arg == "--quiet")
+            quiet = true;
         else if (arg == "--dump-parsed")
             config.dump_parsed = true;
         else if (arg == "--dump-sema")
@@ -131,7 +134,8 @@ int run(int argc, char* argv[]) {
             config.warn_on_jl_sema_query = true;
         else if (arg == "--err-dump") {
             if (i + 1 >= argc) {
-                std::cerr << "--err-dump must be followed by a verbosity level\n";
+                std::cerr << "--err-dump must be followed by a verbosity level (options: none, "
+                             "partial, verbose)\n";
                 return EXIT_FAILURE;
             }
 
@@ -218,13 +222,13 @@ int run(int argc, char* argv[]) {
             pre_eval_path = std::string{argv[i + 1]};
             i++;
         } else {
-            std::cerr << fmt::format("unknown argument: {}\n", arg);
+            std::cerr << fmt::format("Unknown argument: {}\n", arg);
             return EXIT_FAILURE;
         }
     }
 
     if (no_out && !out_path.empty()) {
-        std::cerr << stc::colored("warning: ", ansi_codes::yellow)
+        std::cerr << stc::colored("Warning: ", ansi_codes::yellow)
                   << "conflicting flags have been provided as arguments: "
                   << stc::colored("--no-out", ansi_codes::cyan) << " and "
                   << stc::colored("-o", ansi_codes::cyan) << ' '
@@ -237,7 +241,8 @@ int run(int argc, char* argv[]) {
         return EXIT_FAILURE;
     std::string code = std::move(*maybe_code);
 
-    std::cout << "Initializing Julia environment for transpilation...\n";
+    if (!quiet)
+        std::cout << "Initializing Julia environment for transpilation...\n";
 
     jl_init();
     STC_CHECK_EXCEPTIONS
@@ -249,16 +254,17 @@ int run(int argc, char* argv[]) {
     if (!pre_eval_path.empty()) {
         if (!std::filesystem::exists(pre_eval_path)) {
             std::cerr << fmt::format(
-                "no file exists at the path provided for the pre-eval script ('{}')\n",
+                "No file exists at the path provided for the pre-eval script ('{}')\n",
                 pre_eval_path);
             return EXIT_FAILURE;
         }
 
-        std::cout << "Running pre-eval Julia script...\n";
+        if (!quiet)
+            std::cout << "Running pre-eval Julia script...\n";
 
         jl_value_t* include_fn_ptr = jl_get_function(jl_base_module, "include");
         if (include_fn_ptr == nullptr) {
-            std::cerr << "couldn't locate include function inside the Base module\n";
+            std::cerr << "Couldn't locate include function inside the Base module\n";
             return EXIT_FAILURE;
         }
 
@@ -268,15 +274,16 @@ int run(int argc, char* argv[]) {
 
         // doesn't use the macro to provide a custom error msg
         if (jl::check_exceptions()) {
-            std::cerr << "an error occured while running the pre-eval script\n";
+            std::cerr << "An error occurred while running the pre-eval script\n";
             return EXIT_FAILURE;
         }
     }
 
-    std::cout << "Starting transpilation...\n";
+    if (!quiet)
+        std::cout << "Starting transpilation...\n";
 
     for (size_t i = 0; i < ite_count; i++) {
-        if (run_benchmark && ite_count != 1) {
+        if (run_benchmark && !quiet && ite_count != 1) {
             std::string header_title{fmt::format("  Transpilation #{}  ", i + 1)};
             std::string sep(header_title.size(), '=');
 
@@ -285,18 +292,19 @@ int run(int argc, char* argv[]) {
             std::cout << sep << '\n';
         }
 
-        auto result = run_benchmark
+        auto result = run_benchmark && !quiet
                           ? api::transpile<true>(code, tail_from_cwd(path).string(), config)
                           : api::transpile<false>(code, tail_from_cwd(path).string(), config);
 
         if (!result.has_value()) {
-            std::cerr << "\nan error occured during transpilation\n";
+            std::cerr << "\nAn error occurred during transpilation\n";
             return EXIT_FAILURE;
         }
 
         if (!no_out && i + 1 == ite_count) {
             if (out_path.empty()) {
-                std::cout << "Output of last transpilation:\n\n";
+                if (!quiet)
+                    std::cout << "Output of transpilation:\n\n";
                 std::cout << *result << '\n';
                 break;
             }
@@ -306,22 +314,23 @@ int run(int argc, char* argv[]) {
 
             stc::FileRAII out_file{out_path, "w"};
             if (out_file.get() == nullptr) {
-                std::cerr << "\nfailed to open '" << out_path << "' for writing (errno: " << errno
+                std::cerr << "\nFailed to open '" << out_path << "' for writing (errno: " << errno
                           << '\n';
                 return EXIT_FAILURE;
             }
 
             size_t written = fwrite(result->data(), 1, result->size(), out_file.get());
             if (written != result->size()) {
-                std::cerr << "\ncouldn't write output to file\n";
+                std::cerr << "\nCouldn't write output to file\n";
                 return EXIT_FAILURE;
             }
         }
     }
 
 #ifdef STC_PROFILING
-    std::cout
-        << "Profiling enabled, waiting for key press so that Tracy can flush data properly...\n";
+    if (!silent)
+        std::cout << "Profiling enabled, waiting for key press so that Tracy can flush data "
+                     "properly...\n";
     std::cin.get();
 #endif
 
@@ -334,10 +343,10 @@ int main(int argc, char* argv[]) {
     try {
         return stc::cli::run(argc, argv);
     } catch (const std::exception& ex) {
-        std::cerr << "an unexpected error occured while running stc:\n";
+        std::cerr << "An unexpected error occurred while running stc:\n";
         std::cerr << ex.what() << '\n';
     } catch (...) {
-        std::cerr << "an unexpected error occured while running stc\n";
+        std::cerr << "An unexpected error occurred while running stc\n";
     }
 
     return EXIT_FAILURE;

@@ -48,14 +48,14 @@ void stc::cli::print_version_info() {
     std::cout << sep_line << "\n\n";
 
     // clang-format off
-    std::cout << "version:        " << stc::colored(stc::meta::version, val_col) << '\n';
-    std::cout << "target:         " << stc::colored(fmt::format("{}-{}", stc::meta::system_arch, stc::meta::system_name), val_col) << '\n';
-    std::cout << "compiler:       " << stc::colored(fmt::format("{} {}", stc::meta::compiler_id, stc::meta::compiler_ver), val_col) << '\n';
-    std::cout << "julia compat:   " << stc::colored(stc::meta::julia_ver, val_col) << '\n';
-    std::cout << "build origin:   " << stc::colored(stc::meta::build_origin, val_col) << '\n';
-    std::cout << "build type:     " << stc::colored(stc::meta::build_type, val_col) << '\n';
-    std::cout << "build commit:   " << stc::colored(stc::meta::build_commit, val_col) << '\n';
-    std::cout << "build time:     " << stc::colored(stc::meta::build_date, val_col) << '\n';
+    std::cout << "version:      " << stc::colored(stc::meta::version, val_col) << '\n';
+    std::cout << "target:       " << stc::colored(fmt::format("{}-{}", stc::meta::system_arch, stc::meta::system_name), val_col) << '\n';
+    std::cout << "compiler:     " << stc::colored(fmt::format("{} {}", stc::meta::compiler_id, stc::meta::compiler_ver), val_col) << '\n';
+    std::cout << "libjulia ver: " << stc::colored(stc::meta::julia_ver, val_col) << '\n';
+    std::cout << "build origin: " << stc::colored(stc::meta::build_origin, val_col) << '\n';
+    std::cout << "build type:   " << stc::colored(stc::meta::build_type, val_col) << '\n';
+    std::cout << "build commit: " << stc::colored(stc::meta::build_commit, val_col) << '\n';
+    std::cout << "build time:   " << stc::colored(stc::meta::build_date, val_col) << '\n';
     // clang-format on
 }
 
@@ -80,6 +80,7 @@ constexpr std::array general_entries{
     HelpEntry{"--gl-version <N>",  "set OpenGL version for #version directive (default: \"460\")"},
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
     HelpEntry{"--no-benchmark",    "disable the measuring and printing of transpilation time benchmarks"},
+    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-benchmark)"),
     HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"}
 };
 
@@ -114,11 +115,11 @@ constexpr std::array errors_and_warnings_entries{
 };
 
 constexpr std::array help_categories{
-    HelpCategory{"general", general_entries},
-    HelpCategory{"transpilation behavior", transpilation_behavior_entries},
-    HelpCategory{"debugging", debugging_entries},
-    HelpCategory{"formatting", formatting_entries},
-    HelpCategory{"errors and warnings", errors_and_warnings_entries}
+    HelpCategory{"General", general_entries},
+    HelpCategory{"Transpilation Behavior", transpilation_behavior_entries},
+    HelpCategory{"Debugging", debugging_entries},
+    HelpCategory{"Formatting", formatting_entries},
+    HelpCategory{"Errors and Warnings", errors_and_warnings_entries}
 };
 // clang-format on
 
@@ -128,7 +129,7 @@ void stc::cli::print_help() {
     static constexpr auto title_col = ansi_codes::cyan;
     static constexpr auto flag_col  = ansi_codes::yellow;
 
-    std::cout << stc::colored("usage:", title_col) << " stc <input file> [OPTIONS]\n\n";
+    std::cout << stc::colored("Usage:", title_col) << " stc <input file> [OPTIONS]\n\n";
 
     for (size_t i = 0; i < help_categories.size(); i++) {
         const auto& category = help_categories[i];
