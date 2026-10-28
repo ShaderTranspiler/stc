@@ -1,0 +1,1 @@
+f(x::Float32) = f(x) # ERROR: recursion

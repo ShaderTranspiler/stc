@@ -25,7 +25,7 @@ REPORT_RE = re.compile(r"^\[(?P<file>.*):(?P<line>\d+):(?P<col>\d+)\] \[(?P<cate
 SUMMARY_PREFIX = "==>"
 
 # codes that fail a test compilation (unknown non-zero error codes result in UNKNOWN)
-GLSLANG_VALIDATOR_REJECTED_CODES = [2]
+GLSLANG_VALIDATOR_REJECTED_CODES = [2, 3]
 
 class ExitCode(Enum):
     TESTS_PASSED = 0 # all tests passed without any being skipped
@@ -105,17 +105,24 @@ class ExpectedReport(Report):
     def __str__(self):
         return f"Expected {self.report_type} report for line {self.line_number}{f" with message pattern '{self.message}'" if self.message is not None else ""}{", expected to fail" if self.expected_missing else ""}"
         
+class AnnotationContext:
+    def __init__(self):
+        self.parsed_shader_stage_directive = False
+        self.parsed_glsl_directive = False
+        self.parsed_stc_directive = False
+        
 class FileInfo:
     def __init__(self, path: str):
         self.path = path
         self.line_count: int = 0
         self.expected_reports: list[ExpectedReport] = []
         self.shader_stage: ShaderStage = ShaderStage.COMPUTE
+        self.out_path: str = ""
         self.expect_glsl_failure: bool = False
         self.glsl_failure_pattern: str = "" # only applies when expect_glsl_failure == True
-        self.out_path: str = ""
-        self.parsed_shader_stage_directive = False
-        self.parsed_glsl_directive = False
+        self.expect_transpiler_failure: bool = False
+        self.transpiler_failure_pattern: str = "" # only applies when expect_transpiler_failure == True
+        self.annotation_context = AnnotationContext()
     
     def should_be_valid(self):
         return Path(self.path).name.startswith("valid")
@@ -131,6 +138,7 @@ class Config:
         self.tmp_dir_path = tmp_dir_path
         self.julia_bin_dir = julia_bin_dir
         self.glslang_validator = glslang_validator
+        self.stc_success = False
         
     def strict(self) -> bool:
         return self.mode == ScriptMode.STRICT
@@ -158,10 +166,11 @@ def parse_script_mode(mode: str) -> ScriptMode:
 #       <arguments>:     must be exactly one of the available options
 #           comp         compute shader (default if SHADER STAGE is not specified)
 #           frag         fragment shader
-#   GLSL                 along with the 'missing' argument, specifies that the shader is expected to no pass validation via glslangValidator. must be used at most once per test file.
+#   GLSL                 along with the 'missing' argument, specifies that the shader is currently expected to not pass validation via glslangValidator. must be used at most once per test file.
 #       <arguments>:
 #           missing      must be passed with GLSL
 #       <text_argument>: if provided, can be used to specify a message pattern that has to appear as a substring of the glslangValidator output for the validation failure to be treated as skipped.
+#   STC(missing)         same as GLSL(missing) but for the transpiler. marks that an otherwise valid test file is currently expected to fail transpilation.
 def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str) -> bool:
     def log_error(msg: str, hint: str | None = None) -> bool:
         hint_tail = f"\n  Hint: {hint}" if hint is not None else ""
@@ -201,7 +210,8 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
     text_arg = raw_annotation[colon_pos + 1:] if colon_pos != -1 and colon_pos + 1 < len(raw_annotation) else ""
     text_arg = text_arg.strip()
 
-    DIRECTIVE_LIST = ["ERROR", "WARNING", "COMMENT", "SHADER STAGE", "GLSL"]
+    # TODO: deduplicate code
+    DIRECTIVE_LIST = ["ERROR", "WARNING", "COMMENT", "SHADER STAGE", "GLSL", "STC"]
     match directive:
         case "ERROR" | "WARNING":
             if directive == "ERROR" and file_info.should_be_valid():
@@ -273,19 +283,34 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
                 return log_error(f"'{args[0]}' is not a valid argument for the 'SHADER STAGE' directive.", "Supported shader stages are: comp and frag")
             
         case "GLSL":
-            if file_info.parsed_glsl_directive:
+            if file_info.annotation_context.parsed_glsl_directive:
                 return log_error(f"Multiple annotations with 'GLSL' directive.", "'GLSL' must be specified at most once per test file.")
-            file_info.parsed_glsl_directive = True
+            file_info.annotation_context.parsed_glsl_directive = True
             
             if not file_info.should_be_valid():
                 logger.warning("'GLSL' directive will not have any effect in non-valid file.\n" +
                                "  Hint: Files that are expected to transpile without error (and can thus be GLSL validated) should be marked by prefixing their name with 'valid'.")
                         
             if len(args) != 1 or args[0] != "missing":
-                return log_error(f"Invalid argument(s) provided to 'GLSL' directive.", "The GLSL directive's only supported argument is 'missing', which must always be used.")
+                return log_error(f"Invalid argument(s) provided to 'GLSL' directive.", "The 'GLSL' directive's only supported argument is 'missing', which must always be used.")
 
             file_info.expect_glsl_failure = True
             file_info.glsl_failure_pattern = text_arg
+            
+        case "STC":
+            if file_info.annotation_context.parsed_stc_directive:
+                return log_error(f"Multiple annotations with 'STC' directive.", "'STC' must be specified at most once per test file.")
+            file_info.annotation_context.parsed_stc_directive = True
+            
+            if not file_info.should_be_valid():
+                logger.warning("'STC' directive will not have any effect in non-valid file.\n" +
+                               "  Hint: Files that are normally expected to transpile without error should be marked by prefixing their name with 'valid'.")
+                        
+            if len(args) != 1 or args[0] != "missing":
+                return log_error(f"Invalid argument(s) provided to 'STC' directive.", "The 'STC' directive's only supported argument is 'missing', which must always be used.")
+
+            file_info.expect_transpiler_failure = True
+            file_info.transpiler_failure_pattern = text_arg
            
         case _:
             hint = None
@@ -415,10 +440,26 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
             if maybe_report.report_type in [ReportType.ERROR, ReportType.INTERNAL_ERROR]:
                 collected_error_reports = True
                 
-    if should_be_valid and stc_proc_result.returncode != 0:
-        logger.error(f"Transpilation failed for valid test file (with exit code {stc_proc_result.returncode}). " +
-                     "Test files named with the prefix 'valid' should transpile successfully.")
-        return ExitCode.TESTS_FAILED
+    if stc_proc_result.returncode == 0:
+        config.stc_success = True
+    
+    # TODO: separate these check from report collection (and use TestResult instead of ExitCode)
+    if should_be_valid:
+        base_log = "Check that file named 'valid*' transpiles successfully ---"
+        if stc_proc_result.returncode != 0:
+            if file_info.expect_transpiler_failure:
+                if file_info.transpiler_failure_pattern == "" or stc_proc_result.stderr.find(file_info.transpiler_failure_pattern) != -1:
+                    logger.info(f"{base_log} skipped (marked missing)")
+                else:
+                    logger.error(f"{base_log} failed (marked missing, but output did not match the provided pattern)")
+                    return ExitCode.TESTS_FAILED
+            else:
+                logger.error(f"{base_log} failed")
+                return ExitCode.TESTS_FAILED
+        else:
+            if file_info.expect_transpiler_failure:
+                logger.warning(f"Transpilation was marked as an expected failure (annotated with 'STC(missing)'), but stc reported no errors.")
+            logger.info(f"{base_log} passed")
     
     if not should_be_valid and not only_expects_missing_errors and stc_proc_result.returncode == 0:
         logger.error("Transpilation succeeded for non-valid test file. " +
@@ -468,6 +509,7 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
     used_skips = False
     
     internal_errors_check = True
+    internal_used_skips = False
     for actual in actual_reports:
         if actual.report_type == ReportType.INTERNAL_ERROR:
             base_log = f"Internal error on line {actual.line_number} ---"
@@ -476,15 +518,17 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
                 internal_errors_check = False
             else:
                 logger.debug(f"{base_log} ignored")
+                internal_used_skips = True
                 used_skips = True
     
     if internal_errors_check:
-        logger.info(f"{SUMMARY_PREFIX} Internal error checks passed")
+        logger.info(f"{SUMMARY_PREFIX} Internal error checks passed{" (with skips)" if internal_used_skips else ""}")
     else:
         logger.error(f"{SUMMARY_PREFIX} Internal error checks failed")
     logger.info("")
     
     lenient_check = True
+    lenient_used_skips = False
     for expected in expected_reports:
         if expected.message is not None:
             base_log = f"Case: '...{expected.message}...' {expected.report_type.__str__().lower()} on line {expected.line_number} ---" 
@@ -510,6 +554,7 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
         if expected.expected_missing:
             logger.info(f"{base_log} skipped (marked missing)")
             used_skips = True
+            lenient_used_skips = True
             continue
         
         logger.error(f"{base_log} failed")
@@ -522,7 +567,7 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
             logger.info(f"  Why: no reports were generated for line {expected.line_number}")
             
     if lenient_check:
-        logger.info(f"{SUMMARY_PREFIX} Lenient checks passed")
+        logger.info(f"{SUMMARY_PREFIX} Lenient checks passed{" (with skips)" if lenient_used_skips else ""}")
     else:
         logger.error(f"{SUMMARY_PREFIX} Lenient checks failed")
     logger.info("")
@@ -550,7 +595,9 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
             logger.info(f"{SUMMARY_PREFIX} Strict checks passed")
         else:
             logger.error(f"{SUMMARY_PREFIX} Strict checks failed")
-        logger.info("")
+    else:
+        logger.info(f"{SUMMARY_PREFIX} Strict checks skipped")
+    logger.info("")
     
     if not internal_errors_check:
         assert not config.allow_internal_errors
@@ -571,10 +618,15 @@ def validate_glsl(file_info: FileInfo, config: Config) -> TestResult | ExitCode:
     if config.glslang_validator is None:
         return TestResult.PASSED_WITH_SKIPS
     
-    proc_result = subprocess.run([config.glslang_validator, file_info.out_path], text=True, encoding="utf-8", errors="replace",
+    base_log = "Run glslangValidator on generated code ---"
+    
+    if not config.stc_success:
+        logger.info(f"{base_log} skipped (transpilation failed)")
+        return TestResult.PASSED_WITH_SKIPS
+    
+    proc_result = subprocess.run([config.glslang_validator, "-l", file_info.out_path], text=True, encoding="utf-8", errors="replace",
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)    
     
-    base_log = "Run glslangValidator on generated code ---"
     if proc_result.returncode == 0:
         logger.info(f"{base_log} passed")
         if file_info.expect_glsl_failure:
@@ -676,19 +728,25 @@ def main() -> ExitCode:
     
     result = validate_reports(file_info, maybe_reports, config)
     
-    glsl_result = validate_glsl(file_info, config)
-    if isinstance(glsl_result, ExitCode):
-        logger.error("Failed to run glslangValidator reference tests")
-        return glsl_result
-    
-    assert isinstance(glsl_result, TestResult)
-    if glsl_result != TestResult.FAILED:
-        logger.info(f"{SUMMARY_PREFIX} GLSL checks passed")
+    if file_info.should_be_valid():
+        glsl_result = validate_glsl(file_info, config)
+        if isinstance(glsl_result, ExitCode):
+            logger.error("Failed to run glslangValidator reference tests")
+            return glsl_result
+        
+        assert isinstance(glsl_result, TestResult)
+        result = TestResult.merge(result, glsl_result)
+        
+        match glsl_result:
+            case TestResult.PASSED:            logger.info(f"{SUMMARY_PREFIX} GLSL checks passed")
+            case TestResult.PASSED_WITH_SKIPS: logger.info(f"{SUMMARY_PREFIX} GLSL checks passed (with skips)")
+            case TestResult.FAILED:            logger.error(f"{SUMMARY_PREFIX} GLSL checks failed")
+            case _:
+                logger.error(f"{SUMMARY_PREFIX} GLSL check status unknown")
+                return ExitCode.UNEXPECTED_ERROR
     else:
-        logger.error(f"{SUMMARY_PREFIX} GLSL checks failed")
+        logger.info(f"{SUMMARY_PREFIX} GLSL checks skipped")
     logger.info("")
-    
-    result = TestResult.merge(result, glsl_result)
     
     match result:
         case TestResult.PASSED:
@@ -700,6 +758,9 @@ def main() -> ExitCode:
         case TestResult.FAILED:
             logger.info(f"Some tests of '{stripped_path}' failed")
             return ExitCode.TESTS_FAILED
+        case _:
+            logger.info("Unexpected test result")
+            return ExitCode.UNEXPECTED_ERROR
     
     assert False, "Unhandled return value from validate_reports"
     return ExitCode.UNEXPECTED_ERROR

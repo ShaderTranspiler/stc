@@ -38,3 +38,9 @@ profile.json.gz
 
 # Dump files
 *.dmp
+
+# ctest
+Testing/
+
+# anything beginning with 'tmp' from root
+/tmp*
