@@ -39,7 +39,8 @@ std::optional<std::string> open_julia_file_as_cmpd(const std::string& path) {
     std::stringstream code_stream;
     code_stream << "begin ";
     code_stream << file.rdbuf();
-    code_stream << " end";
+    // new line before end so that trailing comments are not a problem
+    code_stream << "\nend";
     return std::move(code_stream).str();
 }
 

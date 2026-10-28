@@ -1,5 +1,12 @@
 #include "common/term_utils.h"
 
+#ifdef _WIN32
+    #include <cstdlib>
+    #include <external/io_windows.h>
+#else
+    #include <unistd.h>
+#endif
+
 namespace stc {
 
 bool TerminalInfo::supports_color() {
@@ -10,8 +17,18 @@ bool TerminalInfo::supports_color() {
         return supported;
     inited = true;
 
+#ifdef _WIN32
+    char* dupenv_buf{};
+    errno_t dupenv_result = _dupenv_s(&dupenv_buf, nullptr, "NO_COLOR");
+
+    if (dupenv_result != 0 || dupenv_buf != nullptr) {
+        free(dupenv_buf);
+        return false;
+    }
+#else
     if (std::getenv("NO_COLOR") != nullptr)
         return false;
+#endif
 
 #ifdef _WIN32
     if (_isatty(_fileno(stdout)) == 0 || _isatty(_fileno(stderr)) == 0)

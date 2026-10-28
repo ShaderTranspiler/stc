@@ -80,6 +80,7 @@ option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed l
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
 option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
+option(STC_REQUIRE_GLSLANG_VALIDATOR "Require glslangValidator to be available, used for testing transpiler output (has no effect if STC_BUILD_TESTS is OFF)" OFF)
 
 set(STC_BUILD_ORIGIN "development build")
 if (STC_OFFICIAL_BUILD)
@@ -426,7 +427,7 @@ if (STC_BUILD_TESTS)
         message(FATAL_ERROR "Catch2 could not be fetched, but testing has been explicitly requested.")
     endif()
 
-    file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/*.cpp")
+    file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/unit/*.cpp")
 
     add_executable(${UNIT_TESTS_TARGET} ${TEST_SOURCES})
     add_dependencies(${UNIT_TESTS_TARGET} ${BUILD_META_TARGET})
@@ -471,9 +472,44 @@ if (STC_BUILD_TESTS)
         catch_discover_tests(${UNIT_TESTS_TARGET})
     endif()
 
-    message(STATUS "Catch2 found, ${UNIT_TESTS_TARGET} target enabled for testing")
+    # conformance tests
+    if (STC_BUILD_CLI)
+        find_package(Python3 3.12 COMPONENTS Interpreter REQUIRED)
+
+        if (STC_REQUIRE_GLSLANG_VALIDATOR)
+            find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+        else()
+            find_program(GLSLANG_VALIDATOR glslangValidator)
+        endif()
+
+        set(CONFORMANCE_DIR "${STC_SRC_DIR}/test/conformance")
+        file(GLOB_RECURSE CONFORMANCE_TEST_FILES CONFIGURE_DEPENDS "${CONFORMANCE_DIR}/*.jl")
+
+        set(CONFORMANCE_EXTRA_ARGS "")
+        if (WIN32)
+            list(APPEND CONFORMANCE_EXTRA_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
+        endif()
+        if (GLSLANG_VALIDATOR)
+            list(APPEND CONFORMANCE_EXTRA_ARGS --glslang-validator "${GLSLANG_VALIDATOR}")
+        endif()
+
+        foreach (file IN LISTS CONFORMANCE_TEST_FILES)
+            file(RELATIVE_PATH file_rel "${CONFORMANCE_DIR}" "${file}")
+            string(REGEX REPLACE "\\.jl$" "" test_name "${file_rel}")
+
+            add_test(NAME "conformance/${test_name}"
+                     COMMAND ${Python3_EXECUTABLE} "${CONFORMANCE_DIR}/run_conformance_test.py"
+                             --path "${file}" --cli $<TARGET_FILE:${CLI_TARGET}>
+                             ${CONFORMANCE_EXTRA_ARGS})
+            set_tests_properties("conformance/${test_name}" PROPERTIES LABELS conformance SKIP_RETURN_CODE 77)
+        endforeach()
+    else()
+        message(WARNING "Tests are enabled, but CLI building is not. Running conformance tests relies on the CLI as an stc API, so conformance tests will not be enabled")
+    endif()
+
+    message(STATUS "Catch2 found, test targets enabled")
 else()
-    message(STATUS "Skipping Catch2 build and ${UNIT_TESTS_TARGET} target")
+    message(STATUS "Skipping Catch2 build and test targets")
 endif()
 
 # Doxygen (+ Graphviz)

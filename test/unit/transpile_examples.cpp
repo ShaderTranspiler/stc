@@ -22,7 +22,7 @@ std::optional<std::string> read_file(std::filesystem::path path) {
     std::stringstream code_stream;
     code_stream << "begin ";
     code_stream << file.rdbuf();
-    code_stream << " end";
+    code_stream << "\nend";
 
     return code_stream.str();
 }
