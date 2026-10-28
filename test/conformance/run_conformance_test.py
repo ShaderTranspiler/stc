@@ -114,6 +114,8 @@ class FileInfo:
         self.expect_glsl_failure: bool = False
         self.glsl_failure_pattern: str = "" # only applies when expect_glsl_failure == True
         self.out_path: str = ""
+        self.parsed_shader_stage_directive = False
+        self.parsed_glsl_directive = False
     
     def should_be_valid(self):
         return Path(self.path).name.startswith("valid")
@@ -165,7 +167,7 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
         hint_tail = f"\n  Hint: {hint}" if hint is not None else ""
         logger.error(f"Malformed annotation on line {line_number}: '{raw_annotation}'\n  Why: {msg}{hint_tail}")
         return False
-    
+        
     if raw_annotation == "":
         return log_error("Empty annotation", "Single line comments are reserved for annotations in test files")
     
@@ -245,7 +247,15 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
             if text_arg == "":
                 logger.warning(f"'{directive}' directive without a text argument on line {line_number}")
         
-        case "SHADER STAGE":                        
+        case "SHADER STAGE":
+            if file_info.parsed_shader_stage_directive:
+                return log_error(f"Multiple annotations with 'SHADER STAGE' directive.", "'SHADER STAGE' must be specified at most once per test file.")
+            file_info.parsed_shader_stage_directive = True
+            
+            if not file_info.should_be_valid():
+                logger.warning("'SHADER STAGE' directive will not have any effect in non-valid file.\n" +
+                               "  Hint: Files that are expected to transpile without error (and can thus be GLSL validated) should be marked by prefixing their name with 'valid'.")
+            
             if text_arg != "":
                 return log_error(f"Text argument passed to 'SHADER STAGE' directive.")
             
@@ -263,13 +273,21 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
                 return log_error(f"'{args[0]}' is not a valid argument for the 'SHADER STAGE' directive.", "Supported shader stages are: comp and frag")
             
         case "GLSL":
+            if file_info.parsed_glsl_directive:
+                return log_error(f"Multiple annotations with 'GLSL' directive.", "'GLSL' must be specified at most once per test file.")
+            file_info.parsed_glsl_directive = True
+            
+            if not file_info.should_be_valid():
+                logger.warning("'GLSL' directive will not have any effect in non-valid file.\n" +
+                               "  Hint: Files that are expected to transpile without error (and can thus be GLSL validated) should be marked by prefixing their name with 'valid'.")
+                        
             if len(args) != 1 or args[0] != "missing":
                 return log_error(f"Invalid argument(s) provided to 'GLSL' directive.", "The GLSL directive's only supported argument is 'missing', which must always be used.")
 
             file_info.expect_glsl_failure = True
             file_info.glsl_failure_pattern = text_arg
            
-        case _:            
+        case _:
             hint = None
             for valid_directive in DIRECTIVE_LIST:
                 if directive.startswith(valid_directive):
@@ -365,8 +383,7 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
     
     cli_args = ["--no-benchmark", "--quiet", "--cg-indent", "0"]
     if should_be_valid:
-        out_path = Path(config.tmp_dir_path) / f"out.{file_info.shader_stage}"
-        file_info.out_path = str(out_path)
+        assert file_info.out_path != ""
         cli_args.append("-o")
         cli_args.append(file_info.out_path)
     else:
@@ -560,20 +577,32 @@ def validate_glsl(file_info: FileInfo, config: Config) -> TestResult | ExitCode:
     base_log = "Run glslangValidator on generated code ---"
     if proc_result.returncode == 0:
         logger.info(f"{base_log} passed")
+        if file_info.expect_glsl_failure:
+            logger.warning(f"GLSL validation was marked as an expected failure (annotated with 'GLSL(missing)'), but glslangValidator reported no errors.")
         return TestResult.PASSED
     
-    if proc_result.returncode in GLSLANG_VALIDATOR_REJECTED_CODES:
-        if file_info.expect_glsl_failure and (file_info.glsl_failure_pattern == "" or proc_result.stdout.find(file_info.glsl_failure_pattern) != -1):
-            logger.error(f"{base_log} skipped (marked missing)")
-            return TestResult.PASSED_WITH_SKIPS
-        
-        logger.error(f"{base_log} failed")
+    def dump_glslang_validator_output():
         logger.info(f"See glslangValidator output for details:\n" +
-                    "== GLSLANGVALIDATOR OUTPUT BEGIN ==\n" + 
+                    "== GLSLANG VALIDATOR OUTPUT BEGIN ==\n" + 
                     proc_result.stdout +
-                    "\n== GLSLANGVALIDATOR OUTPUT END ==")
+                    "\n== GLSLANG VALIDATOR OUTPUT END ==")
+    
+    if proc_result.returncode in GLSLANG_VALIDATOR_REJECTED_CODES:
+        if file_info.expect_glsl_failure:
+            matched_pattern = (file_info.glsl_failure_pattern == "" or proc_result.stdout.find(file_info.glsl_failure_pattern) != -1)
+            if matched_pattern:
+                logger.info(f"{base_log} skipped (marked missing)")
+                return TestResult.PASSED_WITH_SKIPS
+            else:
+                logger.error(f"{base_log} failed (marked missing, but output did not match the provided pattern)")
+        else:
+            logger.error(f"{base_log} failed")
+        dump_glslang_validator_output()
+        
         return TestResult.FAILED
     
+    logger.error(f"glslangValidator returned with unexpected exit code: {proc_result.returncode}")
+    dump_glslang_validator_output()
     return ExitCode.GLSLANG_VALIDATOR_ERROR
 
 # strips path base up to the test/conformance subdirectory
@@ -600,7 +629,7 @@ def main() -> ExitCode:
     
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
     
-    tmp_dir = tempfile.TemporaryDirectory(prefix="conformance_output")
+    tmp_dir = tempfile.TemporaryDirectory(prefix="conformance_output_")
     tmp_dir_path = str(Path(tmp_dir.name).resolve())
     
     config = Config(args.path, args.cli, parse_script_mode(args.mode), args.allow_internal_errors, args.skip_message_checks,
@@ -635,6 +664,10 @@ def main() -> ExitCode:
     if file_info is None:
         logger.error("Failed to parse test file")
         return ExitCode.TESTS_MALFORMED
+    
+    if file_info.should_be_valid():
+        out_path = Path(config.tmp_dir_path) / f"out.{file_info.shader_stage}"
+        file_info.out_path = str(out_path)
     
     maybe_reports: list[Report] = collect_reports(file_info, config)
     if isinstance(maybe_reports, ExitCode):

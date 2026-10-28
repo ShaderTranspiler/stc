@@ -78,7 +78,9 @@ jobs:
 
       - name: Install glslang-tools
         if: matrix.config.compiler == 'gcc'
-        run: sudo apt-get install -y glslang-tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -111,6 +113,7 @@ jobs:
       - name: Generate Coverage (GCC Only)
         if: matrix.config.compiler == 'gcc'
         run: |
+          sudo apt-get update
           sudo apt-get install -y lcov
           lcov --capture --directory build \
             --exclude '/usr/*' \

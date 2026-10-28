@@ -80,7 +80,7 @@ option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed l
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
 option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
-option(STC_REQUIRE_GLSLANG_VALIDATOR "Require glslangValidator to be available, used for testing transpiler output (used for testing, has no effect if STC_BUILD_TESTS is OFF)" OFF)
+option(STC_REQUIRE_GLSLANG_VALIDATOR "Require glslangValidator to be available, used for testing transpiler output (has no effect if STC_BUILD_TESTS is OFF)" OFF)
 
 set(STC_BUILD_ORIGIN "development build")
 if (STC_OFFICIAL_BUILD)
@@ -475,7 +475,7 @@ if (STC_BUILD_TESTS)
     # conformance tests
     if (STC_BUILD_CLI)
         find_package(Python3 3.12 COMPONENTS Interpreter REQUIRED)
-        
+
         if (STC_REQUIRE_GLSLANG_VALIDATOR)
             find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
         else()
@@ -485,12 +485,12 @@ if (STC_BUILD_TESTS)
         set(CONFORMANCE_DIR "${STC_SRC_DIR}/test/conformance")
         file(GLOB_RECURSE CONFORMANCE_TEST_FILES CONFIGURE_DEPENDS "${CONFORMANCE_DIR}/*.jl")
 
-        set(CONFORMANCE_PLATFORM_ARGS "")
+        set(CONFORMANCE_EXTRA_ARGS "")
         if (WIN32)
-            list(APPEND CONFORMANCE_PLATFORM_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
+            list(APPEND CONFORMANCE_EXTRA_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
         endif()
         if (GLSLANG_VALIDATOR)
-            list(APPEND CONFORMANCE_PLATFORM_ARGS --glslang-validator "${GLSLANG_VALIDATOR}")
+            list(APPEND CONFORMANCE_EXTRA_ARGS --glslang-validator "${GLSLANG_VALIDATOR}")
         endif()
 
         foreach (file IN LISTS CONFORMANCE_TEST_FILES)
@@ -500,7 +500,7 @@ if (STC_BUILD_TESTS)
             add_test(NAME "conformance/${test_name}"
                      COMMAND ${Python3_EXECUTABLE} "${CONFORMANCE_DIR}/run_conformance_test.py"
                              --path "${file}" --cli $<TARGET_FILE:${CLI_TARGET}>
-                             ${CONFORMANCE_PLATFORM_ARGS})
+                             ${CONFORMANCE_EXTRA_ARGS})
             set_tests_properties("conformance/${test_name}" PROPERTIES LABELS conformance SKIP_RETURN_CODE 77)
         endforeach()
     else()
