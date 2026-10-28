@@ -3,12 +3,6 @@
 #include <iostream>
 #include <string_view>
 
-#ifdef _WIN32
-    #include <external/io_windows.h>
-#else
-    #include <unistd.h>
-#endif
-
 namespace ansi_codes {
 
 inline constexpr std::string_view black  = "\033[30m";
