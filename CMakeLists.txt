@@ -80,6 +80,7 @@ option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed l
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
 option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
+option(STC_REQUIRE_GLSLANG_VALIDATOR "Require glslangValidator to be available, used for testing transpiler output (used for testing, has no effect if STC_BUILD_TESTS is OFF)" OFF)
 
 set(STC_BUILD_ORIGIN "development build")
 if (STC_OFFICIAL_BUILD)
@@ -474,13 +475,22 @@ if (STC_BUILD_TESTS)
     # conformance tests
     if (STC_BUILD_CLI)
         find_package(Python3 3.12 COMPONENTS Interpreter REQUIRED)
+        
+        if (STC_REQUIRE_GLSLANG_VALIDATOR)
+            find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+        else()
+            find_program(GLSLANG_VALIDATOR glslangValidator)
+        endif()
 
         set(CONFORMANCE_DIR "${STC_SRC_DIR}/test/conformance")
         file(GLOB_RECURSE CONFORMANCE_TEST_FILES CONFIGURE_DEPENDS "${CONFORMANCE_DIR}/*.jl")
 
         set(CONFORMANCE_PLATFORM_ARGS "")
         if (WIN32)
-            set(CONFORMANCE_PLATFORM_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
+            list(APPEND CONFORMANCE_PLATFORM_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
+        endif()
+        if (GLSLANG_VALIDATOR)
+            list(APPEND CONFORMANCE_PLATFORM_ARGS --glslang-validator "${GLSLANG_VALIDATOR}")
         endif()
 
         foreach (file IN LISTS CONFORMANCE_TEST_FILES)

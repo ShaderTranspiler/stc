@@ -76,6 +76,10 @@ jobs:
       - name: Install JuliaGLM
         run: julia -e 'using Pkg; Pkg.add(url="https://github.com/Csabix/JuliaGLM", rev="v0.0.2+0")'
 
+      - name: Install glslang-tools
+        if: matrix.config.compiler == 'gcc'
+        run: sudo apt-get install -y glslang-tools
+
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -95,6 +99,7 @@ jobs:
           -DSTC_BUILD_TESTS=ON
           -DSTC_USE_FORMAT=OFF
           ${{ matrix.config.compiler == 'gcc' && '-DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_FLAGS="--coverage"' || '' }}
+          ${{ matrix.config.compiler == 'gcc' && '-DSTC_REQUIRE_GLSLANG_VALIDATOR=ON' || '' }}
 
       - name: Build
         run: cmake --build build -j
