@@ -65,7 +65,7 @@ class TestResult(Enum):
     FAILED = 2
     
     @staticmethod
-    def merge(a: TestResult, b: TestResult) -> TestResult:
+    def merge(a: 'TestResult', b: 'TestResult') -> 'TestResult':
         if a.value < b.value:
             a, b = b, a
         return a if a in [TestResult.FAILED, TestResult.PASSED_WITH_SKIPS] else TestResult.PASSED
