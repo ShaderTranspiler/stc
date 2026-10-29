@@ -4,6 +4,7 @@
 #include "sir/context.h"
 
 #include <algorithm>
+#include <ostream>
 
 namespace stc::jl {
 
@@ -28,6 +29,9 @@ private:
 
     // inited in first cmpd's visitor (usable in visitors without lifetime issues)
     std::vector<SIRNodeId>* global_cmpd_body;
+
+    // set by to lower()
+    NodeId jl_ast_root{};
 
     bool first_cmpd = true;
     bool in_method  = false;
@@ -82,6 +86,12 @@ public:
     sir::SIRCtx sir_ctx;
 
 private:
+    void dump(const Expr& expr, std::ostream& out);
+    SIRNodeId fail(std::string_view msg, const Expr& expr);
+    SIRNodeId internal_error(std::string_view msg, const Expr& expr);
+
+    SIRNodeId visit_and_check(NodeId id, bool accept_null = false);
+
     std::optional<sir::BinaryOp::OpKind> sym_to_bin_op(SymbolId sym, bool in_logical_ctx) const;
 
     template <typename T, typename... Args>
@@ -113,10 +123,6 @@ private:
     }
 
     void swap_lower_type(TypeId& type) { type = lower_type(type); }
-
-    SIRNodeId fail(std::string_view msg);
-    SIRNodeId internal_error(std::string_view msg);
-    SIRNodeId visit_and_check(NodeId id, bool accept_null = false);
 
     // skips id-lookup roundtrip for nodes that have already been looked up
     SIRNodeId visit_ptr(Expr* node);

@@ -4,6 +4,8 @@
 #include "frontend/jl/ast.h"
 #include "frontend/jl/rt/env.h"
 
+#include <ostream>
+
 namespace stc::jl {
 
 using types::BuiltinTD;
@@ -66,10 +68,48 @@ public:
         return JLCtx{std::move(other), node_arena_kb};
     }
 
+    // safe to run on partially-moved contexts
+    void dump(Expr& subtree_root, Expr& ast_root, DumpVerbosity verbosity_level, std::ostream& out,
+              const TypePool& type_pool, const SymbolPool& sym_pool,
+              const TranspilerConfig& config) const;
+
+    // safe to run on partially-moved contexts
+    void dump(NodeId subtree_root_id, NodeId ast_root_id, DumpVerbosity verbosity_level,
+              std::ostream& out, const TypePool& type_pool, const SymbolPool& sym_pool,
+              const TranspilerConfig& config) const {
+        dump(get_expr_or_fail(subtree_root_id), get_expr_or_fail(ast_root_id), verbosity_level, out,
+             type_pool, sym_pool, config);
+    }
+
+    // only safe to run on not-partially-moved contexts
+    void dump(Expr& subtree_root, Expr& ast_root, DumpVerbosity verbosity_level,
+              std::ostream& out) const {
+        dump(subtree_root, ast_root, verbosity_level, out, type_pool, sym_pool, config);
+    }
+
+    // only safe to run on not-partially-moved contexts
+    void dump(NodeId subtree_root_id, NodeId ast_root_id, DumpVerbosity verbosity_level,
+              std::ostream& out) const {
+        dump(get_expr_or_fail(subtree_root_id), get_expr_or_fail(ast_root_id), verbosity_level,
+             out);
+    }
+
 private:
     // adds Julia type not already present and assigns them to the _<type name> members
     // if types are already inside the pool and the members, this is a no-op
     void init_jl_types();
+
+    Expr& get_expr_or_fail(NodeId id) const {
+        if (id.is_null())
+            throw std::logic_error{"Mandatory node argument is null id"};
+
+        Expr* expr = get_node(id);
+        if (expr == nullptr)
+            throw std::logic_error{
+                "Mandatory node given id that doesn't point into the context's node pool"};
+
+        return *expr;
+    }
 
     // clang-format off
     #define X(type) types::TypeId _##type = types::TypeId::null_id();

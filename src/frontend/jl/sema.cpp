@@ -9,54 +9,24 @@
 
 namespace stc::jl {
 
-void JLSema::dump(const Expr& expr) const {
-    NodeId root = NodeId::null_id();
-
-    switch (ctx.config.err_dump_verbosity) {
-        case DumpVerbosity::None:
-            return;
-
-        case DumpVerbosity::Partial:
-            root = ctx.calculate_node_id(expr);
-            break;
-
-        case DumpVerbosity::Verbose:
-            root = ctx.calculate_node_id(global_scope().body);
-            break;
-
-        default:
-            throw std::logic_error{"Unaccounted DumpVerbosity case in sema dump"};
-    }
-
-    JLDumper dumper{ctx, std::cerr};
-    dumper.visit(root);
+void JLSema::dump(const Expr& expr, std::ostream& out) const {
+    NodeId subtree_root = ctx.calculate_node_id(expr);
+    NodeId ast_root     = ctx.calculate_node_id(global_scope().body);
+    ctx.dump(subtree_root, ast_root, ctx.config.err_dump_verbosity, out);
 }
 
 TypeId JLSema::fail(std::string_view msg, const Expr& expr) {
-    std::cerr << '\n';
-
-    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
-    error(file, loc, msg);
     _success = false;
 
-    if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        report("\nThe above error was emitted while processing the following node:");
-        dump(expr);
-    }
+    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
+    stc::error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
 
     return TypeId::null_id();
 }
 
 TypeId JLSema::warn(std::string_view msg, const Expr& expr) const {
-    std::cerr << '\n';
-
     auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
-    warning(file, loc, msg);
-
-    if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        std::cerr << "The above warning was emitted while processing the following node:\n";
-        dump(expr);
-    }
+    stc::warning(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
 
     return TypeId::null_id();
 }
@@ -66,16 +36,10 @@ TypeId JLSema::internal_error(std::string_view msg, const Expr& expr) {
     if (!_success)
         return TypeId::null_id();
 
-    std::cerr << '\n';
-
-    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
-    stc::internal_error(file, loc, msg);
     _success = false;
 
-    if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        std::cerr << "The above error occured while processing the following node:\n";
-        dump(expr);
-    }
+    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
+    stc::internal_error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
 
     return TypeId::null_id();
 }
