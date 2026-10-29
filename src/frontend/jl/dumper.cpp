@@ -1,4 +1,5 @@
 #include "frontend/jl/dumper.h"
+#include "common/report.h"
 #include "frontend/jl/ast_utils.h"
 #include "frontend/jl/utils.h"
 #include "types/type_to_string.h"

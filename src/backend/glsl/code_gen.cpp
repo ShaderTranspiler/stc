@@ -1,7 +1,7 @@
 #include "backend/glsl/code_gen.h"
 #include "backend/glsl/type_utils.h"
 #include "common/config.h"
-#include "types/qualifier_pool.h"
+#include "common/report.h"
 
 #include <algorithm>
 #include <array>

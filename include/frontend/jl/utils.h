@@ -4,6 +4,7 @@
 #include "external/julia.h"
 #include "types/type_pool.h"
 
+#include <iostream>
 #include <utility>
 
 namespace stc::jl {

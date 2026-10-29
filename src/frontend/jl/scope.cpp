@@ -1,4 +1,5 @@
 #include "frontend/jl/scope.h"
+#include "common/report.h"
 #include "frontend/jl/ast_utils.h"
 #include "frontend/jl/dumper.h"
 

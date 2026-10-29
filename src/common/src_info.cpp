@@ -1,6 +1,5 @@
-#include <stdexcept>
-
 #include "common/src_info.h"
+#include "common/report.h"
 #include "common/term_utils.h"
 
 namespace {
@@ -22,8 +21,6 @@ void print_locinfo(const SrcFile& file, SrcLocation location, std::ostream& out,
 namespace stc {
 
 void report(const SrcFile& file, SrcLocation location, std::string_view msg, std::ostream& out) {
-    // FEATURE: print code snippet
-
     print_locinfo(file, location, out);
     return report(msg, out);
 }

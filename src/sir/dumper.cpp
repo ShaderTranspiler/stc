@@ -1,5 +1,6 @@
 #include <fmt/format.h>
 
+#include "common/report.h"
 #include "sir/dumper.h"
 #include "types/qualifiers.h"
 #include "types/type_descriptors.h"

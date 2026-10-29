@@ -3,15 +3,11 @@
 #include <cassert>
 #include <fmt/format.h>
 #include <functional>
-#include <iostream>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
-
-#include "common/config.h"
 
 namespace stc {
 
@@ -35,24 +31,6 @@ template <typename T>
 concept CEqualityComparable = requires (T a, T b) {
     { std::equal_to<T>{}(a, b) } -> std::same_as<bool>;
 };
-
-inline std::string indent(size_t level, size_t unit_width, bool use_tabs) {
-    return use_tabs ? std::string(level, '\t') : std::string(level * unit_width, ' ');
-}
-
-inline std::string indent(size_t level, const TranspilerConfig& config) {
-    return indent(level, config.dump_indent, config.use_tabs);
-}
-
-void report(std::string_view msg, std::ostream& out = std::cerr);
-
-void error(std::string_view msg, std::ostream& out = std::cerr);
-void warning(std::string_view msg, std::ostream& out = std::cerr);
-void internal_error(std::string_view msg, std::ostream& out = std::cerr);
-
-inline std::string dump_label(std::string_view label_str) {
-    return fmt::format("({}):\n", label_str);
-}
 
 template <typename T, typename Projection = std::identity>
 requires std::regular_invocable<Projection&, const T&> && requires {

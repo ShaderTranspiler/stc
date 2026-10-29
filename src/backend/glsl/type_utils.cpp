@@ -1,5 +1,5 @@
 #include "backend/glsl/type_utils.h"
-#include "ast/context.h"
+#include "common/report.h"
 
 #include <fmt/format.h>
 

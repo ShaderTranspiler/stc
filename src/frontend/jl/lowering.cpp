@@ -1,4 +1,5 @@
 #include "frontend/jl/lowering.h"
+#include "common/report.h"
 #include "frontend/jl/ast_utils.h"
 #include "sir/ast.h"
 #include "types/type_to_string.h"

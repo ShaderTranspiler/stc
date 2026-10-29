@@ -2,6 +2,7 @@
 
 #include "external/julia.h"
 
+#include "common/report.h"
 #include "frontend/jl/ctor_resolver.h"
 #include "frontend/jl/op_resolver.h"
 #include "frontend/jl/scope.h"
