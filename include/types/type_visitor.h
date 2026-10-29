@@ -40,7 +40,6 @@ protected:
         return std::visit(
             [this](auto&& type_val) -> RetTy {
                 // CLEANUP: this static assert would be nice but fails on msvc for access reasons
-
                 // using T = std::decay_t<decltype(type_val)>;
                 // static_assert(CHasVisitorFor<ImplTy, RetTy, T>,
                 //               "missing visit overload in type visitor implementation");
