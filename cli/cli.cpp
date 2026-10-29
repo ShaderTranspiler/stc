@@ -341,11 +341,8 @@ int run(int argc, char* argv[]) {
 } // namespace stc::cli
 
 int main(int argc, char* argv[]) {
-#ifdef NDEBUG
     try {
-#endif
         return stc::cli::run(argc, argv);
-#ifdef NDEBUG
     } catch (const std::exception& ex) {
         std::cerr << "An unexpected error occurred while running stc:\n";
         std::cerr << ex.what() << '\n';
@@ -354,7 +351,6 @@ int main(int argc, char* argv[]) {
     }
 
     return EXIT_FAILURE;
-#endif
 }
 
 #undef STC_EVAL_AND_CHECK
