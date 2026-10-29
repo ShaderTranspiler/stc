@@ -1,6 +1,29 @@
 #include "frontend/jl/context.h"
 
+#include "frontend/jl/dumper.h"
+
 namespace stc::jl {
+
+void JLCtx::dump(Expr& subtree_root, Expr& ast_root, DumpVerbosity verbosity_level,
+                 std::ostream& out, const TypePool& type_pool, const SymbolPool& sym_pool,
+                 const TranspilerConfig& config) const {
+    // dumper is instantiated every time, since partial moving may invalidate pool references
+    JLDumper dumper{*this, type_pool, sym_pool, config, out};
+
+    switch (verbosity_level) {
+        case DumpVerbosity::None:
+            return;
+
+        case DumpVerbosity::Partial:
+            return dumper.visit(&subtree_root);
+
+        case DumpVerbosity::Verbose:
+            return dumper.visit(&ast_root);
+
+        default:
+            throw std::logic_error{"Unaccounted DumpVerbosity case in JLCtx dump"};
+    }
+}
 
 void JLCtx::init_jl_types() {
     _jl_Bool_t    = type_pool.bool_td();

@@ -1,3 +1,5 @@
+# SHADER STAGE(frag)
+
 @gl_out global frag_col::Vec4
 @gl_uniform global resolution::IVec2
 @gl_uniform global mouse::Vec4

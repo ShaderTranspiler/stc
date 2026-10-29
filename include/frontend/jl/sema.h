@@ -2,6 +2,7 @@
 
 #include "external/julia.h"
 
+#include "common/report.h"
 #include "frontend/jl/ctor_resolver.h"
 #include "frontend/jl/op_resolver.h"
 #include "frontend/jl/scope.h"
@@ -275,7 +276,7 @@ private:
             scope.dump(ctx);
     }
 
-    void dump(const Expr& expr) const;
+    void dump(const Expr& expr, std::ostream& out) const;
     std::string type_str(TypeId id) const;
 
     TypeId fail(std::string_view msg, const Expr& expr);

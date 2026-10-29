@@ -19,6 +19,12 @@ namespace stc {
 // since ASTCtx is a class template, std::derived_from cannot be used in requires, so this only
 // checks for requirements directly used by the ASTVisitor base class
 
+// NOTE: ASTVisitor (and general subclasses) should assume that the ctx might have been partially
+// moved, meaning only accessing AST node facilities and data. Concrete subclasses can naturally
+// assume that it hasn't been (sema, lowering, codegen, etc. would not make sense on a partially
+// moved context, but a dumper might need to dump the AST of a partially moved context, taking the
+// moved pools explicitly).
+
 template <typename ImplTy, typename CtxTy, typename RetTy = void>
 requires requires (CtxTy ctx, CtxTy::node_id_type id) {
     typename CtxTy::node_id_type;
@@ -33,6 +39,11 @@ class ASTVisitor {
 public:
     CtxTy& ctx;
 
+protected:
+    ImplTy* impl_this() { return static_cast<ImplTy*>(this); }
+    const ImplTy* impl_this() const { return static_cast<const ImplTy*>(this); }
+
+public:
     explicit ASTVisitor(CtxTy& ast_context)
         : ctx{ast_context} {
         static_assert(
@@ -41,10 +52,6 @@ public:
             }, "AST visitor pass without PASS_NAME descriptor");
     }
 
-    ImplTy* impl_this() { return static_cast<ImplTy*>(this); }
-    const ImplTy* impl_this() const { return static_cast<const ImplTy*>(this); }
-
-public:
     RetTy visit(NodeBaseTy* node, bool call_pre_visit = true) {
         if (call_pre_visit) {
             bool pre_result = impl_this()->pre_visit_ptr(node);

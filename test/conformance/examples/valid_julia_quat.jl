@@ -1,3 +1,4 @@
+# SHADER STAGE(frag)
 
 @gl_out global frag_col::Vec4
 @gl_uniform global time::Float32

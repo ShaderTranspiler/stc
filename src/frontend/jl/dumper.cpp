@@ -1,4 +1,5 @@
 #include "frontend/jl/dumper.h"
+#include "common/report.h"
 #include "frontend/jl/ast_utils.h"
 #include "frontend/jl/utils.h"
 #include "types/type_to_string.h"
@@ -18,9 +19,8 @@ std::string_view mst_str(MaybeScopeType mst) {
 std::string_view decl_type_str(Decl* decl) {
     // clang-format off
     #define X(type, kind)                                                                              \
-        if (isa<type>(decl)) {                                                                         \
-            return #type;                                                                              \
-        }
+        if (isa<type>(decl))                                                                           \
+            return #type;
 
         #include "frontend/jl/node_defs/decl.def"
     #undef X
@@ -34,11 +34,11 @@ std::string_view decl_type_str(Decl* decl) {
 namespace stc::jl {
 
 std::string JLDumper::type_str(TypeId type_id) const {
-    return type_to_string(type_id, ctx.type_pool, ctx.sym_pool);
+    return type_to_string(type_id, type_pool, sym_pool);
 }
 
 std::string_view JLDumper::sym(SymbolId sym_id) const {
-    auto sv = ctx.sym_pool.get_symbol_maybe(sym_id);
+    auto sv = sym_pool.get_symbol_maybe(sym_id);
 
     if (!sv.has_value())
         return "<unknown symbol>";
@@ -47,15 +47,15 @@ std::string_view JLDumper::sym(SymbolId sym_id) const {
 }
 
 std::string JLDumper::indent() const {
-    return stc::indent(indent_level, ctx.config.dump_indent, ctx.config.use_tabs);
+    return stc::indent(indent_level, config.dump_indent, config.use_tabs);
 }
 
 void JLDumper::inc_indent() {
-    indent_level += ctx.config.dump_indent;
+    indent_level += config.dump_indent;
 }
 
 void JLDumper::dec_indent() {
-    indent_level -= ctx.config.dump_indent;
+    indent_level -= config.dump_indent;
 }
 
 void JLDumper::dump_with_label(std::string_view label, NodeId node) {
@@ -165,7 +165,7 @@ void JLDumper::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
 
     out << indent() << "instance name: ";
     if (!iface_blk.instance_name().is_null())
-        out << ctx.get_sym(iface_blk.instance_name()) << '\n';
+        out << sym(iface_blk.instance_name()) << '\n';
     else
         out << "-\n";
 

@@ -4,12 +4,12 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "common/bump_arena.h"
 #include "common/bump_arena_allocator.h"
 #include "common/config.h"
+#include "common/report.h"
 #include "common/utils.h"
 
 namespace stc {
@@ -49,13 +49,37 @@ struct SrcLocationId : public StrongId<uint32_t> {
 };
 
 void report(const SrcFile& file, SrcLocation location, std::string_view msg,
-            std::string_view prefix = ""sv, std::ostream& out = std::cerr);
+            std::ostream& out = std::cerr);
 void error(const SrcFile& file, SrcLocation location, std::string_view msg,
            std::ostream& out = std::cerr);
 void warning(const SrcFile& file, SrcLocation location, std::string_view msg,
              std::ostream& out = std::cerr);
 void internal_error(const SrcFile& file, SrcLocation location, std::string_view msg,
                     std::ostream& out = std::cerr);
+
+// overloads for general AST subtree printing (caller handles the specifics, this provides the
+// textual context)
+#define STC_DEFINE_DUMPER_OVERLOAD(fn, report_name)                                                \
+    template <typename DumperFn>                                                                   \
+    requires std::invocable<DumperFn, std::ostream&>                                               \
+    void fn(const SrcFile& file, SrcLocation location, std::string_view msg,                       \
+            const TranspilerConfig& cfg, DumperFn&& dump, std::ostream& out = std::cerr) {         \
+        out << '\n';                                                                               \
+        ::stc::fn(file, location, msg, out);                                                       \
+        if (cfg.err_dump_verbosity != DumpVerbosity::None) {                                       \
+            ::stc::report("\nThe above " #report_name                                              \
+                          " was emitted while processing the following AST node:",                 \
+                          out);                                                                    \
+            dump(out);                                                                             \
+        }                                                                                          \
+    }
+
+STC_DEFINE_DUMPER_OVERLOAD(report, report)
+STC_DEFINE_DUMPER_OVERLOAD(error, error)
+STC_DEFINE_DUMPER_OVERLOAD(warning, warning)
+STC_DEFINE_DUMPER_OVERLOAD(internal_error, internal error)
+
+#undef STC_DEFINE_DUMPER_OVERLOAD
 
 class SrcInfoPool {
 private:

@@ -77,7 +77,7 @@ MaybeString transpile_parsed(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
     code_gen_vis.visit(sir_ast);
 
     if (!code_gen_vis.success()) {
-        std::cerr << "\nGLSL code gen failed\n";
+        std::cerr << "\nGLSL code generation failed\n";
         return std::nullopt;
     }
 

@@ -20,6 +20,8 @@ An actively generated JLL wrapper for the library can be found in the [stc_jll](
 
 A more high level Julia abstraction is available in the [ShaderTranspiler.jl](https://github.com/ShaderTranspiler/ShaderTranspiler.jl) Pkg (not hosted in the general Julia package registry), which wraps low-level abstractions behind high-level Julia constructs. This is the recommended way to use the transpiler from Julia, and relies on `stc_jll` internally to interact with the library. Unless manual building is desirable, it's also easiest to acquire the latest CLI through this package, which it exposes as a Pkg App (requires Julia 1.12).
 
+To what kind of shaders STC can transpile, take a look at the example Julia files in `test/conformance/examples`. These get their output validated through glslangValidator as part of CI, so they're always up to date. Browsing other valid files under the `test/conformance` folder can also be helpful to see what language features are supported (and to what extent). 
+
 # Table of Contents
 
 - [Shader Transpiler Core (STC)](#shader-transpiler-core-stc)
@@ -426,8 +428,7 @@ Not options as such, but respected:
   - `meta/` -- templates for build and configure time metadata headers, filled in by CMake. Header-only.
   - Node kinds, qualifiers and GLSL builtins are declared in `.def` files under `*_defs/` directories, expanded through the X-macro helpers in `common/x_macros/` (see [X-Macro System](#x-macro-system)). They are data, not code.
 - `cli/` -- the command line program. Minimal, and the main (in-repo) consumer of the library API.
-- `test/` -- Catch2 unit tests.
-- `examples/` -- Transpilable Julia shaders, used both as usage examples and as transpilation tests.
+- `test/` -- Catch2 unit tests and conformance tests with a runner script.
 - `sandbox/` -- scratch executables for manual testing against the built library (see `sandbox/sb_example_sandbox.cpp` for usage).
 - `cmake/` -- build system modules. Julia resolution, dev tooling, docs and metadata generation.
 - `scripts/` -- developer helper scripts: auto builder for `PowerShell`, debug environment setup and a recommended pre-commit hook.

@@ -1,3 +1,5 @@
+# SHADER STAGE(frag)
+
 @gl_const global MOUSE_EPS = 0.001
 
 @gl_out global frag_col::Vec4

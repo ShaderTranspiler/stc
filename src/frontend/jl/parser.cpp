@@ -11,6 +11,8 @@
 
 namespace {
 
+// only used for debug assertions (currently), so release builds need [[maybe_unused]]
+[[maybe_unused]]
 STC_FORCE_INLINE jl_sym_t* is_sym(jl_value_t* value, jl_sym_t* checked_sym) {
     if (value == nullptr || !jl_is_symbol(value))
         return nullptr;

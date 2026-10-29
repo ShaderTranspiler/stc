@@ -1,6 +1,8 @@
 #pragma once
 
+#include <ostream>
 #include <sstream>
+#include <string_view>
 
 #include "backend/glsl/context.h"
 #include "sir/visitor.h"
@@ -20,7 +22,7 @@ private:
     size_t indent_level = 0U;
     bool _success       = true;
 
-    SymbolId sym_length;
+    SymbolId sym_length{};
 
 public:
     explicit GLSLCodeGenVisitor(GLSLCtx& ctx)
@@ -54,6 +56,10 @@ public:
     // clang-format on
 
 private:
+    void dump(const NodeBase& node, std::ostream& out) const;
+    void fail(std::string_view msg, const NodeBase& node);
+    void internal_error(std::string_view msg, const NodeBase& node);
+
     std::string indent() const;
 };
 
