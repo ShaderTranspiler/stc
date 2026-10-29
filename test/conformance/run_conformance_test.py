@@ -258,9 +258,9 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
                 logger.warning(f"'{directive}' directive without a text argument on line {line_number}")
         
         case "SHADER STAGE":
-            if file_info.parsed_shader_stage_directive:
+            if file_info.annotation_context.parsed_shader_stage_directive:
                 return log_error(f"Multiple annotations with 'SHADER STAGE' directive.", "'SHADER STAGE' must be specified at most once per test file.")
-            file_info.parsed_shader_stage_directive = True
+            file_info.annotation_context.parsed_shader_stage_directive = True
             
             if not file_info.should_be_valid():
                 logger.warning("'SHADER STAGE' directive will not have any effect in non-valid file.\n" +
