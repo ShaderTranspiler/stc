@@ -1,12 +1,34 @@
 #include "backend/glsl/type_utils.h"
-#include "common/report.h"
 
 #include <fmt/format.h>
 
 namespace stc::glsl {
 
-std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
-                     const SymbolPool& sym_pool) {
+std::optional<std::string_view> type_prefix(const TypeDescriptor& td) {
+    if (td.is<BoolTD>())
+        return "b";
+
+    if (td.is<IntTD>()) {
+        const auto& int_td = td.as<IntTD>();
+        if (int_td.width != 32)
+            return std::nullopt;
+
+        return int_td.is_signed ? "i" : "u";
+    }
+
+    if (td.is<FloatTD>()) {
+        const auto& float_td = td.as<FloatTD>();
+        if (float_td.width != 32 && float_td.width != 64)
+            return std::nullopt;
+
+        return float_td.width == 32 ? "" : "d";
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> type_str(const TypeDescriptor& td, const TypePool& type_pool,
+                                    const SymbolPool& sym_pool) {
     if (td.is<VoidTD>())
         return "void";
 
@@ -15,14 +37,16 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
 
     if (td.is<IntTD>()) {
         auto [width, is_signed] = td.as<IntTD>();
-        assert((width == 32 || width == 64) && "invalid glsl int width");
+        if (width != 32)
+            return std::nullopt;
 
         return is_signed ? "int" : "uint";
     }
 
     if (td.is<FloatTD>()) {
-        auto [width, _enc] = td.as<FloatTD>();
-        assert((width == 32 || width == 64) && "invalid glsl floating point width");
+        auto [width, enc] = td.as<FloatTD>();
+        if (enc != FloatTD::Encoding::ieee754 || (width != 32 && width != 64))
+            return std::nullopt;
 
         return width == 32 ? "float" : "double";
     }
@@ -32,7 +56,11 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
         const auto& comp_td       = type_pool.get_td(comp_type_id);
         assert(comp_td.is_scalar() && "non-scalar vector component type");
 
-        return type_prefix(comp_td) + "vec" + std::to_string(size);
+        auto prefix = type_prefix(comp_td);
+        if (!prefix.has_value())
+            return std::nullopt;
+
+        return std::string{*prefix} + "vec" + std::to_string(size);
     }
 
     if (td.is_matrix()) {
@@ -44,7 +72,11 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
         const auto& comp_td            = type_pool.get_td(comp_type_id);
         assert(comp_td.template is<FloatTD>() && "non-floating point matrix component type");
 
-        return fmt::format("{}mat{}x{}", type_prefix(comp_td), col_count, row_count);
+        auto prefix = type_prefix(comp_td);
+        if (!prefix.has_value())
+            return std::nullopt;
+
+        return fmt::format("{}mat{}x{}", *prefix, col_count, row_count);
     }
 
     if (td.is_array()) {
@@ -59,10 +91,14 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
 
             auto [elem_type_id, dim_length] = it_td->as<ArrayTD>();
 
-            it_td = &(type_pool.get_td(elem_type_id));
+            it_td = &type_pool.get_td(elem_type_id);
         } while (it_td->is_array());
 
-        return type_str(*it_td, type_pool, sym_pool) + dims_str;
+        auto partial_type_str = type_str(*it_td, type_pool, sym_pool);
+        if (!partial_type_str.has_value())
+            return std::nullopt;
+
+        return *partial_type_str + dims_str;
     }
 
     if (td.is_struct()) {
@@ -72,23 +108,11 @@ std::string type_str(const TypeDescriptor& td, const TypePool& type_pool,
         return std::string{sym_pool.get_symbol(data_ptr->name)};
     }
 
-    if (td.is_function() || td.is_method()) {
-        error("trying to get GLSL string representation for function or method type");
-        return "?";
-    }
-
-    if (td.is_builtin()) {
-        error("trying to get GLSL string representation for non-GLSL builtin type");
-        return "?";
-    }
-
-    assert(false && "missing type case in glsl code gen's type_str");
-    error("trying to get GLSL string representation for unknown type kind");
-    return "?";
+    return std::nullopt;
 }
 
-std::string decl_str(const TypeDescriptor& td, const TypePool& type_pool,
-                     const SymbolPool& sym_pool, SymbolId name) {
+std::optional<std::string> decl_str(const TypeDescriptor& td, const TypePool& type_pool,
+                                    const SymbolPool& sym_pool, SymbolId name) {
     if (td.is_array()) {
         std::string dims_str{};
         dims_str.reserve(16);
@@ -104,11 +128,18 @@ std::string decl_str(const TypeDescriptor& td, const TypePool& type_pool,
             it_td = &(type_pool.get_td(elem_type_id));
         } while (it_td->is_array());
 
-        return fmt::format("{} {}{}", type_str(*it_td, type_pool, sym_pool),
-                           sym_pool.get_symbol(name), dims_str);
+        auto type_str_result = type_str(*it_td, type_pool, sym_pool);
+        if (!type_str_result.has_value())
+            return std::nullopt;
+
+        return fmt::format("{} {}{}", *type_str_result, sym_pool.get_symbol(name), dims_str);
     }
 
-    return fmt::format("{} {}", type_str(td, type_pool, sym_pool), sym_pool.get_symbol(name));
+    auto type_str_result = type_str(td, type_pool, sym_pool);
+    if (!type_str_result.has_value())
+        return std::nullopt;
+
+    return fmt::format("{} {}", *type_str_result, sym_pool.get_symbol(name));
 }
 
 } // namespace stc::glsl

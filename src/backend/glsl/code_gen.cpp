@@ -2,6 +2,7 @@
 #include "backend/glsl/type_utils.h"
 #include "common/config.h"
 #include "common/report.h"
+#include "sir/dumper.h"
 
 #include <algorithm>
 #include <array>
@@ -97,6 +98,43 @@ void print_quals(const stc::types::DeclQualifiers& decl_quals, std::ostream& out
 
 namespace stc::glsl {
 
+void GLSLCodeGenVisitor::dump(const NodeBase& node, std::ostream& out) const {
+    SIRDumper dumper{ctx, out};
+
+    switch (ctx.config.err_dump_verbosity) {
+        case DumpVerbosity::None:
+            break;
+
+        case stc::DumpVerbosity::Verbose:
+            out << "The GLSL code generation pass does not currently support verbose error "
+                   "dumping, only partial output will be printed!\n";
+            [[fallthrough]];
+
+        case DumpVerbosity::Partial:
+            dumper.visit(ctx.calculate_node_id(node));
+            break;
+
+        default:
+            throw std::logic_error{"Unhandled DumpVerbosity case in GLSL code gen visitor's dump"};
+    }
+}
+
+void GLSLCodeGenVisitor::fail(std::string_view msg, const NodeBase& node) {
+    _success = false;
+
+    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(node.location);
+    stc::error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(node, out); });
+}
+
+void GLSLCodeGenVisitor::internal_error(std::string_view msg, const NodeBase& node) {
+    if (!_success)
+        return;
+    _success = false;
+
+    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(node.location);
+    stc::internal_error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(node, out); });
+}
+
 std::string GLSLCodeGenVisitor::indent() const {
     return stc::indent(indent_level, ctx.config.code_gen_indent, ctx.config.use_tabs);
 }
@@ -108,7 +146,13 @@ std::string GLSLCodeGenVisitor::indent() const {
 void GLSLCodeGenVisitor::visit_VarDecl(VarDecl& var_decl) {
     print_quals(ctx.get_quals(var_decl.qualifiers()), out);
 
-    out << decl_str(var_decl.type, ctx.type_pool, ctx.sym_pool, var_decl.identifier);
+    auto decl_part = decl_str(var_decl.type, ctx.type_pool, ctx.sym_pool, var_decl.identifier);
+    if (!decl_part) {
+        internal_error("failed to generate declaration code for variable", var_decl);
+        return;
+    }
+
+    out << *decl_part;
 
     if (!var_decl.initializer.is_null()) {
         out << " = ";
@@ -124,8 +168,14 @@ void GLSLCodeGenVisitor::visit_FunctionDecl(FunctionDecl& fn_decl) {
     out << indent();
     print_quals(ctx.get_quals(fn_decl.qualifiers()), out);
 
-    out << type_str(fn_decl.return_type, ctx.type_pool, ctx.sym_pool) << " "
-        << ctx.get_sym(fn_decl.identifier) << '(';
+    auto ret_type_code = type_str(fn_decl.return_type, ctx.type_pool, ctx.sym_pool);
+    if (!ret_type_code) {
+        internal_error("failed to generate code for return type of a function declaration",
+                       fn_decl);
+        return;
+    }
+
+    out << *ret_type_code << " " << ctx.get_sym(fn_decl.identifier) << '(';
 
     for (size_t i = 0; i < fn_decl.param_decls.size(); i++) {
         NodeId param_decl = fn_decl.param_decls[i];
@@ -152,7 +202,14 @@ void GLSLCodeGenVisitor::visit_FunctionDecl(FunctionDecl& fn_decl) {
 void GLSLCodeGenVisitor::visit_ParamDecl(ParamDecl& param_decl) {
     print_quals(ctx.get_quals(param_decl.qualifiers()), out);
 
-    out << decl_str(param_decl.param_type, ctx.type_pool, ctx.sym_pool, param_decl.identifier);
+    auto pdecl_code =
+        decl_str(param_decl.param_type, ctx.type_pool, ctx.sym_pool, param_decl.identifier);
+    if (!pdecl_code) {
+        internal_error("failed to generate code for a parameter declaration", param_decl);
+        return;
+    }
+
+    out << *pdecl_code;
 }
 
 void GLSLCodeGenVisitor::visit_StructDecl(StructDecl& struct_decl) {
@@ -196,7 +253,16 @@ void GLSLCodeGenVisitor::visit_FieldDecl(FieldDecl& field_decl) {
 
     print_quals(ctx.get_quals(field_decl.qualifiers()), out);
 
-    out << decl_str(field_decl.field_type, ctx.type_pool, ctx.sym_pool, field_decl.identifier);
+    auto base_decl =
+        decl_str(field_decl.field_type, ctx.type_pool, ctx.sym_pool, field_decl.identifier);
+    if (!base_decl) {
+        internal_error(
+            "failed to generate code for the base (qualifier-free) declaration of a field",
+            field_decl);
+        return;
+    }
+
+    out << *base_decl;
 }
 
 // ===============
@@ -226,14 +292,15 @@ void GLSLCodeGenVisitor::visit_FloatLiteral(FloatLiteral& float_lit) {
     FloatTD float_td = lit_td.as<FloatTD>();
 
     if (float_td.enc != FloatTD::Encoding::ieee754) {
-        error("The GLSL backend does not support non-IEEE754 floating point types");
+        fail("The GLSL backend does not support non-IEEE754 floating point types", float_lit);
         return;
     }
 
     if (float_td.width != 32 && float_td.width != 64) {
-        error(fmt::format("The GLSL backend does not support floating point types with width {} "
-                          "(allowed: 32 or 64)",
-                          float_td.width));
+        fail(fmt::format("The GLSL backend does not support floating point types with width {} "
+                         "(allowed: 32 or 64)",
+                         float_td.width),
+             float_lit);
         return;
     }
 
@@ -249,7 +316,13 @@ void GLSLCodeGenVisitor::visit_VectorLiteral(VectorLiteral& vec_lit) {
     const TypeDescriptor& td = ctx.type_pool.get_td(vec_lit.type());
     assert(td.is_vector());
 
-    out << type_str(td, ctx.type_pool, ctx.sym_pool) << '(';
+    auto vec_type = type_str(td, ctx.type_pool, ctx.sym_pool);
+    if (!vec_type) {
+        internal_error("failed to generate code for vector literal", vec_lit);
+        return;
+    }
+
+    out << *vec_type << '(';
 
     size_t n = vec_lit.components.size();
     for (size_t i = 0; i < n; i++) {
@@ -266,7 +339,13 @@ void GLSLCodeGenVisitor::visit_MatrixLiteral(MatrixLiteral& mat_lit) {
     assert(ctx.type_pool.is_type_of<MatrixTD>(mat_lit.type()) &&
            "MatrixLiteral with non-matrix type in AST");
 
-    out << type_str(mat_lit.type(), ctx.type_pool, ctx.sym_pool) << '(';
+    auto mat_type = type_str(mat_lit.type(), ctx.type_pool, ctx.sym_pool);
+    if (!mat_type) {
+        internal_error("failed to generate code for matrix literal", mat_lit);
+        return;
+    }
+
+    out << *mat_type << '(';
 
     for (size_t i = 0; i < mat_lit.data.size(); i++) {
         visit(mat_lit.data[i]);
@@ -287,7 +366,13 @@ void GLSLCodeGenVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
     assert(ctx.type_pool.is_type_of<ArrayTD>(arr_lit.type()) &&
            "ArrayLiteral with non-array type in AST");
 
-    out << type_str(arr_lit.type(), ctx.type_pool, ctx.sym_pool) << '(';
+    auto arr_type = type_str(arr_lit.type(), ctx.type_pool, ctx.sym_pool);
+    if (!arr_type) {
+        internal_error("failed to generate code for array literal", arr_lit);
+        return;
+    }
+
+    out << *arr_type << '(';
 
     assert(arr_lit.elements.size() == ctx.type_pool.get_td(arr_lit.type()).as<ArrayTD>().length &&
            "array literal with wrong # of elements not caught by sema");
@@ -326,15 +411,16 @@ void GLSLCodeGenVisitor::visit_FieldAccess(FieldAccess& acc) {
     out << ").";
 
     const auto* fdecl = ctx.get_and_dyn_cast<FieldDecl>(acc.field_decl);
-    if (fdecl == nullptr)
-        return internal_error("invalid field accessor not caught by sema");
+    if (fdecl == nullptr) {
+        internal_error("invalid field accessor not caught by sema", acc);
+        return;
+    }
 
     out << ctx.get_sym(fdecl->identifier);
 }
 
-void GLSLCodeGenVisitor::visit_ScopedExpr([[maybe_unused]] ScopedExpr& scoped_expr) {
-    error("The GLSL backend does not support scoped expressions.");
-    _success = false;
+void GLSLCodeGenVisitor::visit_ScopedExpr(ScopedExpr& scoped_expr) {
+    fail("The GLSL backend does not support scoped expressions.", scoped_expr);
 }
 
 void GLSLCodeGenVisitor::visit_UnaryOp(UnaryOp& un_op) {
@@ -362,7 +448,13 @@ void GLSLCodeGenVisitor::visit_BinaryOp(BinaryOp& bin_op) {
 }
 
 void GLSLCodeGenVisitor::visit_ExplicitCast(ExplicitCast& cast) {
-    out << type_str(cast.type(), ctx.type_pool, ctx.sym_pool) << '(';
+    auto target_type = type_str(cast.type(), ctx.type_pool, ctx.sym_pool);
+    if (!target_type) {
+        internal_error("failed to generate code for explicit cast's target type", cast);
+        return;
+    }
+
+    out << *target_type << '(';
     visit(cast.inner);
     out << ')';
 }
@@ -421,7 +513,14 @@ void GLSLCodeGenVisitor::visit_FunctionCall(FunctionCall& fn_call) {
 }
 
 void GLSLCodeGenVisitor::visit_ConstructorCall(ConstructorCall& ctor_call) {
-    out << type_str(ctor_call.type(), ctx, ctx) << '(';
+    auto ctor_base = type_str(ctor_call.type(), ctx, ctx);
+    if (!ctor_base) {
+        internal_error("failed to generate code for the base type of a constructor call",
+                       ctor_call);
+        return;
+    }
+
+    out << *ctor_base << '(';
 
     for (size_t i = 0; i < ctor_call.args.size(); i++) {
         visit(ctor_call.args[i]);
