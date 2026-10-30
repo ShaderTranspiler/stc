@@ -14,18 +14,21 @@ import argparse
 import subprocess
 import tempfile
 import shutil
+import logging
+from typing import override
 from pathlib import Path
 from enum import Enum
-
-import logging
-logger = logging.getLogger(__name__)
 
 REPORT_RE = re.compile(r"^\[(?P<file>.*):(?P<line>\d+):(?P<col>\d+)\] \[(?P<category>Error|Warning|Internal Error)\] (?P<message>.*)$")
 
 SUMMARY_PREFIX = "==>"
 
+SUBPROCESS_TIMEOUT_SEC = 30
+
 # codes that fail a test compilation (unknown non-zero error codes result in UNKNOWN)
 GLSLANG_VALIDATOR_REJECTED_CODES = [2, 3]
+
+logger = logging.getLogger(__name__)
 
 class ExitCode(Enum):
     TESTS_PASSED = 0 # all tests passed without any being skipped
@@ -41,7 +44,8 @@ class ReportType(Enum):
     WARNING = 0
     ERROR = 1
     INTERNAL_ERROR = 2
-    
+
+    @override
     def __str__(self):
         match self:
             case ReportType.WARNING:        return "Warning"
@@ -52,7 +56,15 @@ class ReportType(Enum):
 class ScriptMode(Enum):
     LENIENT = 0
     STRICT = 1
+
+    @staticmethod
+    def parse(mode: str) -> 'ScriptMode':
+        match mode:
+            case "lenient": return ScriptMode.LENIENT
+            case "strict": return ScriptMode.STRICT
+            case _: raise ValueError(f"Value '{mode}' is not a valid script mode")
     
+    @override
     def __str__(self):
         match self:
             case ScriptMode.LENIENT: return "Lenient"
@@ -69,7 +81,8 @@ class TestResult(Enum):
         if a.value < b.value:
             a, b = b, a
         return a if a in [TestResult.FAILED, TestResult.PASSED_WITH_SKIPS] else TestResult.PASSED
-    
+
+    @override
     def __str__(self):
         match self:
             case TestResult.PASSED:            return "Passed"
@@ -80,7 +93,8 @@ class TestResult(Enum):
 class ShaderStage(Enum):
     COMPUTE = 0
     FRAGMENT = 1
-    
+
+    @override
     def __str__(self):
         match self:
             case ShaderStage.COMPUTE:  return "comp"
@@ -89,10 +103,11 @@ class ShaderStage(Enum):
 
 class Report:
     def __init__(self, report_type: ReportType, line_number: int, message: str):
-        self.report_type = report_type
-        self.line_number = line_number
+        self.report_type: ReportType = report_type
+        self.line_number: int = line_number
         self.message = message
-        
+
+    @override
     def __str__(self):
         return f"{self.report_type} report for line {self.line_number} with message '{self.message}'"
 
@@ -100,20 +115,21 @@ class ExpectedReport(Report):
     def __init__(self, report_type: ReportType, line_number: int, message: str | None, expected_missing: bool):
         Report.__init__(self, report_type, line_number, "")
         self.message = message
-        self.expected_missing = expected_missing
-        
+        self.expected_missing: bool = expected_missing
+
+    @override
     def __str__(self):
         return f"Expected {self.report_type} report for line {self.line_number}{f" with message pattern '{self.message}'" if self.message is not None else ""}{", expected to fail" if self.expected_missing else ""}"
         
 class AnnotationContext:
     def __init__(self):
-        self.parsed_shader_stage_directive = False
-        self.parsed_glsl_directive = False
-        self.parsed_stc_directive = False
+        self.parsed_shader_stage_directive: bool = False
+        self.parsed_glsl_directive: bool = False
+        self.parsed_stc_directive: bool = False
         
 class FileInfo:
     def __init__(self, path: str):
-        self.path = path
+        self.path: str = path
         self.line_count: int = 0
         self.expected_reports: list[ExpectedReport] = []
         self.shader_stage: ShaderStage = ShaderStage.COMPUTE
@@ -122,7 +138,7 @@ class FileInfo:
         self.glsl_failure_pattern: str = "" # only applies when expect_glsl_failure == True
         self.expect_transpiler_failure: bool = False
         self.transpiler_failure_pattern: str = "" # only applies when expect_transpiler_failure == True
-        self.annotation_context = AnnotationContext()
+        self.annotation_context: AnnotationContext = AnnotationContext()
     
     def should_be_valid(self):
         return Path(self.path).name.startswith("valid")
@@ -130,24 +146,26 @@ class FileInfo:
 class Config:
     def __init__(self, path: str, cli: str, mode: ScriptMode, allow_internal_errors: bool, skip_message_checks: bool, tmp_dir_path: str,
                  julia_bin_dir: str | None, glslang_validator: str | None):
-        self.path = path
-        self.cli = cli
-        self.mode = mode
-        self.allow_internal_errors = allow_internal_errors
-        self.skip_message_checks = skip_message_checks
-        self.tmp_dir_path = tmp_dir_path
-        self.julia_bin_dir = julia_bin_dir
-        self.glslang_validator = glslang_validator
-        self.stc_success = False
-        
+        self.path: str = path
+        self.cli: str = cli
+        self.mode: ScriptMode = mode
+        self.allow_internal_errors: bool = allow_internal_errors
+        self.skip_message_checks: bool = skip_message_checks
+        self.tmp_dir_path: str = tmp_dir_path
+        self.julia_bin_dir: str | None = julia_bin_dir
+        self.glslang_validator: str | None = glslang_validator
+        self.stc_success: bool = False
+
     def strict(self) -> bool:
         return self.mode == ScriptMode.STRICT
 
-def parse_script_mode(mode: str) -> ScriptMode:
-    match mode:
-        case "lenient": return ScriptMode.LENIENT
-        case "strict": return ScriptMode.STRICT
-    
+def parse_subproc_output(output: bytes | str | None) -> str:
+    if isinstance(output, bytes):
+        return output.decode("utf-8", "replace").strip()
+    if isinstance(output, str):
+        return output.strip()
+    return ""
+
 # annotation syntax: <directive>[(<argument1>[, <argument2> [...]])] [:<text_argument>]
 # <directive> is defined as the substring ranging from the start of the annotation to the first '(' or ':' character
 # <text_argument> is defined as the substring ranging from the first colon to the end of the annotation (so extra colons in <text_argument> are allowed)
@@ -345,7 +363,10 @@ def parse_file(config: Config) -> FileInfo | None:
 
     # ugly, but test files are small enough for this to be fast, even using "r" instead of "rb"
     file_info.line_count = sum([1 for _ in f])
-    f.seek(0)
+    new_pos = f.seek(0)
+    if new_pos != 0:
+        logger.error("Failed to reset file stream position after reading line count")
+        return None
         
     parse_success = True
     with f:
@@ -413,14 +434,21 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
         cli_args.append(file_info.out_path)
     else:
         cli_args.append("--no-out")
-    
-    stc_proc_result = subprocess.run([config.cli, file_info.path, *cli_args], env=stc_proc_env,
-                                     stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+
+    stc_proc_result = None
+    try:
+        stc_proc_result = subprocess.run([config.cli, file_info.path, *cli_args], env=stc_proc_env, timeout=SUBPROCESS_TIMEOUT_SEC,
+                                         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired as e:
+        stderr_output = parse_subproc_output(e.stderr)
+        tail = f"see output below:\n== STC OUTPUT BEGIN ==\n{stderr_output}\n== STC OUTPUT END ==" if stderr_output != "" else "no output was captured"
+        logger.error(f"stc timed out after {e.timeout} seconds, {tail}")
+        return ExitCode.TRANSPILER_ERROR
 
     def log_error_with_stc_output(msg: str):
         logger.error(f"{msg}\nSee stc stderr output for details:")
         print(f"== STC OUTPUT BEGIN ==\n{stc_proc_result.stderr}\n== STC OUTPUT END ==", file=sys.stderr)
-    
+     
     if stc_proc_result.returncode not in [0, 1]:
         log_error_with_stc_output(f"Unexpected stc exit code: {stc_proc_result.returncode}")
         if stc_proc_result.returncode == 0xC0000135:
@@ -624,8 +652,14 @@ def validate_glsl(file_info: FileInfo, config: Config) -> TestResult | ExitCode:
         logger.info(f"{base_log} skipped (transpilation failed)")
         return TestResult.PASSED_WITH_SKIPS
     
-    proc_result = subprocess.run([config.glslang_validator, "-l", file_info.out_path], text=True, encoding="utf-8", errors="replace",
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)    
+    try:
+        proc_result = subprocess.run([config.glslang_validator, "-l", file_info.out_path], text=True, encoding="utf-8", errors="replace",
+                                     timeout=SUBPROCESS_TIMEOUT_SEC, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except subprocess.TimeoutExpired as e:
+        stdout_output = parse_subproc_output(e.stdout)
+        tail = f"see output below:\n== GLSLANG VALIDATOR OUTPUT BEGIN ==\n{stdout_output}\n== GLSLANG VALIDATOR OUTPUT END ==" if stdout_output != "" else "no output was captured"
+        logger.error(f"glslangValidator timed out after {e.timeout} seconds, {tail}")
+        return ExitCode.GLSLANG_VALIDATOR_ERROR
     
     if proc_result.returncode == 0:
         logger.info(f"{base_log} passed")
@@ -684,7 +718,7 @@ def main() -> ExitCode:
     tmp_dir = tempfile.TemporaryDirectory(prefix="conformance_output_")
     tmp_dir_path = str(Path(tmp_dir.name).resolve())
     
-    config = Config(args.path, args.cli, parse_script_mode(args.mode), args.allow_internal_errors, args.skip_message_checks,
+    config = Config(args.path, args.cli, ScriptMode.parse(args.mode), args.allow_internal_errors, args.skip_message_checks,
                     tmp_dir_path, args.julia_bin_dir, args.glslang_validator)
     
     if config.julia_bin_dir is not None:
@@ -721,7 +755,7 @@ def main() -> ExitCode:
         out_path = Path(config.tmp_dir_path) / f"out.{file_info.shader_stage}"
         file_info.out_path = str(out_path)
     
-    maybe_reports: list[Report] = collect_reports(file_info, config)
+    maybe_reports: list[Report] | ExitCode = collect_reports(file_info, config)
     if isinstance(maybe_reports, ExitCode):
         logger.error("Failed to collect transpiler reports")
         return maybe_reports
@@ -758,11 +792,8 @@ def main() -> ExitCode:
         case TestResult.FAILED:
             logger.info(f"Some tests of '{stripped_path}' failed")
             return ExitCode.TESTS_FAILED
-        case _:
-            logger.info("Unexpected test result")
-            return ExitCode.UNEXPECTED_ERROR
-    
-    assert False, "Unhandled return value from validate_reports"
+
+    logger.error("Unexpected test result")
     return ExitCode.UNEXPECTED_ERROR
 
 if __name__ == "__main__":
