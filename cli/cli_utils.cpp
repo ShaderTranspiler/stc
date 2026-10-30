@@ -8,10 +8,20 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <span>
 #include <string_view>
+
+#ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+
+    #include <errhandlingapi.h>
+#endif
 
 namespace {
 
@@ -125,7 +135,9 @@ constexpr std::array help_categories{
 
 } // namespace
 
-void stc::cli::print_help() {
+namespace stc::cli {
+
+void print_help() {
     static constexpr auto title_col = ansi_codes::cyan;
     static constexpr auto flag_col  = ansi_codes::yellow;
 
@@ -152,7 +164,7 @@ void stc::cli::print_help() {
     }
 }
 
-std::filesystem::path stc::cli::tail_from_cwd(const std::filesystem::path& p) {
+std::filesystem::path tail_from_cwd(const std::filesystem::path& p) {
     namespace fs = std::filesystem;
 
     fs::path abs = fs::absolute(p);
@@ -165,3 +177,19 @@ std::filesystem::path stc::cli::tail_from_cwd(const std::filesystem::path& p) {
 
     return abs;
 }
+
+void setup_process() {
+#ifdef _WIN32
+    // turn off Windows error message box and reporting for abort (most often invoked by asserts)
+    // failure should propagate through the exit code, not Windows-related fluff
+    // it's also better for automated tools if an assert on Windows doesn't hang the process itself
+    // until user interaction happens
+    // this would also prevent debuggers from breaking on a failing assert, so we only do this if no
+    // debugger is attached (only abort behavior affects this, not the general error mode)
+    if (IsDebuggerPresent() == FALSE)
+        _set_abort_behavior(0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+#endif
+}
+
+} // namespace stc::cli

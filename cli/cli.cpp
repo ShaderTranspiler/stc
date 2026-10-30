@@ -52,6 +52,8 @@ namespace stc::cli {
 int run(int argc, char* argv[]) {
     using namespace stc;
 
+    setup_process();
+
     if (argc < 2) {
         std::cerr << stc::colored("Not enough arguments\n", ansi_codes::red);
         std::cerr << "Usage: stc <input file> [OPTIONS]\n";

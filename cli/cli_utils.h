@@ -30,4 +30,7 @@ std::optional<T> try_parse_num(const std::string& str) {
     return std::nullopt;
 }
 
+// handles platform-specific process initializing
+void setup_process();
+
 } // namespace stc::cli
