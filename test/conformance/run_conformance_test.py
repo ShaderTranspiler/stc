@@ -19,16 +19,16 @@ from typing import override
 from pathlib import Path
 from enum import Enum
 
-REPORT_RE = re.compile(r"^\[(?P<file>.*):(?P<line>\d+):(?P<col>\d+)\] \[(?P<category>Error|Warning|Internal Error)\] (?P<message>.*)$")
+REPORT_RE: re.Pattern[str] = re.compile(r"^\[(?P<file>.*):(?P<line>\d+):(?P<col>\d+)\] \[(?P<category>Error|Warning|Internal Error)\] (?P<message>.*)$")
 
-SUMMARY_PREFIX = "==>"
+SUMMARY_PREFIX: str = "==>"
 
-SUBPROCESS_TIMEOUT_SEC = 30
+SUBPROCESS_TIMEOUT_SEC: int = 30
 
 # codes that fail a test compilation (unknown non-zero error codes result in UNKNOWN)
-GLSLANG_VALIDATOR_REJECTED_CODES = [2, 3]
+GLSLANG_VALIDATOR_REJECTED_CODES: list[int] = [2, 3]
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 class ExitCode(Enum):
     TESTS_PASSED = 0 # all tests passed without any being skipped
@@ -43,7 +43,14 @@ class ExitCode(Enum):
 class ReportType(Enum):
     WARNING = 0
     ERROR = 1
-    INTERNAL_ERROR = 2
+    INTERNAL_ERROR = 10 # reserved for collected reports, annotations should not allow them
+
+    @staticmethod
+    def parse_directive(directive: str) -> 'ReportType | None':
+        match directive:
+            case "ERROR":          return ReportType.ERROR
+            case "WARNING":        return ReportType.WARNING
+            case _:                return None
 
     @override
     def __str__(self):
@@ -53,24 +60,24 @@ class ReportType(Enum):
             case ReportType.INTERNAL_ERROR: return "Internal Error"
             case _:                         return "Unknown"
             
-class ScriptMode(Enum):
+class CheckingMode(Enum):
     LENIENT = 0
     STRICT = 1
 
     @staticmethod
-    def parse(mode: str) -> 'ScriptMode':
+    def parse(mode: str) -> 'CheckingMode':
         match mode:
-            case "lenient": return ScriptMode.LENIENT
-            case "strict": return ScriptMode.STRICT
-            case _: raise ValueError(f"Value '{mode}' is not a valid script mode")
+            case "lenient": return CheckingMode.LENIENT
+            case "strict":  return CheckingMode.STRICT
+            case _:         raise ValueError(f"Value '{mode}' is not a valid checking mode")
     
     @override
     def __str__(self):
         match self:
-            case ScriptMode.LENIENT: return "Lenient"
-            case ScriptMode.STRICT:  return "Strict"
-            case _:                  return "Unknown"
-    
+            case CheckingMode.LENIENT: return "Lenient"
+            case CheckingMode.STRICT:  return "Strict"
+            case _:                    return "Unknown"
+            
 class TestResult(Enum):
     PASSED = 0
     PASSED_WITH_SKIPS = 1
@@ -112,14 +119,17 @@ class Report:
         return f"{self.report_type} report for line {self.line_number} with message '{self.message}'"
 
 class ExpectedReport(Report):
-    def __init__(self, report_type: ReportType, line_number: int, message: str | None, expected_missing: bool):
+    def __init__(self, report_type: ReportType, line_number: int, message: str | None, expected_missing: bool, internal: bool):
+        assert report_type != ReportType.INTERNAL_ERROR, "internal error type not allowed in an expected report"
+        assert not internal or report_type == ReportType.ERROR, "internal modifier not allowed on non-error reports"
         Report.__init__(self, report_type, line_number, "")
         self.message = message
-        self.expected_missing: bool = expected_missing
+        self.missing: bool = expected_missing
+        self.internal: bool = internal
 
     @override
     def __str__(self):
-        return f"Expected {self.report_type} report for line {self.line_number}{f" with message pattern '{self.message}'" if self.message is not None else ""}{", expected to fail" if self.expected_missing else ""}"
+        return f"Expected {"internal " if self.internal else ""}{self.report_type} report for line {self.line_number}{f" with message pattern '{self.message}'" if self.message is not None else ""}{", expected to fail" if self.missing else ""}"
         
 class AnnotationContext:
     def __init__(self):
@@ -138,18 +148,19 @@ class FileInfo:
         self.glsl_failure_pattern: str = "" # only applies when expect_glsl_failure == True
         self.expect_transpiler_failure: bool = False
         self.transpiler_failure_pattern: str = "" # only applies when expect_transpiler_failure == True
+        self.expect_transpiler_internal_error: bool = False # only applies when expect_transpiler_failure == True
+        self.transpiler_failure_skipped: bool = False # set only if expect_transpiler_failure == True and transpiler_failure_pattern matched the error output 
         self.annotation_context: AnnotationContext = AnnotationContext()
     
     def should_be_valid(self):
         return Path(self.path).name.startswith("valid")
 
 class Config:
-    def __init__(self, path: str, cli: str, mode: ScriptMode, allow_internal_errors: bool, skip_message_checks: bool, tmp_dir_path: str,
+    def __init__(self, path: str, cli: str, mode: CheckingMode, skip_message_checks: bool, tmp_dir_path: str,
                  julia_bin_dir: str | None, glslang_validator: str | None):
         self.path: str = path
         self.cli: str = cli
-        self.mode: ScriptMode = mode
-        self.allow_internal_errors: bool = allow_internal_errors
+        self.mode: CheckingMode = mode
         self.skip_message_checks: bool = skip_message_checks
         self.tmp_dir_path: str = tmp_dir_path
         self.julia_bin_dir: str | None = julia_bin_dir
@@ -157,53 +168,70 @@ class Config:
         self.stc_success: bool = False
 
     def strict(self) -> bool:
-        return self.mode == ScriptMode.STRICT
+        return self.mode == CheckingMode.STRICT
 
 def parse_subproc_output(output: bytes | str | None) -> str:
     if isinstance(output, bytes):
-        return output.decode("utf-8", "replace").strip()
-    if isinstance(output, str):
-        return output.strip()
-    return ""
+        output = output.decode("utf-8", "replace")
 
-# annotation syntax: <directive>[(<argument1>[, <argument2> [...]])] [:<text_argument>]
+    return output.strip() if isinstance(output, str) else ""
+
+# annotation syntax: <directive>[(<argument1>[, <argument2> [...]])][:<text_argument>]
 # <directive> is defined as the substring ranging from the start of the annotation to the first '(' or ':' character
 # <text_argument> is defined as the substring ranging from the first colon to the end of the annotation (so extra colons in <text_argument> are allowed)
 # <directive>, <argumentN> and <text_argument> are all stripped from leading and trailing whitespace
-# supported directives (and their variants):
-#   ERROR                register an expected error report for a given line
+# supported directives (required arguments are marked with *):
+#   ERROR                  register an expected error report for a given line
 #       <arguments>:
-#           missing      the report is expected to be missing from the output, test will be skipped (can be used to mark known gaps during testing)
-#           +<n>         the report should apply to the line <n> lines below whatever line the annotation is on
-#           -<n>         the report should apply to the line <n> lines above whatever line the annotation is on
-#       <text_argument>: if provided, acts as a pattern that has to be a substring of the actual report's message for the test to pass
-#   WARNING              same as ERROR, for warning reports
-#   COMMENT              directive for leaving single-line comments in the test files (multi-line comments are currently ignored, so they don't require this)
-#       <text_argument>: the body of the comment
-#   SHADER STAGE         specify the shader stage used with glslangValidator (only affects valid files). must be used at most once per test file.
-#       <arguments>:     must be exactly one of the available options
-#           comp         compute shader (default if SHADER STAGE is not specified)
-#           frag         fragment shader
-#   GLSL                 along with the 'missing' argument, specifies that the shader is currently expected to not pass validation via glslangValidator. must be used at most once per test file.
+#           missing        the report is expected to be missing from the output, test will be skipped (can be used to mark known gaps during testing)
+#                          it is meant to patch temporary situations, where a certain error not working would turn CI red, even if it's known and fixing was deemed non-priority.
+#                          can also be used to track progress on new features, by creating the cases in advance and marking them missing. may not be used together with 'internal'.
+#           internal       the error is expected to be raised via an internal error currently, marking a test that hits an expected internal error skipped instead of failing.
+#                          similar to missing, it should mark a temporary state, where something is rejected, but not as a user error. may not be used together with 'missing'.
+#                          this marks any matching internal errors as skips for the internal error checking pass. other internal errors are still rejected so it is not equivalent
+#                          with STC(missing, internal)
+#           +<n>           the report should apply to the line <n> lines below whatever line the annotation is on
+#           -<n>           the report should apply to the line <n> lines above whatever line the annotation is on
+#       <text_argument>:   if provided, acts as a pattern that has to be a substring of the actual report's message for the test to pass (or be skipped if marked 'missing' or 'internal')
+#   INTERNAL ERROR         rewritten to ERROR(internal, <arguments>...): <text_argument>
+#   WARNING                same as ERROR, for warning reports. may not use the argument 'internal'.
+#   SHADER STAGE           specify the shader stage used with glslangValidator (only affects valid files). must be used at most once per test file.
+#       <*arguments>:      must be exactly one of the available options
+#           comp           compute shader (default if SHADER STAGE is not specified)
+#           frag           fragment shader
+#   GLSL                   along with the 'missing' argument, specifies that the shader is currently expected to not pass validation via glslangValidator. must be used at most once per test file.
 #       <arguments>:
-#           missing      must be passed with GLSL
-#       <text_argument>: if provided, can be used to specify a message pattern that has to appear as a substring of the glslangValidator output for the validation failure to be treated as skipped.
-#   STC(missing)         same as GLSL(missing) but for the transpiler. marks that an otherwise valid test file is currently expected to fail transpilation.
+#           *missing       must be passed with GLSL for readability
+#       <text_argument>:   if provided, can be used to specify a message pattern that has to appear as a substring of the glslangValidator output for the validation failure to be treated as skipped.
+#   STC                    same as GLSL(missing) but for the transpiler. marks that an otherwise valid test file is currently expected to fail transpilation. internal error checks and report validation
+#                          is still performed on the transpiler output (since ERROR is not allowed in a valid file, this effectively means WARNING checks).
+#       <arguments>:
+#           *missing       must be passed with STC for readability
+#           internal       specifies that stc is expected to fail with an internal error and that internal error checks should be skipped. unlike ERROR, it can and must be used together with 'missing'.
+#   COMMENT                directive for leaving single-line comments in the test files (multi-line comments are currently ignored, so they don't require this)
+#       <*text_argument>:  the body of the comment
+#   NOTE: <*text_argument> rewritten to COMMENT: <text_argument>
+#   TODO: <*text_argument> rewritten to COMMENT: <text_argument>
 def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str) -> bool:
     def log_error(msg: str, hint: str | None = None) -> bool:
         hint_tail = f"\n  Hint: {hint}" if hint is not None else ""
         logger.error(f"Malformed annotation on line {line_number}: '{raw_annotation}'\n  Why: {msg}{hint_tail}")
         return False
+
+    def get_not_a_valid_arg_message(arg: str, directive: str):
+        return f"'{arg}' is not a valid argument for the '{directive}' directive"
+
+    SYNTAX_HINT = "Annotation syntax: <directive>[(argument1[, argument2[...]])][: <text_argument>]"
         
     if raw_annotation == "":
-        return log_error("Empty annotation", "Single line comments are reserved for annotations in test files")
+        return log_error("Empty annotation", "Single line comments are reserved for annotations in test files.")
     
     colon_pos = raw_annotation.find(":")
     
     open_paren_pos = raw_annotation.find("(", 0, colon_pos if colon_pos != -1 else len(raw_annotation))
     close_paren_pos = raw_annotation.find(")", open_paren_pos) if open_paren_pos != -1 else -1
     if open_paren_pos != -1 and close_paren_pos == -1:
-        return log_error("Opening parenthesis for annotation argument list doesn't have a matching closing parenthesis")
+        return log_error("Opening parenthesis for annotation argument list doesn't have a matching closing parenthesis", SYNTAX_HINT)
     
     assert open_paren_pos == close_paren_pos == -1 or open_paren_pos < close_paren_pos
     assert open_paren_pos + 1 < len(raw_annotation)
@@ -213,11 +241,11 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
             assert close_paren_pos < colon_pos
             maybe_junk = raw_annotation[close_paren_pos + 1:colon_pos].strip()
             if maybe_junk != "":
-                return log_error(f"Unexpected text found between argument list and text argument: '{maybe_junk}'", "Only whitespace is allowed between the argument list closing ')' and text argument opening ':' characters")
+                return log_error(f"Unexpected text found between argument list and text argument: '{maybe_junk}'", f"Only whitespace is allowed between the argument list closing ')' and text argument opening ':' characters\n{SYNTAX_HINT}")
         elif close_paren_pos + 1 < len(raw_annotation):
             tail = raw_annotation[close_paren_pos + 1:].strip()
             if tail != "":
-                return log_error(f"Unexpected text found after argument list: '{tail}'", f"Only whitespace is allowed after the argument list closing ')' character, unless a text argument is also provided.")
+                return log_error(f"Unexpected text found after argument list: '{tail}'", f"Only whitespace is allowed after the argument list closing ')' character, unless a text argument is also provided.\n{SYNTAX_HINT}")
          
     directive = raw_annotation[:open_paren_pos] if open_paren_pos != -1 else raw_annotation[:colon_pos] if colon_pos != -1 else raw_annotation    
     directive = directive.strip()
@@ -228,19 +256,28 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
     text_arg = raw_annotation[colon_pos + 1:] if colon_pos != -1 and colon_pos + 1 < len(raw_annotation) else ""
     text_arg = text_arg.strip()
 
+    if directive == "INTERNAL ERROR":
+        directive = "ERROR"
+        args.insert(0, "internal")
+
+    if directive in ["TODO", "NOTE"]:
+        directive = "COMMENT"
+
     # TODO: deduplicate code
-    DIRECTIVE_LIST = ["ERROR", "WARNING", "COMMENT", "SHADER STAGE", "GLSL", "STC"]
+    DIRECTIVE_LIST = ["ERROR", "INTERNAL ERROR", "WARNING", "SHADER STAGE", "GLSL", "STC", "COMMENT"]
     match directive:
         case "ERROR" | "WARNING":
-            if directive == "ERROR" and file_info.should_be_valid():
-                return log_error("ERROR directive not allowed in files containing the prefix 'valid', since their transpilation should be successful.")
-            
-            report_type = ReportType.ERROR if directive == "ERROR" else ReportType.WARNING
+            report_type = ReportType.parse_directive(directive)
+            assert report_type is not None
+
+            if report_type == ReportType.ERROR and file_info.should_be_valid():
+                return log_error(f"'{directive}' directive not allowed in files containing the prefix 'valid', since their transpilation should be successful.")
             
             offset = 0
             found_offset = False
             
             missing = False
+            internal = False
 
             for arg in args:
                 if arg.startswith("+") or arg.startswith("-"):
@@ -257,8 +294,18 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
                     if missing:
                         logger.warning(f"Multiple 'missing' arguments passed to '{directive}' directive on line {line_number}")
                     missing = True
+                elif arg == "internal":
+                    if report_type != ReportType.ERROR:
+                        return log_error(get_not_a_valid_arg_message(arg, directive), "'internal' may only be used with the 'ERROR' and 'STC' directives.")
+                    if internal:
+                        logger.warning(f"Multiple 'internal' arguments passed to '{directive}' directive on line {line_number}")
+                    internal = True
                 else:
-                    return log_error(f"'{arg}' is not a valid argument for the '{directive}' directive")
+                    return log_error(get_not_a_valid_arg_message(arg, directive))
+
+            if missing and internal:
+                return log_error(f"Report marked 'missing' is also marked 'internal'.",
+                                 "'missing' and 'internal' are mutually exclusive arguments, since an internal error should never be desired in the future.")
                 
             report_line_number = line_number + offset
             if report_line_number < 1 or report_line_number > file_info.line_count:
@@ -266,14 +313,15 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
                 return log_error(f"Offset points outside the valid line number range (which is [1-{file_info.line_count}]) with {line_number} {add_offset_str} = {report_line_number}")
             
             report_message = text_arg if text_arg != "" else None
-            
-            file_info.expected_reports.append(ExpectedReport(report_type, report_line_number, report_message, missing))
+
+            assert not internal or report_type == ReportType.ERROR
+            file_info.expected_reports.append(ExpectedReport(report_type, report_line_number, report_message, missing, internal))
         
         case "COMMENT":
             if len(args) != 0:
-                return log_error(f"Arguments passed to '{directive}' directive")
+                return log_error(f"Arguments passed to '{directive}' directive", "'COMMENT' annotations take their body as the text argument")
             if text_arg == "":
-                logger.warning(f"'{directive}' directive without a text argument on line {line_number}")
+                return log_error(f"'{directive}' directive without a text argument on line {line_number}", "'COMMENT' annotations require a text argument: the comment body")
         
         case "SHADER STAGE":
             if file_info.annotation_context.parsed_shader_stage_directive:
@@ -287,19 +335,17 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
             if text_arg != "":
                 return log_error(f"Text argument passed to 'SHADER STAGE' directive.")
             
-            if len(args) == 0:
-                return log_error(f"No arguments provided to 'SHADER STAGE' directive, expected 1.")
-            
-            if len(args) > 1:
-                return log_error(f"Multiple arguments provided to 'SHADER STAGE' directive, expected 1.")
+            if len(args) != 1:
+                return log_error(f"Invalid argument count in 'SHADER STAGE' directive.", "'SHADER STAGE' expects exactly one argument, which must always be provided.")
 
-            if args[0] == "comp":
+            arg = args[0]
+            if arg == "comp":
                 file_info.shader_stage = ShaderStage.COMPUTE
-            elif args[0] == "frag":
+            elif arg == "frag":
                 file_info.shader_stage = ShaderStage.FRAGMENT
             else:
-                return log_error(f"'{args[0]}' is not a valid argument for the 'SHADER STAGE' directive.", "Supported shader stages are: comp and frag")
-            
+                return log_error(get_not_a_valid_arg_message(arg, directive), "Supported arguments are 'comp' and 'frag'.")
+                
         case "GLSL":
             if file_info.annotation_context.parsed_glsl_directive:
                 return log_error(f"Multiple annotations with 'GLSL' directive.", "'GLSL' must be specified at most once per test file.")
@@ -310,7 +356,7 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
                                "  Hint: Files that are expected to transpile without error (and can thus be GLSL validated) should be marked by prefixing their name with 'valid'.")
                         
             if len(args) != 1 or args[0] != "missing":
-                return log_error(f"Invalid argument(s) provided to 'GLSL' directive.", "The 'GLSL' directive's only supported argument is 'missing', which must always be used.")
+                return log_error(f"Invalid arguments in 'GLSL' directive.", "The 'GLSL' directive's only supported argument is 'missing', which must always be used.")
 
             file_info.expect_glsl_failure = True
             file_info.glsl_failure_pattern = text_arg
@@ -323,22 +369,37 @@ def parse_annotation(file_info: FileInfo, line_number: int, raw_annotation: str)
             if not file_info.should_be_valid():
                 logger.warning("'STC' directive will not have any effect in non-valid file.\n" +
                                "  Hint: Files that are normally expected to transpile without error should be marked by prefixing their name with 'valid'.")
-                        
-            if len(args) != 1 or args[0] != "missing":
-                return log_error(f"Invalid argument(s) provided to 'STC' directive.", "The 'STC' directive's only supported argument is 'missing', which must always be used.")
 
+            internal = False
+            missing = False
+            for arg in args:
+                if arg == "internal":
+                    if internal:
+                        logger.warning("Multiple 'internal' arguments passed to 'STC' directive")
+                    internal = True
+                elif arg == "missing":
+                    if missing:
+                        logger.warning("Multiple 'missing' arguments passed to 'STC' directive")
+                    missing = True
+                else:
+                    return log_error(get_not_a_valid_arg_message(arg, directive))
+
+            if not missing:
+                return log_error(f"'missing' not provided to 'STC' directive.", "The 'STC' directive must always be passed the 'missing' argument for readability.")
+                
             file_info.expect_transpiler_failure = True
+            file_info.expect_transpiler_internal_error = internal
             file_info.transpiler_failure_pattern = text_arg
-           
+               
         case _:
             hint = None
             for valid_directive in DIRECTIVE_LIST:
                 if directive.startswith(valid_directive):
-                    hint = f"It looks like you're missing a separator after (or mistyped) the directive '{valid_directive}'."
+                    hint = f"It looks like you're missing a separator after (or you mistyped) the directive '{valid_directive}'."
                     break
             
             if hint is None and directive.find(" ") != -1 and colon_pos == -1 and open_paren_pos == -1 and close_paren_pos == -1:
-                hint = f"This does not look like an annotation at all. Single-line comments are reserved for annotations in test files, use a multi-line comment or the COMMENT directive."
+                hint = f"This does not look like an annotation at all. You may be missing the text argument separator colon. Single-line comments are reserved for annotations in test files, use a multi-line comment or the COMMENT directive.\n{SYNTAX_HINT}\n"
 
             supported_directive_hint = f"Supported directives are {', '.join(DIRECTIVE_LIST[:-1])} and {DIRECTIVE_LIST[-1]}."
             if hint is None:
@@ -385,7 +446,7 @@ def parse_file(config: Config) -> FileInfo | None:
         return None
     
     if not file_info.should_be_valid() and not any([rep.report_type == ReportType.ERROR for rep in file_info.expected_reports]):
-        logger.error("A non-valid test file (i.e. filename not starting with the prefix 'valid') should have at least one ERROR directive in its annotations.")
+        logger.error("A non-valid test file (i.e. filename not starting with the prefix 'valid') should have at least one 'ERROR' directive in its annotations.")
         return None
             
     return file_info
@@ -420,7 +481,7 @@ def try_parse_report(line: str) -> Report | None:
         
 def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitCode:
     should_be_valid = file_info.should_be_valid()
-    only_expects_missing_errors = all([rep.expected_missing for rep in file_info.expected_reports if rep.report_type == ReportType.ERROR])
+    only_expects_missing_errors = all([rep.missing for rep in file_info.expected_reports if rep.report_type == ReportType.ERROR])
     
     stc_proc_env = os.environ.copy()
     stc_proc_env["NO_COLOR"] = "1"
@@ -448,7 +509,7 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
     def log_error_with_stc_output(msg: str):
         logger.error(f"{msg}\nSee stc stderr output for details:")
         print(f"== STC OUTPUT BEGIN ==\n{stc_proc_result.stderr}\n== STC OUTPUT END ==", file=sys.stderr)
-     
+
     if stc_proc_result.returncode not in [0, 1]:
         log_error_with_stc_output(f"Unexpected stc exit code: {stc_proc_result.returncode}")
         if stc_proc_result.returncode == 0xC0000135:
@@ -458,7 +519,7 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
     collected_error_reports = False
     reports: list[Report] = []
     for line in stc_proc_result.stderr.splitlines():
-        if line.startswith("[Internal Error]"): # --allow-internal-errors does not affect this, since this is specifically for internal errors with no source location info
+        if line.startswith("[Internal Error]"): # STC(missing, internal) does not affect this, since this is specifically for catching internal errors without source location info
             log_error_with_stc_output("Internal error without source location information in transpiler output")
             return ExitCode.TESTS_FAILED
         
@@ -471,13 +532,14 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
     if stc_proc_result.returncode == 0:
         config.stc_success = True
     
-    # TODO: separate these check from report collection (and use TestResult instead of ExitCode)
+    # TODO: separate these checks from report collection (and use TestResult instead of ExitCode)
     if should_be_valid:
         base_log = "Check that file named 'valid*' transpiles successfully ---"
         if stc_proc_result.returncode != 0:
             if file_info.expect_transpiler_failure:
                 if file_info.transpiler_failure_pattern == "" or stc_proc_result.stderr.find(file_info.transpiler_failure_pattern) != -1:
                     logger.info(f"{base_log} skipped (marked missing)")
+                    file_info.transpiler_failure_skipped = True
                 else:
                     logger.error(f"{base_log} failed (marked missing, but output did not match the provided pattern)")
                     return ExitCode.TESTS_FAILED
@@ -501,7 +563,7 @@ def collect_reports(file_info: FileInfo, config: Config) -> list[Report] | ExitC
             if expected.report_type != ReportType.ERROR:
                 continue
 
-            assert expected.expected_missing
+            assert expected.missing or expected.internal
             if report_matches(expected, actual, config):
                 missing_case_hit = True
                 break
@@ -525,30 +587,47 @@ def report_matches(expected: ExpectedReport, actual: Report, config: Config) -> 
         return False
 
     message_check = config.skip_message_checks or expected.message is None or actual.message.find(expected.message) != -1
-    report_type_check = expected.report_type == actual.report_type or (config.allow_internal_errors and expected.report_type == ReportType.ERROR and actual.report_type == ReportType.INTERNAL_ERROR)
+
+    report_type_check = expected.report_type == actual.report_type
+    if not report_type_check and expected.internal:
+        assert expected.report_type == ReportType.ERROR
+        report_type_check = actual.report_type == ReportType.INTERNAL_ERROR
+
     return message_check and report_type_check
 
 def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: Config) -> TestResult:
     expected_reports = file_info.expected_reports
     
     # validation is done "inefficiently", in several passes, to allow all errors to be printed at once in case of failure
-    # it also assumed that actual and expected report count is small enough for O(n*m) to not matter here
+    # it's also assumed that actual and expected report count is small enough for repeated O(n*m) comparisons to not matter here
     
     used_skips = False
     
     internal_errors_check = True
     internal_used_skips = False
-    for actual in actual_reports:
-        if actual.report_type == ReportType.INTERNAL_ERROR:
-            base_log = f"Internal error on line {actual.line_number} ---"
-            if not config.allow_internal_errors:
-                logger.error(f"{base_log} fail")
-                internal_errors_check = False
-            else:
-                logger.debug(f"{base_log} ignored")
-                internal_used_skips = True
-                used_skips = True
-    
+    if not file_info.expect_transpiler_internal_error:
+        for actual in actual_reports:
+            if actual.report_type == ReportType.INTERNAL_ERROR:
+                base_log = f"Internal error on line {actual.line_number} ---"
+                any_expected_matches = False
+                for expected in expected_reports:
+                    if report_matches(expected, actual, config):
+                        any_expected_matches = True
+                        break
+
+                if not any_expected_matches:
+                    logger.error(f"{base_log} failed")
+                    internal_errors_check = False
+                else:
+                    logger.info(f"{base_log} skipped (marked expected)")
+                    internal_used_skips = True
+                    used_skips = True
+    else:
+        had_internal_errors = any(rep.report_type == ReportType.INTERNAL_ERROR for rep in actual_reports)
+        if file_info.transpiler_failure_skipped and not had_internal_errors:
+            logger.warning("Transpilation produced no internal errors, but test file was marked as expecting to fail transpilation with internal errors (STC(missing, internal)).")
+        internal_used_skips = had_internal_errors
+
     if internal_errors_check:
         logger.info(f"{SUMMARY_PREFIX} Internal error checks passed{" (with skips)" if internal_used_skips else ""}")
     else:
@@ -564,22 +643,26 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
             base_log = f"Case: any {expected.report_type.__str__().lower()} on line {expected.line_number} ---" 
 
         same_line_reports: list[Report] = []
-        found = False
+        matched: Report | None = None
         for actual in actual_reports:
             if expected.line_number == actual.line_number:
                 if report_matches(expected, actual, config):
-                    found = True
-                    break
+                    matched = actual
+                    # if multiple reports match, we try to find the closest one, i.e. internal for internal, anything else for others
+                    if expected.internal == (actual.report_type == ReportType.INTERNAL_ERROR):
+                        break
                 
                 same_line_reports.append(actual)
 
-        if found:
+        if matched is not None:
             logger.info(f"{base_log} passed")
-            if expected.expected_missing:
-                logger.warning(f"Previous case was marked as an expected failure (annotated with the 'missing' argument), but a matching report was found.")
+            if expected.missing:
+                logger.warning(f"Previous case was marked as an expected failure (marked 'missing'), but a matching report was found.")
+            if expected.internal and matched.report_type != ReportType.INTERNAL_ERROR:
+                logger.warning(f"Previous case was marked as an expected internal error (marked 'internal'), but the matching report is not an internal error.")
             continue
         
-        if expected.expected_missing:
+        if expected.missing:
             logger.info(f"{base_log} skipped (marked missing)")
             used_skips = True
             lenient_used_skips = True
@@ -601,9 +684,10 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
     logger.info("")
     
     strict_check = True
-    if config.strict():
-        # we do an extra iteration here to report failures properly, a simple success = success and len(actual_reports) == len(expected_reports) would suffice otherwise
-        
+    # if a valid file's transpilation failed but was expected (i.e. resulted in a skip), error messages cannot be matched
+    # because ERROR directives are not allowed in valid test files. in this case we skip strict checks, to stop a skipped
+    # transpiler failure propagating into an actual test failure in strict mode
+    if config.strict() and not file_info.transpiler_failure_skipped:
         for actual in actual_reports:
             found = False
             base_log = f"[line {actual.line_number}] [{actual.report_type}] {actual.message} ---"
@@ -623,20 +707,13 @@ def validate_reports(file_info: FileInfo, actual_reports: list[Report], config: 
             logger.info(f"{SUMMARY_PREFIX} Strict checks passed")
         else:
             logger.error(f"{SUMMARY_PREFIX} Strict checks failed")
-    else:
-        logger.info(f"{SUMMARY_PREFIX} Strict checks skipped")
+    elif file_info.transpiler_failure_skipped:
+        logger.info(f"{SUMMARY_PREFIX} Strict checks skipped (expected transpiler failure)")
+        used_skips = True
     logger.info("")
-    
-    if not internal_errors_check:
-        assert not config.allow_internal_errors
-        add_partially = not lenient_check or not strict_check
-        logger.info(f"Test failed{" partially" if add_partially else ""} because internal error report(s) were generated, run with --allow-internal-errors to treat these as regular errors for a temporary workaround")        
-    
+
     result = TestResult.PASSED if internal_errors_check and lenient_check and strict_check else TestResult.FAILED
-    if result == TestResult.PASSED and used_skips:
-        result = TestResult.PASSED_WITH_SKIPS
-    
-    return result
+    return TestResult.PASSED_WITH_SKIPS if result == TestResult.PASSED and used_skips else result
 
 def validate_glsl(file_info: FileInfo, config: Config) -> TestResult | ExitCode:
     # only valid shaders can be GLSL validated
@@ -708,7 +785,6 @@ def main() -> ExitCode:
     arg_parser.add_argument("--mode", choices=("strict", "lenient"), default="lenient", help="lenient mode requires all report annotations to have a matching report generated to pass, strict mode additionally requires all error reports to have a matching report annotation as well (default: lenient)")
     arg_parser.add_argument("--julia-bin-dir", help="path of the installed Julia runtime's bin directory, prepended to the PATH of the subprocess' environment that runs stc (should only be needed on Windows)")
     arg_parser.add_argument("--glslang-validator", help="path of the installed glslangValidator executable, which should be used for running the GLSL validation tests (default: try to find through PATH)")
-    arg_parser.add_argument("--allow-internal-errors", action="store_true", help="if enabled, internal error reports will be treated as regular errors when trying to match them to report annotations")
     arg_parser.add_argument("--skip-message-checks", action="store_true", help="if enabled, message pattern checks will pass unconditionally")
     arg_parser.add_argument("--verbose", action="store_true", help="print DEBUG messages too")
     args = arg_parser.parse_args()
@@ -718,7 +794,7 @@ def main() -> ExitCode:
     tmp_dir = tempfile.TemporaryDirectory(prefix="conformance_output_")
     tmp_dir_path = str(Path(tmp_dir.name).resolve())
     
-    config = Config(args.path, args.cli, ScriptMode.parse(args.mode), args.allow_internal_errors, args.skip_message_checks,
+    config = Config(args.path, args.cli, CheckingMode.parse(args.mode), args.skip_message_checks,
                     tmp_dir_path, args.julia_bin_dir, args.glslang_validator)
     
     if config.julia_bin_dir is not None:
