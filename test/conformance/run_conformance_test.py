@@ -24,7 +24,7 @@ REPORT_RE: re.Pattern[str] = re.compile(r"^\[(?P<file>.*):(?P<line>\d+):(?P<col>
 
 SUMMARY_PREFIX: str = "==>"
 
-SUBPROCESS_TIMEOUT_SEC: int = 30
+SUBPROCESS_TIMEOUT_SEC: int = 15
 
 # codes that fail a test compilation (unknown non-zero error codes result in UNKNOWN)
 GLSLANG_VALIDATOR_REJECTED_CODES: list[int] = [2, 3]
@@ -34,7 +34,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 class ExitCode(Enum):
     TESTS_PASSED = 0 # all tests passed without any being skipped
     TESTS_FAILED = 1 # at least one test failed, and was not marked for skipping
-    ARGS_MALFORMED = 2 # baked into argparse, non-modifiable
+    ARGS_MALFORMED = 2 # baked into argparse, non-modifiable (also used for runner-level errors for the provided arguments)
     TESTS_MALFORMED = 3 # the format of the test file, or its annotations is invalid
     TRANSPILER_ERROR = 4 # encountered an unexpected transpiler-side error
     UNEXPECTED_ERROR = 5 # catch-all for any other internal error of the script
@@ -136,7 +136,7 @@ class AnnotationContext:
     def __init__(self):
         self.parsed_shader_stage_directive: bool = False
         self.parsed_glsl_directive: bool = False
-        self.parsed_stc_directive: bool = False        
+        self.parsed_stc_directive: bool = False
         
 class TestContext:
     def __init__(self, path: str):
@@ -624,6 +624,9 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
         logger.debug(f"Running '{" ".join(subproc_args)}'")
         stc_proc_result = subprocess.run(subproc_args, env=stc_proc_env, timeout=SUBPROCESS_TIMEOUT_SEC,
                                          stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    except OSError as e:
+        logger.error(f"Failed to run transpiler CLI using the provided path: '{config.cli}':\n{e}")
+        return ExitCode.ARGS_MALFORMED
     except subprocess.TimeoutExpired as e:
         stderr_output = parse_subproc_output(e.stderr)
         tail = f"see output below:\n== STC OUTPUT BEGIN ==\n{stderr_output}\n== STC OUTPUT END ==" if stderr_output != "" else "no output was captured"
@@ -631,8 +634,9 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
         return ExitCode.TRANSPILER_ERROR
 
     def log_error_with_stc_output(msg: str):
-        logger.error(f"{msg}\nSee stc stderr output for details:")
-        print(f"== STC OUTPUT BEGIN ==\n{stc_proc_result.stderr}\n== STC OUTPUT END ==", file=sys.stderr)
+        logger.error(msg)
+        logger.debug("See stc stderr output for details:")
+        logger.debug(f"== STC OUTPUT BEGIN ==\n{stc_proc_result.stderr}\n== STC OUTPUT END ==")
 
     if stc_proc_result.returncode not in [0, 1]:
         log_error_with_stc_output(f"Unexpected stc exit code: {stc_proc_result.returncode}")
@@ -665,10 +669,10 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
                     logger.info(f"{base_log} skipped (marked missing)")
                     test_context.transpiler_failure_skipped = True
                 else:
-                    logger.error(f"{base_log} failed (marked missing, but output did not match the provided pattern)")
+                    log_error_with_stc_output(f"{base_log} failed (marked missing, but output did not match the provided pattern)")
                     return ExitCode.TESTS_FAILED
             else:
-                logger.error(f"{base_log} failed")
+                log_error_with_stc_output(f"{base_log} failed")
                 return ExitCode.TESTS_FAILED
         else:
             if test_context.expect_transpiler_failure:
@@ -693,7 +697,7 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
                 break
             
         if not missing_case_hit:
-            logger.error(f"Transpilation failed (with exit code {stc_proc_result.returncode}) for test file containing only missing ERROR directives, but none of them were the reason for failure.")
+            log_error_with_stc_output(f"Transpilation failed (with exit code {stc_proc_result.returncode}) for test file containing only missing ERROR directives, but none of them were the reason for failure.")
             return ExitCode.TESTS_FAILED
 
     if collected_error_reports and stc_proc_result.returncode == 0:
@@ -845,6 +849,9 @@ def validate_glsl(test_context: TestContext, config: Config) -> TestResult | Exi
         logger.debug(f"Running '{" ".join(subproc_args)}'")
         proc_result = subprocess.run(subproc_args, text=True, encoding="utf-8", errors="replace",
                                      timeout=SUBPROCESS_TIMEOUT_SEC, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except OSError as e:
+        logger.error(f"Failed to run glslangValidator using the provided path: '{config.glslang_validator}':\n{e}")
+        return ExitCode.ARGS_MALFORMED
     except subprocess.TimeoutExpired as e:
         stdout_output = parse_subproc_output(e.stdout)
         tail = f"see output below:\n== GLSLANG VALIDATOR OUTPUT BEGIN ==\n{stdout_output}\n== GLSLANG VALIDATOR OUTPUT END ==" if stdout_output != "" else "no output was captured"
