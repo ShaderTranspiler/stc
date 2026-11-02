@@ -1,6 +1,5 @@
-# TODO: uncomment after OUTPUT directive has been implemented
-# COMMENT: OUTPUT: x_0
-# COMMENT: OUTPUT: x_1
+# OUTPUT: x_0
+# OUTPUT: x_1
 
 global x::Int32 = 0
 
