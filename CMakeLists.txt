@@ -498,8 +498,9 @@ if (STC_BUILD_TESTS)
 
             add_test(NAME "conformance/${test_name}"
                      COMMAND ${Python3_EXECUTABLE} "${CONFORMANCE_DIR}/run_conformance_test.py"
-                             --path "${file}" --cli $<TARGET_FILE:${CLI_TARGET}> --verbose
-                             ${CONFORMANCE_EXTRA_ARGS})
+                     --path "${file}" --cli $<TARGET_FILE:${CLI_TARGET}>
+                     --verbose --fail-on-stale
+                     ${CONFORMANCE_EXTRA_ARGS})
             set_tests_properties("conformance/${test_name}" PROPERTIES LABELS conformance SKIP_RETURN_CODE 77)
         endforeach()
     else()

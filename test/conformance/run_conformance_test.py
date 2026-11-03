@@ -39,7 +39,21 @@ class ExitCode(Enum):
     TRANSPILER_ERROR = 4 # encountered an unexpected transpiler-side error
     UNEXPECTED_ERROR = 5 # catch-all for any other internal error of the script
     GLSLANG_VALIDATOR_ERROR = 6 # unknown errors coming from glslangValidator
+    TESTS_STALE = 7 # tests have stale annotations, and --fail-on-stale was passed
     TESTS_PASSED_WITH_SKIPS = 77 # tests passed, but some were skipped (e.g. because they were marked missing in the test file)
+
+    def __str__(self) -> str:
+        match self:
+            case ExitCode.TESTS_PASSED:            return "tests passed"
+            case ExitCode.TESTS_FAILED:            return "tests failed"
+            case ExitCode.ARGS_MALFORMED:          return "malformed arguments"
+            case ExitCode.TESTS_MALFORMED:         return "malformed tests"
+            case ExitCode.TRANSPILER_ERROR:        return "transpiler error"
+            case ExitCode.UNEXPECTED_ERROR:        return "unexpected error"
+            case ExitCode.GLSLANG_VALIDATOR_ERROR: return "glslangValidator error"
+            case ExitCode.TESTS_STALE:             return "stale tests"
+            case ExitCode.TESTS_PASSED_WITH_SKIPS: return "tests passed with skips"
+            case _:                                return "unknown exit code"
 
 class ReportType(Enum):
     WARNING = 0
@@ -169,6 +183,7 @@ class TestContext:
         self.pre_eval_block: tuple[int, int] = (0, 0) # (start line, end line), if either component is zero ==> no valid pre eval block in file
         self.stc_success: bool = False
         self.skip_all: bool = False
+        self.has_stale: bool = False
     
     def should_be_valid(self):
         return Path(self.path).name.startswith("valid")
@@ -181,18 +196,31 @@ class TestContext:
 
 class Config:
     def __init__(self, path: str, cli: str, mode: CheckingMode, skip_message_checks: bool, tmp_dir_path: Path,
-                 julia_bin_dir: str | None, glslang_validator: str | None):
+                 fail_on_stale: bool, julia_bin_dir: str | None, glslang_validator: str | None):
         self.path: str = path
         self.cli: str = cli
         self.mode: CheckingMode = mode
         self.skip_message_checks: bool = skip_message_checks
         self.tmp_dir_path: Path = tmp_dir_path
+        self.fail_on_stale: bool = fail_on_stale
         self.julia_bin_dir: str | None = julia_bin_dir
         self.glslang_validator: str | None = glslang_validator
         
     def strict(self) -> bool:
         return self.mode == CheckingMode.STRICT
 
+# prefix warnings by [WARNING] so that they're grep-able in output
+class LogFormatter(logging.Formatter):
+    @override
+    def format(self, record: logging.LogRecord) -> str:
+        message = super().format(record)
+        return f"[WARNING] {message}" if record.levelno == logging.WARNING else message
+
+# log [STALE] issues, which usually indicate a temporary annotation no longer applies
+def handle_stale(message: str, config: Config, test_context: TestContext) -> None:
+    test_context.has_stale = True
+    logger.log(logging.ERROR if config.fail_on_stale else logging.WARNING, f"[STALE] {message}")
+    
 def parse_subproc_output(output: bytes | str | None) -> str:
     if isinstance(output, bytes):
         output = output.decode("utf-8", "replace")
@@ -756,7 +784,7 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
                 return ExitCode.TESTS_FAILED
         else:
             if test_context.expect_transpiler_failure:
-                logger.warning(f"Transpilation was marked as an expected failure (annotated with 'STC(missing)'), but stc reported no errors.")
+                handle_stale(f"Transpilation was marked as an expected failure (annotated with 'STC(missing)'), but stc reported no errors.", config, test_context)
             logger.info(f"{base_log} passed")
     
     if not should_be_valid and not only_expects_missing_errors and stc_proc_result.returncode == 0:
@@ -820,7 +848,7 @@ def validate_reports(test_context: TestContext, actual_reports: list[Report], co
     else:
         had_internal_errors = any(rep.report_type == ReportType.INTERNAL_ERROR for rep in actual_reports)
         if test_context.transpiler_failure_skipped and not had_internal_errors:
-            logger.warning("Transpilation produced no internal errors, but test file was marked as expecting to fail transpilation with internal errors (STC(missing, internal)).")
+            handle_stale("Transpilation produced no internal errors, but test file was marked as expecting to fail transpilation with internal errors (STC(missing, internal)).", config, test_context)
         internal_used_skips = had_internal_errors
 
     if internal_errors_check:
@@ -852,9 +880,9 @@ def validate_reports(test_context: TestContext, actual_reports: list[Report], co
         if matched is not None:
             logger.info(f"{base_log} passed")
             if expected.missing:
-                logger.warning(f"Previous case was marked as an expected failure (marked 'missing'), but a matching report was found.")
+                handle_stale(f"Previous case was marked as an expected failure (marked 'missing'), but a matching report was found.", config, test_context)
             if expected.internal and matched.report_type != ReportType.INTERNAL_ERROR:
-                logger.warning(f"Previous case was marked as an expected internal error (marked 'internal'), but the matching report is not an internal error.")
+                handle_stale(f"Previous case was marked as an expected internal error (marked 'internal'), but the matching report is not an internal error.", config, test_context)
             continue
         
         if expected.missing:
@@ -910,7 +938,7 @@ def validate_reports(test_context: TestContext, actual_reports: list[Report], co
     result = TestResult.PASSED if internal_errors_check and lenient_check and strict_check else TestResult.FAILED
     return TestResult.PASSED_WITH_SKIPS if result == TestResult.PASSED and used_skips else result
 
-def validate_output(test_context: TestContext) -> TestResult | ExitCode:
+def validate_output(test_context: TestContext, config: Config) -> TestResult | ExitCode:
     result = TestResult.PASSED
 
     assert len(test_context.expected_outputs) > 0
@@ -942,7 +970,7 @@ def validate_output(test_context: TestContext) -> TestResult | ExitCode:
         if matches:
             logger.info(f"{base_log} passed")
             if expected.missing:
-                logger.warning(f"Previous case was marked as an expected failure (marked 'missing'), but a matching output snippet was found.")
+                handle_stale(f"Previous case was marked as an expected failure (marked 'missing'), but a matching output snippet was found.", config, test_context)
             continue
 
         if expected.missing:
@@ -987,7 +1015,7 @@ def validate_glsl(test_context: TestContext, config: Config) -> TestResult | Exi
     if proc_result.returncode == 0:
         logger.info(f"{base_log} passed")
         if test_context.expect_glsl_failure:
-            logger.warning(f"GLSL validation was marked as an expected failure (annotated with 'GLSL(missing)'), but glslangValidator reported no errors.")
+            handle_stale(f"GLSL validation was marked as an expected failure (annotated with 'GLSL(missing)'), but glslangValidator reported no errors.", config, test_context)
         return TestResult.PASSED
     
     def dump_glslang_validator_output():
@@ -1031,12 +1059,15 @@ def main() -> ExitCode:
     _ = arg_parser.add_argument("--mode", choices=("strict", "lenient"), default="lenient", help="lenient mode requires all report annotations to have a matching report generated to pass, strict mode additionally requires all error reports to have a matching report annotation as well (default: lenient)")
     _ = arg_parser.add_argument("--julia-bin-dir", help="path of the installed Julia runtime's bin directory, prepended to the PATH of the subprocess' environment that runs stc (should only be needed on Windows)")
     _ = arg_parser.add_argument("--glslang-validator", help="path of the installed glslangValidator executable, which should be used for running the GLSL validation tests (default: try to find through PATH)")
-    _ = arg_parser.add_argument("--skip-message-checks", action="store_true", help="if enabled, message pattern checks will pass unconditionally")
+    _ = arg_parser.add_argument("--fail-on-stale", action="store_true", help="fail when a test raises a [STALE] warning, indicating that a temporary bypass annotation is no longer needed")
     _ = arg_parser.add_argument("--verbose", action="store_true", help="print DEBUG level messages")
+    _ = arg_parser.add_argument("--skip-message-checks", action="store_true", help="if enabled, message pattern checks will pass unconditionally")
     _ = arg_parser.add_argument("--keep-artifacts", action="store_true", help="do not delete any temporary files created by the runner")
     args = arg_parser.parse_args()
-    
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
+
+    log_handler = logging.StreamHandler()
+    log_handler.setFormatter(LogFormatter())
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, handlers=[log_handler])
     
     tmp_dir = tempfile.TemporaryDirectory(prefix="conformance_output_", delete=(not args.keep_artifacts))
     tmp_dir_path = Path(tmp_dir.name).resolve()
@@ -1045,7 +1076,7 @@ def main() -> ExitCode:
         logger.info(f"Keeping artifacts directory: {tmp_dir_path}")
     
     config = Config(args.path, args.cli, CheckingMode.parse(args.mode), args.skip_message_checks,
-                    tmp_dir_path, args.julia_bin_dir, args.glslang_validator)
+                    tmp_dir_path, args.fail_on_stale, args.julia_bin_dir, args.glslang_validator)
     
     if config.julia_bin_dir is not None:
         if not os.path.exists(config.julia_bin_dir):
@@ -1092,7 +1123,7 @@ def main() -> ExitCode:
     result = validate_reports(test_context, maybe_reports, config)
 
     if len(test_context.expected_outputs) > 0:
-        output_result: TestResult | ExitCode = validate_output(test_context)
+        output_result: TestResult | ExitCode = validate_output(test_context, config)
         if isinstance(output_result, ExitCode):
             logger.error("Failed to run output validation tests")
             return output_result
@@ -1130,6 +1161,20 @@ def main() -> ExitCode:
     else:
         logger.info(f"{SUMMARY_PREFIX} GLSL validation checks skipped (file is not marked valid)")
     logger.info("")
+
+    base_log = f"{SUMMARY_PREFIX} Test staleness checks"
+    if not test_context.has_stale:
+        logger.info(f"{base_log} passed")
+    else:
+        if config.fail_on_stale:
+            logger.error(f"{base_log} failed")
+            # let failed tests "overpower" staleness results (tests fail either way)
+            if result.value <= TestResult.PASSED_WITH_SKIPS.value:
+                return ExitCode.TESTS_STALE
+        else:
+            # we don't force result here to PASSED_WITH_SKIPS, since staleness is orthogonal enough to test results for me to not want to propagate it beyond printing (unless --fail-on-stale is passed)
+            logger.info(f"{base_log} skipped (--fail-on-stale not passed)")
+    logger.info("")
     
     match result:
         case TestResult.PASSED:
@@ -1146,4 +1191,6 @@ def main() -> ExitCode:
     return ExitCode.UNEXPECTED_ERROR
 
 if __name__ == "__main__":
-    sys.exit(main().value)
+    exit_code: ExitCode = main()
+    logger.info(f"\nFinal result: {exit_code} (exit code {exit_code.value})")
+    sys.exit(exit_code.value)
