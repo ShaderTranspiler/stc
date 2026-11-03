@@ -1627,8 +1627,7 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (target_sym_lit == nullptr)
         return internal_error("unexpected node kind in rhs of a FieldAccess expression", acc);
 
-    // CLEANUP: this is GLSL-specific rn (x/y/z/w field access on vec-s)
-    if (target_td.is_vector()) {
+    if (target_td.is_vector() && is_targeting_glsl()) {
         // SWIZZLE
 
         std::string_view swizzle = ctx.get_sym(target_sym_lit->value);
@@ -1665,12 +1664,22 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
             }
 
             assert(vec_n != 0);
-            if (comp > vec_n - 1)
+            if (comp > vec_n - 1) {
                 return fail(
                     fmt::format("swizzle component '{}' points outside "
                                 "vector bounds in swizzle '{}' (vector component count is {})",
                                 swizzle[i], swizzle, vec_n),
                     acc);
+            }
+        }
+
+        // we reject these only after all that checking so that the original multi-set logic remains
+        // here for potential future use (if it's ever reintroduced into JuliaGLM)
+        // it also lets us print some more specific errors, that are incorrect usage regardless of
+        // whether specific swizzle sets are supported or not
+        if (set != SwizzleSet::XYZW) {
+            return fail("only the xyzw swizzle set is supported (to follow JuliaGLM semantics)",
+                        acc);
         }
 
         return swizzle_n == 1 ? vec_td.component_type_id
