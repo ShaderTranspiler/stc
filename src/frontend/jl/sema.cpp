@@ -1259,7 +1259,9 @@ TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
     if (fdecl.type.is_null())
         return fail("field declarations must have explicit type annotation", fdecl);
 
-    if (!is_materializable_type(fdecl.type)) {
+    // unsized arrays are allowed as the last field in interface blocks
+    if (!is_materializable_type(fdecl.type) &&
+        !(in_interface_block && tpool.is_array_any_size(fdecl.type))) {
         return fail(fmt::format("cannot use non-materializable type '{}' in a field declaration",
                                 type_str(fdecl.type)),
                     fdecl);
@@ -1311,12 +1313,26 @@ TypeId JLSema::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
     if (!iface_blk.instance_name().is_null())
         return fail("interface block with instance name is currently not supported", iface_blk);
 
-    for (NodeId field_id : iface_blk.field_decls) {
-        const auto* field = ctx.get_and_dyn_cast<FieldDecl>(field_id);
+    for (size_t i = 0; i < iface_blk.field_decls.size(); i++) {
+        NodeId field_id = iface_blk.field_decls[i];
+        if (field_id.is_null())
+            return fail("invalid field declaration in interface block", iface_blk);
 
+        assert(!in_interface_block && "nested interface block not rejected earlier");
+        in_interface_block = true;
+        visit(field_id);
+        in_interface_block = false;
+
+        const auto* field = ctx.get_and_dyn_cast<FieldDecl>(field_id);
         if (field == nullptr)
             return internal_error("non-field-declaration node in field list of interface block",
                                   iface_blk);
+
+        if (i != iface_blk.field_decls.size() - 1 && tpool.is_array_any_size(field->type)) {
+            return fail("an implicitly sized array is only allowed as the last field of an "
+                        "interface block",
+                        *field);
+        }
 
         bool added = st_register(field->identifier, ctx.calculate_node_id(*field));
         if (!added) {

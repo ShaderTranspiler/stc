@@ -42,6 +42,7 @@ private:
     bool visiting_indexer      = false;
     bool allow_pretyped_nodes  = false;
     bool in_interactive_ctx    = false;
+    bool in_interface_block    = false;
 
 public:
     explicit JLSema(JLCtx& ctx, CompoundExpr& global_scope_body, bool in_interactive_ctx = false)
