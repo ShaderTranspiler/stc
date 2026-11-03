@@ -588,6 +588,15 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
             continue;
         }
 
+        if (nargs == 2)
+            return fail("empty qualifier target is not allowed");
+
+        if (nargs > 3) {
+            return fail(
+                "qualifiers can only have a single argument (e.g. interface block instance names "
+                "are currently not supported)");
+        }
+
         std::string_view qual_macro_name = jl_symbol_name(arg1_sym);
 
         std::optional<QualKind> qual = std::nullopt;
@@ -619,9 +628,6 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
             return fail("non-qualifier macro calls are currently not supported");
 
         quals.emplace_back(*qual);
-
-        if (nargs == 2)
-            return fail("empty qualifier target is not allowed");
 
         expr_it_v = jl_exprarg(expr_it, 2);
     }

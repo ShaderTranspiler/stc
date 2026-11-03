@@ -1,3 +1,3 @@
-@gl_buffer struct Data # ERROR(missing): argument
+@gl_buffer struct Data # ERROR: single argument
     x::Float32
 end data
