@@ -223,6 +223,7 @@ def parse_subproc_output(output: bytes | str | None) -> str:
 #           regex          treat <text_argument> as a regular expression to match (using Python's re) instead of a substring
 #           multiline      include re.MULTILINE in the pattern's flags (^ and $ also match line boundaries). only valid if 'regex' is also passed.
 #       <text_argument>:   the pattern to match against the generated output (as a substring by default, or a regular expression if 'regex' is passed)
+#   RE OUTPUT              alias for OUTPUT(regex), forwards <arguments> and <text_argument>
 #   SHADER STAGE           specify the shader stage used with glslangValidator (only affects valid files). must be used at most once per test file.
 #       <*arguments>:      must be exactly one of the available options
 #           comp           compute shader (default if SHADER STAGE is not specified)
@@ -252,9 +253,8 @@ def parse_subproc_output(output: bytes | str | None) -> str:
 #       <*text_argument>:  the body of the comment
 #   NOTE: <*text_argument> rewritten to COMMENT: <text_argument>
 #   TODO: <*text_argument> rewritten to COMMENT: <text_argument>
-DIRECTIVE_LIST = ["ERROR", "INTERNAL ERROR", "WARNING", "OUTPUT",
-                  "SHADER STAGE", "GLSL", "STC", "STC FLAG",
-                  "PRE EVAL BEGIN", "PRE EVAL END",
+DIRECTIVE_LIST = ["ERROR", "INTERNAL ERROR", "WARNING", "OUTPUT", "RE OUTPUT",
+                  "SHADER STAGE", "GLSL", "STC", "STC FLAG", "PRE EVAL BEGIN", "PRE EVAL END",
                   "COMMENT", "NOTE", "TODO"]
 DIRECTIVE_LIST_LEN_DESC = sorted(DIRECTIVE_LIST, key=len, reverse=True)
 ALLOWED_IN_PRE_EVAL_BLOCK = ["PRE EVAL END", "COMMENT", "TODO", "NOTE"]
@@ -305,6 +305,10 @@ def parse_annotation(test_context: TestContext, line_number: int, raw_annotation
     if directive == "INTERNAL ERROR":
         directive = "ERROR"
         args.insert(0, "internal")
+
+    if directive == "RE OUTPUT":
+        directive = "OUTPUT"
+        args.insert(0, "regex")
 
     if directive in ["TODO", "NOTE"]:
         directive = "COMMENT"
