@@ -133,13 +133,16 @@ class ExpectedReport(Report):
         return f"Expected {"internal " if self.internal else ""}{self.report_type} report for line {self.line_number}{f" with message pattern '{self.message}'" if self.message is not None else ""}{", expected to fail" if self.missing else ""}"
 
 class ExpectedOutput:
-    def __init__(self, pattern: str, expected_missing: bool):
-        self.pattern: str = pattern
+    def __init__(self, pattern: str | re.Pattern[str], expected_missing: bool):
+        self.pattern: str | re.Pattern[str] = pattern
         self.missing: bool = expected_missing
+
+    def pattern_str(self) -> str:
+        return f"matching '{self.pattern.pattern}'" if isinstance(self.pattern, re.Pattern) else f"containing '...{self.pattern}...'"
 
     @override
     def __str__(self):
-        return f"Expected output containing '{self.pattern}'{", expected to fail" if self.missing else ""}"
+        return f"Expected output {self.pattern_str()}{", expected to fail" if self.missing else ""}"
         
 class AnnotationContext:
     def __init__(self):
@@ -214,10 +217,12 @@ def parse_subproc_output(output: bytes | str | None) -> str:
 #       <text_argument>:   if provided, acts as a pattern that has to be a substring of the actual report's message for the test to pass (or be skipped if marked 'missing' or 'internal')
 #   INTERNAL ERROR         rewritten to ERROR(internal, <arguments>...): <text_argument>
 #   WARNING                same as ERROR, for warning reports. may not use the argument 'internal'.
-#   OUTPUT                 verify that the transpiled output for the test file (not for the line!) includes some string, may only be used in valid files (but allowed repeatedly)
+#   OUTPUT                 verify that the transpiled output for the test file (not for the line!) matches some pattern. may only be used in valid files (but allowed repeatedly)
 #       <arguments>:
 #           missing        specify that the match is currently expected to fail, can be used for temporary skips
-#       <text_argument>:   the pattern to match against the generated output as a substring
+#           regex          treat <text_argument> as a regular expression to match (using Python's re) instead of a substring
+#           multiline      include re.MULTILINE in the pattern's flags (^ and $ also match line boundaries). only valid if 'regex' is also passed.
+#       <text_argument>:   the pattern to match against the generated output (as a substring by default, or a regular expression if 'regex' is passed)
 #   SHADER STAGE           specify the shader stage used with glslangValidator (only affects valid files). must be used at most once per test file.
 #       <*arguments>:      must be exactly one of the available options
 #           comp           compute shader (default if SHADER STAGE is not specified)
@@ -371,15 +376,36 @@ def parse_annotation(test_context: TestContext, line_number: int, raw_annotation
                                  "The text argument must specify the pattern to check for in the generated output, otherwise the directive makes no sense")
 
             missing = False
+            as_regex = False
+            multiline = False
             for arg in args:
                 if arg == "missing":
                     if missing:
                         logger.warning("'missing' argument specified more than once for 'OUTPUT' directive")
                     missing = True
+                elif arg == "regex":
+                    if as_regex:
+                        logger.warning("'regex' argument specified more than once for 'OUTPUT' directive")
+                    as_regex = True
+                elif arg == "multiline":
+                    if multiline:
+                        logger.warning("'multiline' argument specified more than once for 'OUTPUT' directive")
+                    multiline = True
                 else:
-                    return log_error(get_not_a_valid_arg_message(arg, directive), "The 'OUTPUT' directive only supports the 'missing' argument")
+                    return log_error(get_not_a_valid_arg_message(arg, directive))
 
-            test_context.expected_outputs.append(ExpectedOutput(text_arg, missing))
+            if multiline and not as_regex:
+                return log_error("'multiline' argument passed to 'OUTPUT' directive without 'regex' also being passed",
+                                 "'multiline' only makes sense when treating the text argument as a regular expression.")
+
+            pattern: str | re.Pattern[str] = text_arg
+            if as_regex:
+                try:
+                    pattern = re.compile(text_arg, flags=re.MULTILINE if multiline else 0)
+                except re.PatternError as e:
+                    return log_error(f"Invalid regular expression passed to 'OUTPUT' directive:\n{e}", "The pattern has to be compatible with Python's re module")
+
+            test_context.expected_outputs.append(ExpectedOutput(pattern, missing))
 
         case "SHADER STAGE":
             if test_context.annotation_context.parsed_shader_stage_directive:
@@ -880,13 +906,20 @@ def validate_output(test_context: TestContext) -> TestResult | ExitCode:
 
     # we don't early return here if not stc_success, to still display the output checks and indicate them as skipped
     for expected in test_context.expected_outputs:
-        base_log = f"Case '...{expected.pattern}...' in GLSL output ---"
+        base_log = f"Case {expected.pattern_str()} in GLSL output ---"
         if not test_context.stc_success:
             logger.info(f"{base_log} skipped (failed transpilation)")
             result = TestResult.merge(result, TestResult.PASSED_WITH_SKIPS)
             continue
 
-        if transpiler_output.find(expected.pattern) != -1:
+        matches: bool = False
+        if isinstance(expected.pattern, re.Pattern):
+            matches = re.search(expected.pattern, transpiler_output) is not None
+        else:
+            assert isinstance(expected.pattern, str)
+            matches = transpiler_output.find(expected.pattern) != -1
+
+        if matches:
             logger.info(f"{base_log} passed")
             if expected.missing:
                 logger.warning(f"Previous case was marked as an expected failure (marked 'missing'), but a matching output snippet was found.")
