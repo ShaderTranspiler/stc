@@ -268,7 +268,12 @@ private:
             tpool.is_array_any_size(id))
             return false;
 
+        // isn't reserved for specific use, but generally not allowed
+        // this is mostly just a safety check
         const TypeDescriptor& td = tpool.get_td(id);
+        if (td.is_array() && td.as<ArrayTD>().length == 0)
+            return false;
+
         return !(td.is_void() || td.is_builtin() || td.is_function() || td.is_method());
     }
 

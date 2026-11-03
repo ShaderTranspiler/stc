@@ -1478,6 +1478,10 @@ TypeId JLSema::visit_StringLiteral(StringLiteral& str_lit) {
 }
 
 TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    if (arr_lit.members.empty())
+        return fail("empty array literals are not allowed (arrays cannot have a size of zero)",
+                    arr_lit);
+
     if (arr_lit.members.size() >= std::numeric_limits<uint32_t>::max()) {
         return fail("array length exceeds upper limit (largest index needs to be storable in a "
                     "u32, excluding its maximum)",
@@ -1502,9 +1506,6 @@ TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
 
         return tpool.array_td(checked_el_type, len);
     }
-
-    if (arr_lit.members.empty())
-        return fail("cannot infer element type for empty array literal", arr_lit);
 
     TypeId inferred_el_type = infer(arr_lit.members[0]);
 
