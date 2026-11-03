@@ -283,6 +283,12 @@ private:
     TypeId warn(std::string_view msg, const Expr& expr) const;
     TypeId internal_error(std::string_view msg, const Expr& expr);
 
+    bool is_targeting_glsl() const {
+        if (ctx.target_info == nullptr)
+            return false;
+        return ctx.target_info->language() == TargetLanguage::GLSL;
+    }
+
     // TODO: make this not the case:
     // ! all local scope pushing should be handled through ScopeRAII, since push_scope doesn't run
     // ! the symbol resolution pass by default

@@ -1853,7 +1853,14 @@ NodeId JLSema::resolve_sym_with_binding(SymbolId sym, BindingType bt, const Expr
 
         // try to resolve through builtins first
         if (ctx.target_info != nullptr && ctx.target_info->has_builtin_fn(sym_str)) {
-            auto builtin_fn = ctx.emplace_node<BuiltinFunction>(base_expr.location, sym).first;
+            SymbolId fn_name = sym;
+
+            // Julia uses roundEven by default, GLSL leaves it up to implementation
+            // so we transpile calls to round to roundEven to minimize drift in behavior
+            if (is_targeting_glsl() && sym_str == "round")
+                fn_name = ctx.sym_pool.get_id("roundEven");
+
+            auto builtin_fn = ctx.emplace_node<BuiltinFunction>(base_expr.location, fn_name).first;
             infer(builtin_fn);
 
             return builtin_fn;

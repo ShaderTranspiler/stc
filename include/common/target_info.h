@@ -43,6 +43,11 @@ enum class TargetOpKind : uint8_t {
     LastBinop = BinopRShift,
 };
 
+// new target (backend) languages should register themselves here
+// this allows language-specific rewrites to be enabled in early transpiler passes
+// (though that should be done with care)
+enum class TargetLanguage : uint8_t { GLSL };
+
 // serves as an "oracle" for backend capabilities in early passes, to keep things as
 // backend-agnostic as possible
 class TargetInfo {
@@ -73,12 +78,15 @@ protected:
     };
     using FnList = std::vector<BuiltinFunction>;
 
+    TargetLanguage language_id;
     GlobalList globals;
     FnList functions;
 
 public:
-    explicit TargetInfo(GlobalList builtin_globals, FnList builtin_fns)
-        : globals{std::move(builtin_globals)}, functions{std::move(builtin_fns)} {
+    explicit TargetInfo(TargetLanguage language_id, GlobalList builtin_globals, FnList builtin_fns)
+        : language_id{language_id},
+          globals{std::move(builtin_globals)},
+          functions{std::move(builtin_fns)} {
 
         assert(std::is_sorted(globals.begin(), globals.end(),
                               [](const BuiltinGlobal& a, const BuiltinGlobal& b) {
@@ -99,6 +107,8 @@ public:
     TargetInfo& operator=(const TargetInfo&) = default;
     TargetInfo(TargetInfo&&)                 = default;
     TargetInfo& operator=(TargetInfo&&)      = default;
+
+    TargetLanguage language() const { return language_id; }
 
     bool has_builtin_fn(std::string_view fn_name) const;
     bool has_builtin_fn(std::string_view fn_name, const TypeList& arg_types,
