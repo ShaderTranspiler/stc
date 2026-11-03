@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <ostream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace stc::jl {
 
@@ -26,6 +28,11 @@ private:
     using SIRNodeId = sir::NodeId;
 
     std::unordered_map<Decl*, SIRNodeId> decl_map{};
+
+    // keeps track of which methods are currently being lowered
+    // this allows us to catch circular references (a method referencing itself inside) without
+    // entering an infinite loop
+    std::unordered_set<Decl*> method_decls_being_lowered{};
 
     // inited in first cmpd's visitor (usable in visitors without lifetime issues)
     std::vector<SIRNodeId>* global_cmpd_body;

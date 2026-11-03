@@ -5,10 +5,11 @@
 namespace stc::jl {
 
 void JLCtx::dump(Expr& subtree_root, Expr& ast_root, DumpVerbosity verbosity_level,
-                 std::ostream& out, const TypePool& type_pool, const SymbolPool& sym_pool,
-                 const TranspilerConfig& config) const {
+                 std::ostream& out, const TypePool& type_pool_override,
+                 const SymbolPool& sym_pool_override,
+                 const TranspilerConfig& config_override) const {
     // dumper is instantiated every time, since partial moving may invalidate pool references
-    JLDumper dumper{*this, type_pool, sym_pool, config, out};
+    JLDumper dumper{*this, type_pool_override, sym_pool_override, config_override, out};
 
     switch (verbosity_level) {
         case DumpVerbosity::None:

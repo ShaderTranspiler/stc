@@ -231,6 +231,12 @@ SIRNodeId JLLoweringVisitor::visit_VarDecl(VarDecl& var) {
 }
 
 SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
+    if (method_decls_being_lowered.contains(&method))
+        return internal_error("method reached its own declaration during lowering", method);
+
+    method_decls_being_lowered.emplace(&method);
+    ScopeGuard guard{[this, &method]() { method_decls_being_lowered.erase(&method); }};
+
     if (in_method) {
         if (method.has_captured_syms()) {
             return fail(fmt::format("local functions with captured symbols are currently not "
@@ -245,7 +251,6 @@ SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
 
     if (method.ret_type.is_null() ||
         !is_ret_type_allowed(sir_ctx.type_pool.get_td(method.ret_type))) {
-
         return fail(fmt::format("cannot lower function with return type '{}'",
                                 type_to_string(method.ret_type, sir_ctx, sir_ctx)),
                     method);

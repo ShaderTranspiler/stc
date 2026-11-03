@@ -839,7 +839,11 @@ bool JLSema::is_method_sig_redecl(const MethodDecl& method_decl, const FunctionD
                 return false;
             }
 
-            assert(!pdecl->type.is_null());
+            if (pdecl->type.is_null()) {
+                assert(!_success);
+                return false;
+            }
+
             current_sig.emplace_back(pdecl->type);
 
             // assumes that initializable params are grouped at the end (verified earlier)
@@ -1018,11 +1022,11 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
     }
 
     // NOTE:
-    // reasoning for param initializer handling would be too complicated to describe here
-    // see my thesis for an in-depth explanation with examples.
-    // short version: because Julia generates a separate wrapper method for each possible arity, and
+    // because Julia generates a separate wrapper method for each possible arity, and because
     // default initializers can be arbitrary expressions (with their own assignments/declarations),
     // how symbol visibility is handled across them can get tricky
+    // ! currently, default initializers are half-implemented, in that sema mostly understands them,
+    // but users are blocked from using it, and lowering cannot generate proper code for it either
 
     std::vector<std::reference_wrapper<ParamDecl>> param_decls{};
     param_decls.reserve(method.param_decls.size());
@@ -1032,6 +1036,9 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
 
         if (pdecl == nullptr)
             return internal_error("invalid node kind in param decl list of a method decl", method);
+
+        if (!pdecl->default_initializer.is_null())
+            return fail("default initialized parameters are currently not supported", *pdecl);
 
         param_decls.emplace_back(*pdecl);
     }
@@ -2043,14 +2050,16 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
             return fail("assignment to target language's builtin function is not allowed", assign);
     }
 
-    TypeId target_type = infer(assign.target);
-    if (target_type.is_null()) {
+    TypeId target_type_id = infer(assign.target);
+    if (target_type_id.is_null()) {
         if (_success)
             return fail("couldn't infer type for assignment whose lhs is not a new binding",
                         assign);
 
         return TypeId::null_id();
     }
+
+    const TypeDescriptor& target_type = tpool.get_td(target_type_id);
 
     if (const auto* dc = ctx.get_and_dyn_cast<DotChain>(assign.target)) {
         if (!dc->is_resolved()) {
@@ -2063,19 +2072,16 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         auto* dc_res_node = ctx.get_node(dc->resolved_expr);
 
         if (const auto* acc = dyn_cast<FieldAccess>(dc_res_node)) {
-            const TypeDescriptor& target_td = tpool.get_td(target_type);
-
             if (ctx.isa<SymbolLiteral>(acc->field_decl)) {
                 // (this is a temporary QoL error, see CLEANUP on FieldAccess visitor)
-                if (target_td.is_vector()) {
-                    return fail(
-                        "swizzle expression on assigment lhs is not allowed, to follow JuliaGLM "
-                        "semantics, e.g. my_vec.xz = Vec2(0)",
-                        assign);
+                if (target_type.is_vector()) {
+                    return fail("swizzle expression cannot be used as an l-value, to follow "
+                                "JuliaGLM semantics, e.g. my_vec.xz = Vec2(0)",
+                                assign);
                 }
 
                 // "single component swizzle", i.e. vector field assignment on Julia side
-                if (target_td.is_scalar()) {
+                if (target_type.is_scalar()) {
                     return fail("assignment to vector field is not allowed, to follow JuliaGLM "
                                 "semantics (vectors types are immutable), i.e. my_vec.x = 0",
                                 assign);
@@ -2092,13 +2098,27 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
                 if (!sdecl->is_mutable()) {
                     return fail(
                         fmt::format(
-                            "assignment to field of immutable struct type '{}' is not allowed",
+                            "field of struct type '{}' cannot be assigned to, it is immutable",
                             ctx.get_sym(sdecl->identifier)),
                         assign);
                 }
             }
         } else {
             return fail("assignment to non-field-accessing dot chain is not allowed", assign);
+        }
+    } else if (const auto* indexer_expr = ctx.get_and_dyn_cast<IndexerExpr>(assign.target)) {
+        const Expr* indexer_target = ctx.get_node(indexer_expr->target);
+        if (indexer_target != nullptr && !indexer_target->type.is_null()) {
+            const TypeDescriptor& indexer_target_type = tpool.get_td(indexer_target->type);
+
+            if (indexer_target_type.is_vector() || indexer_target_type.is_matrix()) {
+                return fail(
+                    fmt::format("component of type {} cannot be assigned to, it is immutable",
+                                type_str(indexer_target->type)),
+                    assign);
+            }
+        } else if (_success) {
+            return internal_error("invalid indexer expression on assignment lhs", assign);
         }
     }
 
@@ -2111,16 +2131,16 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
     auto* val_expr = ctx.get_node(assign.value);
     assert(val_expr != nullptr);
 
-    TypeCheckResult tcr = check(*val_expr, target_type, false, true);
+    TypeCheckResult tcr = check(*val_expr, target_type_id, false, true);
 
     if (tcr == TypeCheckResult::Match || tcr == TypeCheckResult::ImplicitCast)
-        return target_type;
+        return target_type_id;
 
     if (tcr == TypeCheckResult::Incompatible)
         return TypeId::null_id();
 
     return fail(
-        fmt::format("reassignment of {} to {}", type_str(target_type), type_str(val_expr->type)),
+        fmt::format("reassignment of {} to {}", type_str(target_type_id), type_str(val_expr->type)),
         assign);
 }
 
