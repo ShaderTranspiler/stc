@@ -581,9 +581,10 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
         if (arg1_sym == sym_cache.gl_layout) {
             expr_it_v = unwrap_layout_qual(expr_it, quals, lq_payloads);
             if (expr_it_v == nullptr) {
-                _success = false;
+                assert(!_success);
                 return NodeId::null_id();
             }
+
             continue;
         }
 
