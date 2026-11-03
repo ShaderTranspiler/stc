@@ -3,7 +3,7 @@
 |`main`   |  `develop` |
 |---|---|
 | [![CI on main](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) | [![CI on develop](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ShaderTranspiler/stc/actions/workflows/ci.yml) |
-| [![codecov on main](https://codecov.io/gh/ShaderTranspiler/stc/branch/main/graph/badge.svg?token=IGEBW6BPMJ)](https://codecov.io/gh/ShaderTranspiler/stc) | [![codecov on develop](https://codecov.io/gh/ShaderTranspiler/stc/branch/develop/graph/badge.svg?token=IGEBW6BPMJ)](https://codecov.io/gh/ShaderTranspiler/stc) |
+| [![codecov on main](https://codecov.io/gh/ShaderTranspiler/stc/branch/main/graph/badge.svg?token=IGEBW6BPMJ)](https://codecov.io/gh/ShaderTranspiler/stc) | [![codecov on develop](https://codecov.io/gh/ShaderTranspiler/stc/branch/develop/graph/badge.svg?token=IGEBW6BPMJ)](https://app.codecov.io/gh/ShaderTranspiler/stc/tree/develop) |
 
 ---
 
