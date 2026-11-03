@@ -134,8 +134,8 @@ void JLDumper::visit_FunctionDecl(FunctionDecl& fn) {
 }
 
 void JLDumper::visit_ParamDecl(ParamDecl& param) {
-    out << indent() << "ParamDecl: " << sym(param.identifier) << " (" << type_str(param.annot_type)
-        << ")\n";
+    out << indent() << "ParamDecl: " << sym(param.identifier) << " ("
+        << (!param.annot_type.is_null() ? type_str(param.annot_type) : "unannotated") << ")\n";
 
     if (!param.default_initializer.is_null())
         dump_with_label("default_initializer", param.default_initializer);

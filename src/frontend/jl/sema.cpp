@@ -839,7 +839,11 @@ bool JLSema::is_method_sig_redecl(const MethodDecl& method_decl, const FunctionD
                 return false;
             }
 
-            assert(!pdecl->type.is_null());
+            if (pdecl->type.is_null()) {
+                assert(!_success);
+                return false;
+            }
+
             current_sig.emplace_back(pdecl->type);
 
             // assumes that initializable params are grouped at the end (verified earlier)
@@ -1018,11 +1022,11 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
     }
 
     // NOTE:
-    // reasoning for param initializer handling would be too complicated to describe here
-    // see my thesis for an in-depth explanation with examples.
-    // short version: because Julia generates a separate wrapper method for each possible arity, and
+    // because Julia generates a separate wrapper method for each possible arity, and because
     // default initializers can be arbitrary expressions (with their own assignments/declarations),
     // how symbol visibility is handled across them can get tricky
+    // ! currently, default initializers are half-implemented, in that sema mostly understands them,
+    // but users are blocked from using it, and lowering cannot generate proper code for it either
 
     std::vector<std::reference_wrapper<ParamDecl>> param_decls{};
     param_decls.reserve(method.param_decls.size());
@@ -1032,6 +1036,9 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
 
         if (pdecl == nullptr)
             return internal_error("invalid node kind in param decl list of a method decl", method);
+
+        if (!pdecl->default_initializer.is_null())
+            return fail("default initialized parameters are currently not supported", *pdecl);
 
         param_decls.emplace_back(*pdecl);
     }

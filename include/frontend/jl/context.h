@@ -70,15 +70,15 @@ public:
 
     // safe to run on partially-moved contexts
     void dump(Expr& subtree_root, Expr& ast_root, DumpVerbosity verbosity_level, std::ostream& out,
-              const TypePool& type_pool, const SymbolPool& sym_pool,
-              const TranspilerConfig& config) const;
+              const TypePool& type_pool_override, const SymbolPool& sym_pool_override,
+              const TranspilerConfig& config_override) const;
 
     // safe to run on partially-moved contexts
     void dump(NodeId subtree_root_id, NodeId ast_root_id, DumpVerbosity verbosity_level,
-              std::ostream& out, const TypePool& type_pool, const SymbolPool& sym_pool,
-              const TranspilerConfig& config) const {
+              std::ostream& out, const TypePool& type_pool_override,
+              const SymbolPool& sym_pool_override, const TranspilerConfig& config_override) const {
         dump(get_expr_or_fail(subtree_root_id), get_expr_or_fail(ast_root_id), verbosity_level, out,
-             type_pool, sym_pool, config);
+             type_pool_override, sym_pool_override, config_override);
     }
 
     // only safe to run on not-partially-moved contexts

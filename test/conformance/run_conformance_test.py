@@ -168,6 +168,7 @@ class TestContext:
         self.annotation_context: AnnotationContext = AnnotationContext()
         self.pre_eval_block: tuple[int, int] = (0, 0) # (start line, end line), if either component is zero ==> no valid pre eval block in file
         self.stc_success: bool = False
+        self.skip_all: bool = False
     
     def should_be_valid(self):
         return Path(self.path).name.startswith("valid")
@@ -249,11 +250,14 @@ def parse_subproc_output(output: bytes | str | None) -> str:
 #                          may only be used once per test file, and must have a closing PRE EVAL END later. see the CLI's --pre-eval flag more information.
 #                          note that this marks the first line that is considered to be part of the pre-eval block, even if it's at the end of it.
 #   PRE EVAL END           marks the end of the pre-eval block. see PRE_EVAL_BEGIN for details. marks the last line, not the exact column position, similarly to PRE EVAL BEGIN.
+#   SKIP                   marks the entire test file to be skipped, in every validation stage. should be used for temporary disabling of test cases, not as a general tool.
+#                          can be specified at most once per file.
+#       <text_argument>    optional, can be used to specify the reason for skipping. ignored by the parser.
 #   COMMENT                directive for leaving single-line comments in the test files (multi-line comments are currently ignored, so they don't require this)
 #       <*text_argument>:  the body of the comment
 #   NOTE: <*text_argument> rewritten to COMMENT: <text_argument>
 #   TODO: <*text_argument> rewritten to COMMENT: <text_argument>
-DIRECTIVE_LIST = ["ERROR", "INTERNAL ERROR", "WARNING", "OUTPUT", "RE OUTPUT",
+DIRECTIVE_LIST = ["ERROR", "INTERNAL ERROR", "WARNING", "OUTPUT", "RE OUTPUT", "SKIP",
                   "SHADER STAGE", "GLSL", "STC", "STC FLAG", "PRE EVAL BEGIN", "PRE EVAL END",
                   "COMMENT", "NOTE", "TODO"]
 DIRECTIVE_LIST_LEN_DESC = sorted(DIRECTIVE_LIST, key=len, reverse=True)
@@ -507,6 +511,15 @@ def parse_annotation(test_context: TestContext, line_number: int, raw_annotation
                 return log_error("'PRE EVAL END' after pre-eval block has been defined.", "This may be an accidentally duplicated, or leftover line.")
             test_context.pre_eval_block = (test_context.pre_eval_block[0], line_number)
 
+        case "SKIP":
+            if len(args) != 0:
+                return log_error("Arguments passed to 'SKIP' directive.", "'SKIP' does not take any arguments.")
+
+            if test_context.skip_all:
+                return log_error("'SKIP' directive used more than once in a test file",
+                                 "'SKIP' marks a global skip for the test file, it should be used at most once per file.")
+            test_context.skip_all = True
+
         case "COMMENT":
             if len(args) != 0:
                 return log_error(f"Arguments passed to '{directive}' directive", "'COMMENT' annotations take their body as the text argument")
@@ -577,6 +590,9 @@ def parse_file(config: Config) -> TestContext | None:
         
     if not parse_success:
         return None
+
+    if test_context.skip_all:
+        return test_context
     
     if not test_context.should_be_valid() and not any([rep.report_type == ReportType.ERROR for rep in test_context.expected_reports]):
         logger.error("A non-valid test file (i.e. filename not starting with the prefix 'valid') should have at least one 'ERROR' directive in its annotations.")
@@ -1060,6 +1076,10 @@ def main() -> ExitCode:
     if test_context is None:
         logger.error("Failed to parse test file")
         return ExitCode.TESTS_MALFORMED
+
+    if test_context.skip_all:
+        logger.info("Skipping test file (marked 'SKIP')")
+        return ExitCode.TESTS_PASSED_WITH_SKIPS
     
     if test_context.should_be_valid():
         test_context.out_path = str(config.tmp_dir_path / f"out.{test_context.shader_stage}")
