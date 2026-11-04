@@ -103,6 +103,12 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
                     return parsed;
             }
 
+            if (!jl_is_type(type_val)) {
+                fail(fmt::format("non-type Julia global used in type position: {}",
+                                 jl_symbol_name(tsym)));
+                return TypeId::null_id();
+            }
+
             if (!jl_is_concrete_type(type_val)) {
                 fail(fmt::format("cannot use abstract Julia type: {}", jl_symbol_name(tsym)));
                 return TypeId::null_id();

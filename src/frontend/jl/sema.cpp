@@ -2767,31 +2767,40 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             if (fn_call.is_broadcast())
                 return fail("broadcast call to constructor is not allowed", fn_call);
 
-            opaq_fn->set_is_ctor(true);
+            assert(!target_type.is_null() &&
+                   "call to null type identified as a ctor call by target info");
+            const auto& target_td = tpool.get_td(target_type);
 
-            // for vecN(vecM) construction, JuliaGLM requires N == M
+            // oversized vector construction, JuliaGLM requires matching component count or single
+            // scalar construction
             // valid_ctor_call accepts it so that TargetInfo remains JuliaGLM-agnostic
-            if (is_targeting_glsl() && arg_types.size() == 1) {
-                assert(!target_type.is_null() &&
-                       "call to null type identified as a ctor call by target info");
-                assert(!arg_types[0].is_null());
+            if (is_targeting_glsl() && target_td.is_vector()) {
+                uint32_t component_accum = 0;
+                for (TypeId arg_type : arg_types) {
+                    const auto& arg_td = tpool.get_td(arg_type);
+                    if (arg_td.is_scalar())
+                        component_accum++;
+                    else if (arg_td.is_vector())
+                        component_accum += arg_td.as<VectorTD>().component_count;
+                    else
+                        return fail("construction of vector is not JuliaGLM-compatible", fn_call);
+                }
 
-                const auto& target_td = tpool.get_td(target_type);
-                const auto& arg_td    = tpool.get_td(arg_types[0]);
-                if (target_td.is_vector() && arg_td.is_vector()) {
-                    auto target_vec_td = target_td.as<VectorTD>();
-                    auto arg_vec_td    = arg_td.as<VectorTD>();
-
-                    if (target_vec_td.component_count != arg_vec_td.component_count) {
-                        return fail(
-                            fmt::format("cannot construct vector from a vector with differing "
-                                        "component count, to follow JuliaGLM semantics (trying "
-                                        "to construct {} from {})",
-                                        type_str(target_type), type_str(arg_types[0])),
-                            fn_call);
-                    }
+                if (target_td.as<VectorTD>().component_count != component_accum &&
+                    (arg_types.size() != 1 || !tpool.get_td(arg_types[0]).is_scalar())) {
+                    // this should only apply to oversized calls, since underspecifying should be
+                    // rejected in valid_ctor_call
+                    return fail(fmt::format("oversized construction of vector type {}: expected {} "
+                                            "components, got {} (this restriction is applied to "
+                                            "follow JuliaGLM semantics)",
+                                            type_str(target_type),
+                                            target_td.as<VectorTD>().component_count,
+                                            component_accum),
+                                fn_call);
                 }
             }
+
+            opaq_fn->set_is_ctor(true);
 
             return target_type;
         } else {
