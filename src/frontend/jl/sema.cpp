@@ -1597,7 +1597,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
     if (coll_td.is_array()) {
         if (idx_expr.indexers.size() != 1)
-            return fail("vector types only support one indexer value", idx_expr);
+            return fail("array types only support one indexer value", idx_expr);
     }
 
     return el_type;
@@ -2173,7 +2173,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         return TypeId::null_id();
 
     return fail(
-        fmt::format("reassignment of {} to {}", type_str(target_type_id), type_str(val_expr->type)),
+        fmt::format("cannot assign {} to {}", type_str(val_expr->type), type_str(target_type_id)),
         assign);
 }
 

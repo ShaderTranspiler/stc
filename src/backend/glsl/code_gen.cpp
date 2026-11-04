@@ -233,7 +233,7 @@ void GLSLCodeGenVisitor::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk)
 
     print_quals(ctx.get_quals(iface_blk.qualifiers()), out);
 
-    out << ' ' << ctx.get_sym(iface_blk.block_name()) << "\n{\n";
+    out << ctx.get_sym(iface_blk.block_name()) << "\n{\n";
 
     indent_level++;
     for (NodeId field_decl : iface_blk.field_decls) {
