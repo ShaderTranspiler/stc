@@ -2769,6 +2769,30 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 
             opaq_fn->set_is_ctor(true);
 
+            // for vecN(vecM) construction, JuliaGLM requires N == M
+            // valid_ctor_call accepts it so that TargetInfo remains JuliaGLM-agnostic
+            if (is_targeting_glsl() && arg_types.size() == 1) {
+                assert(!target_type.is_null() &&
+                       "call to null type identified as a ctor call by target info");
+                assert(!arg_types[0].is_null());
+
+                const auto& target_td = tpool.get_td(target_type);
+                const auto& arg_td    = tpool.get_td(arg_types[0]);
+                if (target_td.is_vector() && arg_td.is_vector()) {
+                    auto target_vec_td = target_td.as<VectorTD>();
+                    auto arg_vec_td    = arg_td.as<VectorTD>();
+
+                    if (target_vec_td.component_count != arg_vec_td.component_count) {
+                        return fail(
+                            fmt::format("cannot construct vector from a vector with differing "
+                                        "component count, to follow JuliaGLM semantics (trying "
+                                        "to construct {} from {})",
+                                        type_str(target_type), type_str(arg_types[0])),
+                            fn_call);
+                    }
+                }
+            }
+
             return target_type;
         } else {
             return fail(
