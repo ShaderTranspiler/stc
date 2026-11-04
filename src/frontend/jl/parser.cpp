@@ -95,11 +95,18 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
         if (type_val == nullptr)
             type_val = jl_get_global(ctx.jl_env.module_cache.main_mod, tsym);
 
-        if (type_val != nullptr && jl_is_datatype(type_val)) {
-            TypeId parsed = parse_jl_type(safe_cast<jl_datatype_t>(type_val), ctx);
+        if (type_val != nullptr) {
+            if (jl_is_datatype(type_val)) {
+                TypeId parsed = parse_jl_type(safe_cast<jl_datatype_t>(type_val), ctx);
 
-            if (!parsed.is_null())
-                return parsed;
+                if (!parsed.is_null())
+                    return parsed;
+            }
+
+            if (!jl_is_concrete_type(type_val)) {
+                fail(fmt::format("cannot use abstract Julia type: {}", jl_symbol_name(tsym)));
+                return TypeId::null_id();
+            }
         }
 
         const char* type_sym_name = jl_symbol_name(tsym);
