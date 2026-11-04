@@ -37,6 +37,7 @@ private:
     TypeId expected_type       = TypeId::null_id();
     TypeId current_fn_ret      = TypeId::null_id();
     MethodDecl* current_method = nullptr;
+    uint32_t loop_depth        = 0;
     bool _success              = true;
     bool visiting_method_body  = false;
     bool visiting_indexer      = false;

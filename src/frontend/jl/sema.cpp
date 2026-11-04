@@ -1207,6 +1207,15 @@ void JLSema::visit_method_body(MethodDecl& method) {
     auto* prev_method = current_method;
     current_method    = &method;
 
+    uint32_t prev_loop_depth = loop_depth;
+    loop_depth               = 0;
+
+    ScopeGuard guard{[this, prev_ret, prev_method, prev_loop_depth]() {
+        current_fn_ret = prev_ret;
+        current_method = prev_method;
+        loop_depth     = prev_loop_depth;
+    }};
+
     assert(!visiting_method_body);
     if (!current_fn_ret.is_null()) {
         visiting_method_body = true;
@@ -1250,9 +1259,6 @@ void JLSema::visit_method_body(MethodDecl& method) {
         if (bt == BindingType::Captured)
             method.set_has_captured_syms(true);
     }
-
-    current_method = prev_method;
-    current_fn_ret = prev_ret;
 }
 
 TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
@@ -2838,7 +2844,10 @@ TypeId JLSema::visit_WhileExpr(WhileExpr& while_) {
 
         check(while_.condition, ctx.jl_Bool_t());
 
+        loop_depth++;
         infer(while_.body);
+        assert(loop_depth >= 1 && "loop depth is zero after visiting while's body");
+        loop_depth--;
     }
 
     return ctx.jl_Nothing_t();
@@ -2875,11 +2884,17 @@ TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
     return tpool.void_td();
 }
 
-TypeId JLSema::visit_ContinueStmt([[maybe_unused]] ContinueStmt& cont) {
+TypeId JLSema::visit_ContinueStmt(ContinueStmt& cont) {
+    if (loop_depth == 0)
+        return fail("continue statement outside of loop", cont);
+
     return tpool.void_td();
 }
 
-TypeId JLSema::visit_BreakStmt([[maybe_unused]] BreakStmt& brk) {
+TypeId JLSema::visit_BreakStmt(BreakStmt& brk) {
+    if (loop_depth == 0)
+        return fail("break statement outside of loop", brk);
+
     return tpool.void_td();
 }
 

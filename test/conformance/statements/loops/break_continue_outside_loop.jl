@@ -1,4 +1,4 @@
 function main()
-    break # ERROR(missing): break
-    continue # ERROR(missing): continue
+    break # ERROR: outside of loop
+    continue # ERROR: outside of loop
 end
