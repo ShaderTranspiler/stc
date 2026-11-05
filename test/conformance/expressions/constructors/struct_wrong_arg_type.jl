@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 struct S
     i::Int32
 end

@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 struct S1
     x::Nothing # ERROR: non-materializable
 end

@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 function main()
     a = [1, 2]
 

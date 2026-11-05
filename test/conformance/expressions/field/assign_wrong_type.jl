@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 mutable struct Mutable
     i::Int32
 end

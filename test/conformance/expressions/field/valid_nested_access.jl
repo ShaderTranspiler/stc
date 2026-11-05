@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 # STC(missing): dot chain
 
 struct Inner

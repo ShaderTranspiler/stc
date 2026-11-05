@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 struct P
     x::Float32
     y::Float32

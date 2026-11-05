@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 # OUTPUT: layout(std140, binding = 1) uniform
 @gl_layout std140 binding=1 @gl_uniform struct Params
     scale::Float32

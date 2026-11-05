@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 struct Inner
     x::Float32
 end

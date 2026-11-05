@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 # SHADER STAGE(frag)
 
 @gl_in  global uv::Vec2F  # OUTPUT: in vec2 uv;
