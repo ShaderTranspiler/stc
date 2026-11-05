@@ -1207,6 +1207,15 @@ void JLSema::visit_method_body(MethodDecl& method) {
     auto* prev_method = current_method;
     current_method    = &method;
 
+    uint32_t prev_loop_depth = loop_depth;
+    loop_depth               = 0;
+
+    ScopeGuard guard{[this, prev_ret, prev_method, prev_loop_depth]() {
+        current_fn_ret = prev_ret;
+        current_method = prev_method;
+        loop_depth     = prev_loop_depth;
+    }};
+
     assert(!visiting_method_body);
     if (!current_fn_ret.is_null()) {
         visiting_method_body = true;
@@ -1250,16 +1259,15 @@ void JLSema::visit_method_body(MethodDecl& method) {
         if (bt == BindingType::Captured)
             method.set_has_captured_syms(true);
     }
-
-    current_method = prev_method;
-    current_fn_ret = prev_ret;
 }
 
 TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
     if (fdecl.type.is_null())
         return fail("field declarations must have explicit type annotation", fdecl);
 
-    if (!is_materializable_type(fdecl.type)) {
+    // unsized arrays are allowed as the last field in interface blocks
+    if (!is_materializable_type(fdecl.type) &&
+        !(in_interface_block && tpool.is_array_any_size(fdecl.type))) {
         return fail(fmt::format("cannot use non-materializable type '{}' in a field declaration",
                                 type_str(fdecl.type)),
                     fdecl);
@@ -1311,12 +1319,26 @@ TypeId JLSema::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
     if (!iface_blk.instance_name().is_null())
         return fail("interface block with instance name is currently not supported", iface_blk);
 
-    for (NodeId field_id : iface_blk.field_decls) {
-        const auto* field = ctx.get_and_dyn_cast<FieldDecl>(field_id);
+    for (size_t i = 0; i < iface_blk.field_decls.size(); i++) {
+        NodeId field_id = iface_blk.field_decls[i];
+        if (field_id.is_null())
+            return fail("invalid field declaration in interface block", iface_blk);
 
+        assert(!in_interface_block && "nested interface block not rejected earlier");
+        in_interface_block = true;
+        visit(field_id);
+        in_interface_block = false;
+
+        const auto* field = ctx.get_and_dyn_cast<FieldDecl>(field_id);
         if (field == nullptr)
             return internal_error("non-field-declaration node in field list of interface block",
                                   iface_blk);
+
+        if (i != iface_blk.field_decls.size() - 1 && tpool.is_array_any_size(field->type)) {
+            return fail("an implicitly sized array is only allowed as the last field of an "
+                        "interface block",
+                        *field);
+        }
 
         bool added = st_register(field->identifier, ctx.calculate_node_id(*field));
         if (!added) {
@@ -1462,6 +1484,10 @@ TypeId JLSema::visit_StringLiteral(StringLiteral& str_lit) {
 }
 
 TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    if (arr_lit.members.empty())
+        return fail("empty array literals are not allowed (arrays cannot have a size of zero)",
+                    arr_lit);
+
     if (arr_lit.members.size() >= std::numeric_limits<uint32_t>::max()) {
         return fail("array length exceeds upper limit (largest index needs to be storable in a "
                     "u32, excluding its maximum)",
@@ -1486,9 +1512,6 @@ TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
 
         return tpool.array_td(checked_el_type, len);
     }
-
-    if (arr_lit.members.empty())
-        return fail("cannot infer element type for empty array literal", arr_lit);
 
     TypeId inferred_el_type = infer(arr_lit.members[0]);
 
@@ -1580,7 +1603,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
     if (coll_td.is_array()) {
         if (idx_expr.indexers.size() != 1)
-            return fail("vector types only support one indexer value", idx_expr);
+            return fail("array types only support one indexer value", idx_expr);
     }
 
     return el_type;
@@ -1610,8 +1633,7 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (target_sym_lit == nullptr)
         return internal_error("unexpected node kind in rhs of a FieldAccess expression", acc);
 
-    // CLEANUP: this is GLSL-specific rn (x/y/z/w field access on vec-s)
-    if (target_td.is_vector()) {
+    if (target_td.is_vector() && is_targeting_glsl()) {
         // SWIZZLE
 
         std::string_view swizzle = ctx.get_sym(target_sym_lit->value);
@@ -1648,12 +1670,22 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
             }
 
             assert(vec_n != 0);
-            if (comp > vec_n - 1)
+            if (comp > vec_n - 1) {
                 return fail(
                     fmt::format("swizzle component '{}' points outside "
                                 "vector bounds in swizzle '{}' (vector component count is {})",
                                 swizzle[i], swizzle, vec_n),
                     acc);
+            }
+        }
+
+        // we reject these only after all that checking so that the original multi-set logic remains
+        // here for potential future use (if it's ever reintroduced into JuliaGLM)
+        // it also lets us print some more specific errors, that are incorrect usage regardless of
+        // whether specific swizzle sets are supported or not
+        if (set != SwizzleSet::XYZW) {
+            return fail("only the xyzw swizzle set is supported (to follow JuliaGLM semantics)",
+                        acc);
         }
 
         return swizzle_n == 1 ? vec_td.component_type_id
@@ -1853,7 +1885,14 @@ NodeId JLSema::resolve_sym_with_binding(SymbolId sym, BindingType bt, const Expr
 
         // try to resolve through builtins first
         if (ctx.target_info != nullptr && ctx.target_info->has_builtin_fn(sym_str)) {
-            auto builtin_fn = ctx.emplace_node<BuiltinFunction>(base_expr.location, sym).first;
+            SymbolId fn_name = sym;
+
+            // Julia uses roundEven by default, GLSL leaves it up to implementation
+            // so we transpile calls to round to roundEven to minimize drift in behavior
+            if (is_targeting_glsl() && sym_str == "round")
+                fn_name = ctx.sym_pool.get_id("roundEven");
+
+            auto builtin_fn = ctx.emplace_node<BuiltinFunction>(base_expr.location, fn_name).first;
             infer(builtin_fn);
 
             return builtin_fn;
@@ -2140,7 +2179,7 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         return TypeId::null_id();
 
     return fail(
-        fmt::format("reassignment of {} to {}", type_str(target_type_id), type_str(val_expr->type)),
+        fmt::format("cannot assign {} to {}", type_str(val_expr->type), type_str(target_type_id)),
         assign);
 }
 
@@ -2728,6 +2767,39 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             if (fn_call.is_broadcast())
                 return fail("broadcast call to constructor is not allowed", fn_call);
 
+            assert(!target_type.is_null() &&
+                   "call to null type identified as a ctor call by target info");
+            const auto& target_td = tpool.get_td(target_type);
+
+            // oversized vector construction, JuliaGLM requires matching component count or single
+            // scalar construction
+            // valid_ctor_call accepts it so that TargetInfo remains JuliaGLM-agnostic
+            if (is_targeting_glsl() && target_td.is_vector()) {
+                uint32_t component_accum = 0;
+                for (TypeId arg_type : arg_types) {
+                    const auto& arg_td = tpool.get_td(arg_type);
+                    if (arg_td.is_scalar())
+                        component_accum++;
+                    else if (arg_td.is_vector())
+                        component_accum += arg_td.as<VectorTD>().component_count;
+                    else
+                        return fail("construction of vector is not JuliaGLM-compatible", fn_call);
+                }
+
+                if (target_td.as<VectorTD>().component_count != component_accum &&
+                    (arg_types.size() != 1 || !tpool.get_td(arg_types[0]).is_scalar())) {
+                    // this should only apply to oversized calls, since underspecifying should be
+                    // rejected in valid_ctor_call
+                    return fail(fmt::format("oversized construction of vector type {}: expected {} "
+                                            "components, got {} (this restriction is applied to "
+                                            "follow JuliaGLM semantics)",
+                                            type_str(target_type),
+                                            target_td.as<VectorTD>().component_count,
+                                            component_accum),
+                                fn_call);
+                }
+            }
+
             opaq_fn->set_is_ctor(true);
 
             return target_type;
@@ -2805,7 +2877,10 @@ TypeId JLSema::visit_WhileExpr(WhileExpr& while_) {
 
         check(while_.condition, ctx.jl_Bool_t());
 
+        loop_depth++;
         infer(while_.body);
+        assert(loop_depth >= 1 && "loop depth is zero after visiting while's body");
+        loop_depth--;
     }
 
     return ctx.jl_Nothing_t();
@@ -2842,11 +2917,17 @@ TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
     return tpool.void_td();
 }
 
-TypeId JLSema::visit_ContinueStmt([[maybe_unused]] ContinueStmt& cont) {
+TypeId JLSema::visit_ContinueStmt(ContinueStmt& cont) {
+    if (loop_depth == 0)
+        return fail("continue statement outside of loop", cont);
+
     return tpool.void_td();
 }
 
-TypeId JLSema::visit_BreakStmt([[maybe_unused]] BreakStmt& brk) {
+TypeId JLSema::visit_BreakStmt(BreakStmt& brk) {
+    if (loop_depth == 0)
+        return fail("break statement outside of loop", brk);
+
     return tpool.void_td();
 }
 

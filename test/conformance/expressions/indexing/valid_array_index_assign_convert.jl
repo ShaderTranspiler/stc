@@ -1,4 +1,4 @@
-# STC(missing): reassignment
+# STC(missing): cannot assign bool to f32
 
 function main()
     a = [1.5f0, 2.5f0]

@@ -37,11 +37,13 @@ private:
     TypeId expected_type       = TypeId::null_id();
     TypeId current_fn_ret      = TypeId::null_id();
     MethodDecl* current_method = nullptr;
+    uint32_t loop_depth        = 0;
     bool _success              = true;
     bool visiting_method_body  = false;
     bool visiting_indexer      = false;
     bool allow_pretyped_nodes  = false;
     bool in_interactive_ctx    = false;
+    bool in_interface_block    = false;
 
 public:
     explicit JLSema(JLCtx& ctx, CompoundExpr& global_scope_body, bool in_interactive_ctx = false)
@@ -267,7 +269,12 @@ private:
             tpool.is_array_any_size(id))
             return false;
 
+        // isn't reserved for specific use, but generally not allowed
+        // this is mostly just a safety check
         const TypeDescriptor& td = tpool.get_td(id);
+        if (td.is_array() && td.as<ArrayTD>().length == 0)
+            return false;
+
         return !(td.is_void() || td.is_builtin() || td.is_function() || td.is_method());
     }
 
@@ -282,6 +289,12 @@ private:
     TypeId fail(std::string_view msg, const Expr& expr);
     TypeId warn(std::string_view msg, const Expr& expr) const;
     TypeId internal_error(std::string_view msg, const Expr& expr);
+
+    bool is_targeting_glsl() const {
+        if (ctx.target_info == nullptr)
+            return false;
+        return ctx.target_info->language() == TargetLanguage::GLSL;
+    }
 
     // TODO: make this not the case:
     // ! all local scope pushing should be handled through ScopeRAII, since push_scope doesn't run

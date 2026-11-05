@@ -30,7 +30,7 @@ public:
 
 private:
     explicit GLSLTargetInfo(GlobalList builtin_globals, FnList builtin_fns, GLSLTypes types)
-        : TargetInfo{std::move(builtin_globals), std::move(builtin_fns)},
+        : TargetInfo{TargetLanguage::GLSL, std::move(builtin_globals), std::move(builtin_fns)},
           gl_types{std::move(types)} {}
 
     static GlobalList create_globals(GLSLTypes& types);

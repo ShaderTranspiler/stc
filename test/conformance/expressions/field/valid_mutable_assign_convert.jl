@@ -1,4 +1,4 @@
-# STC(missing): reassignment of f32 to bool
+# STC(missing): cannot assign bool to f32
 
 mutable struct Mutable
     x::Float32

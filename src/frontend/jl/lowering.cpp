@@ -839,14 +839,43 @@ SIRNodeId JLLoweringVisitor::visit_LogicalBinOp(LogicalBinOp& lbo) {
 SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
     SIRNodeId lo_cond = visit_and_check(if_.condition);
 
-    SIRNodeId lo_true =
-        emplace_node<sir::ScopedStmt>(if_.location, visit_and_check(if_.true_branch));
+    // force branches to be compound statements in all cases
+    // (unless it doesn't have a false branch in which case we keep that unset)
+
+    auto lower_into_compound = [this](NodeId branch_src) -> std::optional<SIRNodeId> {
+        SIRNodeId lo_branch_base = visit_and_check(branch_src, true);
+
+        if (sir_ctx.isa<sir::CompoundStmt>(lo_branch_base))
+            return lo_branch_base;
+
+        const Expr* src_branch = ctx.get_node(branch_src);
+        if (src_branch == nullptr)
+            return std::nullopt;
+
+        std::vector<SIRNodeId> cmpd_body{};
+
+        // if it lowered to null (like a nothing statement), we just insert an empty compound
+        if (!lo_branch_base.is_null())
+            cmpd_body.emplace_back(lo_branch_base);
+
+        return emplace_node<sir::CompoundStmt>(src_branch->location, std::move(cmpd_body));
+    };
+
+    auto lo_true = lower_into_compound(if_.true_branch);
+    if (!lo_true.has_value())
+        return internal_error("invalid true branch node in if expression", if_);
+    lo_true = emplace_node<sir::ScopedStmt>(if_.location, *lo_true);
 
     SIRNodeId lo_false = SIRNodeId::null_id();
-    if (!if_.false_branch.is_null())
-        lo_false = emplace_node<sir::ScopedStmt>(if_.location, visit_and_check(if_.false_branch));
+    if (!if_.false_branch.is_null()) {
+        auto lo_false_cmpd = lower_into_compound(if_.false_branch);
+        if (!lo_false_cmpd.has_value())
+            return internal_error("invalid false branch node in if expression", if_);
 
-    return emplace_node<sir::IfStmt>(if_.location, lo_cond, lo_true, lo_false);
+        lo_false = emplace_node<sir::ScopedStmt>(if_.location, *lo_false_cmpd);
+    }
+
+    return emplace_node<sir::IfStmt>(if_.location, lo_cond, *lo_true, lo_false);
 }
 
 SIRNodeId JLLoweringVisitor::visit_WhileExpr(WhileExpr& while_) {

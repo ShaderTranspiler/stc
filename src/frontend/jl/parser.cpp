@@ -95,11 +95,24 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
         if (type_val == nullptr)
             type_val = jl_get_global(ctx.jl_env.module_cache.main_mod, tsym);
 
-        if (type_val != nullptr && jl_is_datatype(type_val)) {
-            TypeId parsed = parse_jl_type(safe_cast<jl_datatype_t>(type_val), ctx);
+        if (type_val != nullptr) {
+            if (jl_is_datatype(type_val)) {
+                TypeId parsed = parse_jl_type(safe_cast<jl_datatype_t>(type_val), ctx);
 
-            if (!parsed.is_null())
-                return parsed;
+                if (!parsed.is_null())
+                    return parsed;
+            }
+
+            if (!jl_is_type(type_val)) {
+                fail(fmt::format("non-type Julia global used in type position: {}",
+                                 jl_symbol_name(tsym)));
+                return TypeId::null_id();
+            }
+
+            if (!jl_is_concrete_type(type_val)) {
+                fail(fmt::format("cannot use abstract Julia type: {}", jl_symbol_name(tsym)));
+                return TypeId::null_id();
+            }
         }
 
         const char* type_sym_name = jl_symbol_name(tsym);
@@ -588,6 +601,15 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
             continue;
         }
 
+        if (nargs == 2)
+            return fail("empty qualifier target is not allowed");
+
+        if (nargs > 3) {
+            return fail(
+                "qualifiers can only have a single argument (e.g. interface block instance names "
+                "are currently not supported)");
+        }
+
         std::string_view qual_macro_name = jl_symbol_name(arg1_sym);
 
         std::optional<QualKind> qual = std::nullopt;
@@ -619,9 +641,6 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
             return fail("non-qualifier macro calls are currently not supported");
 
         quals.emplace_back(*qual);
-
-        if (nargs == 2)
-            return fail("empty qualifier target is not allowed");
 
         expr_it_v = jl_exprarg(expr_it, 2);
     }
