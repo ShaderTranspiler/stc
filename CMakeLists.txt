@@ -361,6 +361,7 @@ if (STC_BUILD_CLI)
         "cli/cli.cpp"
         "cli/cli_utils.cpp"
         "src/common/term_utils.cpp"
+        "src/common/report.cpp"
     )
     add_dependencies(${CLI_TARGET} ${BUILD_META_TARGET})
 

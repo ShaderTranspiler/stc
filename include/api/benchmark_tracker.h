@@ -1,8 +1,15 @@
 #pragma once
 
+#include <array>
+#include <cassert>
 #include <chrono>
 #include <fmt/format.h>
+#include <numeric>
 #include <ostream>
+#include <string_view>
+
+#include "common/report.h"
+#include "common/term_utils.h"
 
 namespace stc::api::detail {
 
@@ -62,15 +69,39 @@ struct BenchmarkTracker<true> {
     void end() { tp_end = clock::now(); }
 
     void print(std::ostream& out) const {
-        out << "\nCtx init finished in " << format_bm_duration(tp_init_end - tp_init_start) << '\n';
-        out << "Parser finished in " << format_bm_duration(tp_parser_end - tp_parser_start) << '\n';
-        out << "Sema finished in " << format_bm_duration(tp_sema_end - tp_sema_start) << '\n';
-        out << "Lowering finished in " << format_bm_duration(tp_lowering_end - tp_lowering_start)
-            << '\n';
-        out << "Codegen finished in " << format_bm_duration(tp_code_gen_end - tp_code_gen_start)
-            << '\n';
-        out << "\nEntire transpilation pipeline finished in "
-            << format_bm_duration(tp_end - tp_start) << "\n\n";
+        using namespace std::string_view_literals;
+
+        static constexpr std::array phase_display_names = {
+            "Transpiler init"sv, "Expr parser"sv,     "Julia sema"sv,
+            "AST lowering"sv,    "Code generation"sv,
+        };
+
+        static constexpr size_t max_name_length = std::transform_reduce(
+            phase_display_names.begin(), phase_display_names.end(), size_t{0},
+            [](size_t a, size_t b) { return a > b ? a : b; },
+            [](std::string_view el) { return el.length(); });
+
+        std::array phase_times = {
+            tp_init_end - tp_init_start,         tp_parser_end - tp_parser_start,
+            tp_sema_end - tp_sema_start,         tp_lowering_end - tp_lowering_start,
+            tp_code_gen_end - tp_code_gen_start,
+        };
+
+        print_header(out, "Benchmark");
+
+        static_assert(phase_display_names.size() == phase_times.size());
+        for (size_t i = 0; i < phase_display_names.size(); i++) {
+            out << colored(phase_display_names[i], ansi_codes::yellow);
+            assert(max_name_length >= phase_display_names[i].length());
+            std::string padding(max_name_length - phase_display_names[i].length(), ' ');
+            out << padding;
+            out << " finished in ";
+            out << colored(format_bm_duration(phase_times[i]), ansi_codes::yellow);
+            out << '\n';
+        }
+
+        out << "\nEntire transpilation finished in "
+            << colored(format_bm_duration(tp_end - tp_start), ansi_codes::yellow) << '\n';
 
         out.flush();
     }

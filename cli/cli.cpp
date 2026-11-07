@@ -3,6 +3,7 @@ JULIA_DEFINE_FAST_TLS
 
 #include <api/transpiler.h>
 #include <common/config.h>
+#include <common/report.h>
 #include <common/term_utils.h>
 #include <common/utils.h>
 #include <frontend/jl/utils.h>
@@ -42,6 +43,17 @@ std::optional<std::string> open_julia_file_as_cmpd(const std::string& path) {
     // new line before end so that trailing comments are not a problem
     code_stream << "\nend";
     return std::move(code_stream).str();
+}
+
+void print_conflicting_flags_warning(std::string_view flag1, std::string_view flag2,
+                                     std::string_view suffix = "") {
+    std::cerr << stc::colored("Warning: ", ansi_codes::yellow)
+              << "conflicting flags have been provided as arguments: "
+              << stc::colored(flag1, ansi_codes::cyan) << " and "
+              << stc::colored(flag2, ansi_codes::cyan) << ".\n";
+
+    if (!suffix.empty())
+        std::cerr << stc::colored(suffix, ansi_codes::yellow) << '\n';
 }
 
 } // namespace
@@ -86,6 +98,7 @@ int run(int argc, char* argv[]) {
     bool run_benchmark = true;
     bool no_out        = false;
     bool quiet         = false;
+    bool add_no_commit = true;
 
     for (int i = 2; i < argc; i++) {
         std::string arg{argv[i]};
@@ -135,6 +148,8 @@ int run(int argc, char* argv[]) {
             config.capture_uniforms = false;
         else if (arg == "-Wjl-query")
             config.warn_on_jl_sema_query = true;
+        else if (arg == "--skip-no-commit")
+            add_no_commit = false;
         else if (arg == "--err-dump") {
             if (i + 1 >= argc) {
                 std::cerr << "--err-dump must be followed by a verbosity level (options: none, "
@@ -230,14 +245,23 @@ int run(int argc, char* argv[]) {
         }
     }
 
-    if (no_out && !out_path.empty()) {
-        std::cerr << stc::colored("Warning: ", ansi_codes::yellow)
-                  << "conflicting flags have been provided as arguments: "
-                  << stc::colored("--no-out", ansi_codes::cyan) << " and "
-                  << stc::colored("-o", ansi_codes::cyan) << ' '
-                  << stc::colored(out_path, ansi_codes::cyan) << ", "
-                  << "no output will be created after transpilation.\n";
+    if (no_out && !out_path.empty())
+        print_conflicting_flags_warning("--no-out", fmt::format("-o {}", out_path),
+                                        "No output will be written after transpilation.");
+    if (!add_no_commit && out_path.empty()) {
+        std::cerr << stc::colored("Warning: ", ansi_codes::yellow);
+        std::cerr << stc::colored("--skip-no-commit", ansi_codes::cyan) << " without "
+                  << stc::colored("-o", ansi_codes::cyan) << ".\n";
+        std::cerr << "A no"
+                     "commit tag is only added to output written to disk, so it has no effect if "
+                  << stc::colored("-o", ansi_codes::cyan) << " is not provided along with it.\n";
     }
+
+    if (!quiet)
+        print_header(std::cout, "Pre-transpilation (CLI-only work)");
+
+    if (!quiet)
+        std::cout << "Reading Julia code from disk...\n";
 
     auto maybe_code = open_julia_file_as_cmpd(path);
     if (!maybe_code.has_value())
@@ -245,12 +269,15 @@ int run(int argc, char* argv[]) {
     std::string code = std::move(*maybe_code);
 
     if (!quiet)
-        std::cout << "Initializing Julia environment for transpilation...\n";
+        std::cout << "Initializing a new Julia instance for transpilation...\n";
 
     jl_init();
     STC_CHECK_EXCEPTIONS
 
     const ScopeGuard jl_guard{[]() { jl_atexit_hook(0); }};
+
+    if (!quiet)
+        std::cout << "Importing JuliaGLM...\n";
 
     STC_EVAL_AND_CHECK("using JuliaGLM");
 
@@ -282,56 +309,86 @@ int run(int argc, char* argv[]) {
         }
     }
 
-    if (!quiet)
+    if (!quiet) {
+        print_header(std::cout, "Transpilation", true);
+
         std::cout << "Starting transpilation...\n";
+    }
 
     for (size_t i = 0; i < ite_count; i++) {
-        if (run_benchmark && !quiet && ite_count != 1) {
-            std::string header_title{fmt::format("  Transpilation #{}  ", i + 1)};
-            std::string sep(header_title.size(), '=');
-
-            std::cout << '\n' << sep << '\n';
-            std::cout << header_title << '\n';
-            std::cout << sep << '\n';
-        }
+        if (run_benchmark && !quiet && ite_count != 1)
+            print_header(std::cout, fmt::format("Transpilation #{}", i + 1), false);
 
         auto result = run_benchmark && !quiet
                           ? api::transpile<true>(code, tail_from_cwd(path).string(), config)
                           : api::transpile<false>(code, tail_from_cwd(path).string(), config);
 
+        if (!quiet)
+            print_header(std::cout, "Result");
+
         if (!result.has_value()) {
-            std::cerr << "\nAn error occurred during transpilation\n";
+            std::cerr << colored("An error occurred during transpilation!\n", ansi_codes::red);
             return EXIT_FAILURE;
         }
 
+        if (!quiet)
+            std::cout << "Transpilation successful.\n";
+
         if (!no_out && i + 1 == ite_count) {
             if (out_path.empty()) {
-                if (!quiet)
-                    std::cout << "Output of transpilation:\n\n";
+                if (!quiet) {
+                    print_header(std::cout,
+                                 ite_count == 1 ? "Output" : "Output (last transpilation)");
+                }
+
                 std::cout << *result << '\n';
                 break;
             }
 
+            if (!quiet)
+                print_header(std::cout, "Post-transpilation (CLI-only work)");
+
             // gotta do C-style file writing, because libjulia messes with std::locale in a way that
             // breaks std::ofstream in some release builds
 
+            if (!quiet)
+                std::cout << fmt::format("Writing output to {}...\n", out_path);
+
+            // Make sure that when using a git pre-commit hook that rejects committing the
+            // no-commit substring (real form without hyphen, written this way to avoid tripping the
+            // actual hook), generated output can't be included by accident, since the CLI is mostly
+            // used for debugging.
+            // This is a CLI-only feature (doesn't affect the transpiler itself), and can be turned
+            // off when saving the output long-term is desired, via --skip-no-commit. the sample
+            // pre-commit hook (scripts/pre-commit) checks for this tag by default
+            if (add_no_commit) {
+                assert(result.has_value());
+                // we already have a trailing newline in result, so this is placed in its own line
+                // it's written this way so that it doesn't trip the actual hook
+                *result += "// no"
+                           "commit\n";
+            }
+
             stc::FileRAII out_file{out_path, "w"};
             if (out_file.get() == nullptr) {
-                std::cerr << "\nFailed to open '" << out_path << "' for writing (errno: " << errno
-                          << '\n';
+                std::cerr << "Failed to open '" << out_path << "' for writing! (errno: " << errno
+                          << ")\n";
                 return EXIT_FAILURE;
             }
 
             size_t written = fwrite(result->data(), 1, result->size(), out_file.get());
             if (written != result->size()) {
-                std::cerr << "\nCouldn't write output to file\n";
+                std::cerr << "Failed to write output to file!\n";
                 return EXIT_FAILURE;
             }
+
+            if (!quiet)
+                std::cout << "Output written.\n";
         }
     }
 
 #ifdef STC_PROFILING
-    if (!silent)
+    if (!quiet)
         std::cout << "Profiling enabled, waiting for key press so that Tracy can flush data "
                      "properly...\n";
     std::cin.get();

@@ -13,8 +13,6 @@ namespace stc {
 
 // CLEANUP: better structure for utils, concepts, etc.
 
-using namespace std::literals;
-
 namespace detail {
 
 template <typename F, typename T>
