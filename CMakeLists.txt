@@ -165,7 +165,7 @@ include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
 
 # fmt
 
-find_package(fmt QUIET)
+find_package(fmt 11.1 QUIET)
 
 if(NOT fmt_FOUND)
     message(STATUS "fmt not found locally, it will be fetched through git...")
