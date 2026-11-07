@@ -1,6 +1,8 @@
 #include "cli_utils.h"
 
+#include <common/report.h>
 #include <common/term_utils.h>
+#include <common/utils.h>
 #include <meta.h>
 
 #include <fmt/format.h>
@@ -23,39 +25,10 @@
     #include <errhandlingapi.h>
 #endif
 
-namespace {
-
-template <size_t N>
-consteval std::array<char, N> n_chars_of(char sep) {
-    std::array<char, N> arr{};
-
-    for (size_t i = 0; i < N; i++) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
-        arr[i] = sep;
-    }
-
-    return arr;
-}
-
-} // namespace
-
 void stc::cli::print_version_info() {
     static constexpr auto val_col = ansi_codes::yellow;
 
-    static constexpr std::string_view title = "Shader Transpiler Core (STC)";
-
-    static constexpr uint8_t padding_width = 5;
-    static constexpr auto padding_buf      = n_chars_of<padding_width>(' ');
-    static constexpr auto padding = std::string_view{padding_buf.data(), padding_buf.size()};
-
-    static constexpr size_t header_width = 2U * static_cast<size_t>(padding_width) + title.size();
-
-    static constexpr auto sep_line_buf = n_chars_of<header_width>('-');
-    static constexpr auto sep_line     = std::string_view{sep_line_buf.data(), sep_line_buf.size()};
-
-    std::cout << sep_line << '\n';
-    std::cout << padding << title << padding << '\n';
-    std::cout << sep_line << "\n\n";
+    print_header(std::cout, "Shader Transpiler Core (STC)", true, false);
 
     // clang-format off
     std::cout << "version:      " << stc::colored(stc::meta::version, val_col) << '\n';
@@ -100,7 +73,7 @@ constexpr std::array transpilation_behavior_entries{
     HelpEntry{"--no-coerce-f32",            "disable automatic Float64 -> Float32 literal type coercion"},
     HelpEntry{"--no-coercion",              "disable all literal type coercion"},
     HelpEntry{"--fwd-fns",                  "enable blind forwarding for non-backend-resolvable function calls (may lead to invalid code)"},
-    HelpEntry{"--no-uniform-capture",       "don't capture Julia-resolvable globals as uniforms in the output"}
+    HelpEntry{"--no-uniform-capture",       "don't capture Julia-resolvable globals as uniforms in the output"},
 };
 
 constexpr std::array debugging_entries{
@@ -108,20 +81,20 @@ constexpr std::array debugging_entries{
     HelpEntry{"--dump-sema",      "print the AST after semantic analysis"},
     HelpEntry{"--dump-lowered",   "print the lowered (SIR) representation"},
     HelpEntry{"--dump-scopes",    "dump scope tree info during semantic analysis"},
-    HelpEntry{"--track-bindings", "step-by-step reasoning for symbol binding resolution"}
+    HelpEntry{"--track-bindings", "step-by-step reasoning for symbol binding resolution"},
 };
 
 constexpr std::array formatting_entries{
-    HelpEntry{"--tabs",          "use tabs for indentation"},
-    HelpEntry{"--spaces",        "use spaces for indentation (default)"},
-    HelpEntry{"--cg-indent <n>", "set indentation width (default: 4)"}
+    HelpEntry{"--tabs",           "use tabs for indentation"},
+    HelpEntry{"--spaces",         "use spaces for indentation (default)"},
+    HelpEntry{"--cg-indent <n>",  "set indentation width (default: 4)"},
 };
 
 constexpr std::array errors_and_warnings_entries{
     HelpEntry{"--err-dump none",    "disable AST dumping on errors (default)"},
     HelpEntry{"--err-dump partial", "dump the AST subtree that caused the given error"},
     HelpEntry{"--err-dump verbose", "dump the full AST at every error reported"},
-    HelpEntry{"-Wjl-query",         "warn when the Julia runtime was queried for function call resolution"}
+    HelpEntry{"-Wjl-query",         "warn when the Julia runtime was queried for function call resolution"},
 };
 
 constexpr std::array help_categories{
@@ -129,7 +102,7 @@ constexpr std::array help_categories{
     HelpCategory{"Transpilation Behavior", transpilation_behavior_entries},
     HelpCategory{"Debugging", debugging_entries},
     HelpCategory{"Formatting", formatting_entries},
-    HelpCategory{"Errors and Warnings", errors_and_warnings_entries}
+    HelpCategory{"Errors and Warnings", errors_and_warnings_entries},
 };
 // clang-format on
 
