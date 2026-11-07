@@ -64,7 +64,8 @@ constexpr std::array general_entries{
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
     HelpEntry{"--no-benchmark",    "disable the measuring and printing of transpilation time benchmarks"},
     HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-benchmark)"),
-    HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"}
+    HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"},
+    HelpEntry{"--skip-no-commit", "avoids the CLI adding a no-commit tag to the generated output file"},
 };
 
 constexpr std::array transpilation_behavior_entries{

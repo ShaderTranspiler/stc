@@ -98,6 +98,7 @@ int run(int argc, char* argv[]) {
     bool run_benchmark = true;
     bool no_out        = false;
     bool quiet         = false;
+    bool add_no_commit = true;
 
     for (int i = 2; i < argc; i++) {
         std::string arg{argv[i]};
@@ -147,6 +148,8 @@ int run(int argc, char* argv[]) {
             config.capture_uniforms = false;
         else if (arg == "-Wjl-query")
             config.warn_on_jl_sema_query = true;
+        else if (arg == "--skip-no-commit")
+            add_no_commit = false;
         else if (arg == "--err-dump") {
             if (i + 1 >= argc) {
                 std::cerr << "--err-dump must be followed by a verbosity level (options: none, "
@@ -245,6 +248,14 @@ int run(int argc, char* argv[]) {
     if (no_out && !out_path.empty())
         print_conflicting_flags_warning("--no-out", fmt::format("-o {}", out_path),
                                         "No output will be written after transpilation.");
+    if (!add_no_commit && out_path.empty()) {
+        std::cerr << stc::colored("Warning: ", ansi_codes::yellow);
+        std::cerr << stc::colored("--skip-no-commit", ansi_codes::cyan) << " without "
+                  << stc::colored("-o", ansi_codes::cyan) << ".\n";
+        std::cerr << "A no"
+                     "commit tag is only added to output written to disk, so it has no effect if "
+                  << stc::colored("-o", ansi_codes::cyan) << " is not provided along with it.\n";
+    }
 
     if (!quiet)
         print_header(std::cout, "Pre-transpilation (CLI-only work)");
@@ -342,6 +353,21 @@ int run(int argc, char* argv[]) {
 
             if (!quiet)
                 std::cout << fmt::format("Writing output to {}...\n", out_path);
+
+            // Make sure that when using a git pre-commit hook that rejects committing the
+            // no-commit substring (real form without hyphen, written this way to avoid tripping the
+            // actual hook), generated output can't be included by accident, since the CLI is mostly
+            // used for debugging.
+            // This is a CLI-only feature (doesn't affect the transpiler itself), and can be turned
+            // off when saving the output long-term is desired, via --skip-no-commit. the sample
+            // pre-commit hook (scripts/pre-commit) checks for this tag by default
+            if (add_no_commit) {
+                assert(result.has_value());
+                // we already have a trailing newline in result, so this is placed in its own line
+                // it's written this way so that it doesn't trip the actual hook
+                *result += "// no"
+                           "commit\n";
+            }
 
             stc::FileRAII out_file{out_path, "w"};
             if (out_file.get() == nullptr) {
