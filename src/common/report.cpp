@@ -24,4 +24,27 @@ void internal_error(std::string_view msg, std::ostream& out) {
     report(msg, out);
 }
 
+void print_header(std::ostream& out, std::string_view header_text, bool extra_trailing_newline,
+                  bool color_header_text) {
+    static constexpr size_t header_padding_amount = 3;
+
+    std::string separator(header_text.length() + 2 * header_padding_amount, '=');
+    std::string padding(header_padding_amount, ' ');
+
+    out << '\n';
+    out << separator << '\n';
+    out << padding;
+    if (color_header_text) // this can't be a ternary since colored returns stc::ColoredText
+        out << colored(header_text, ansi_codes::yellow);
+    else
+        out << header_text;
+    out << padding << '\n';
+    out << separator << '\n';
+
+    if (extra_trailing_newline)
+        out << '\n';
+
+    out.flush();
+}
+
 } // namespace stc
