@@ -1,5 +1,6 @@
 # COMMENT: written by Claude, reviewed by szgerii
 
 function main()
-    a = [Vec3F(0), Vec3F(1)] # ERROR: non-scalar element types
+    x = 1.5f0
+    x::Float32 # ERROR: unsupported Expr node
 end
