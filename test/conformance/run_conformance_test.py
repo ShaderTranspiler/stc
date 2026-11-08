@@ -123,6 +123,23 @@ class ShaderStage(Enum):
             case ShaderStage.FRAGMENT: return "frag"
             case _:                    return "unknown"
 
+class ExpectedGLSLResult(Enum):
+    # all these only apply to valid_ tests:
+    EXPECTED_TO_PASS = 0 # glslangValidator is expected to pass (also used for non-valid test files, where this property is not read at all)
+    EXPECTED_TO_FAIL = 1 # glslangValidator is expected to fail because of a transpiler bug
+    INTENDED_TO_FAIL = 2 # glslangValidator is intended to fail (rare, some transpiler flags allow it to produce potentially invalid GLSL code deliberately)
+
+    def expected_to_fail(self):
+        return self != ExpectedGLSLResult.EXPECTED_TO_PASS
+
+    @override
+    def __str__(self):
+        match self:
+            case ExpectedGLSLResult.EXPECTED_TO_PASS: return "expected to pass"
+            case ExpectedGLSLResult.EXPECTED_TO_FAIL: return "expected to fail"
+            case ExpectedGLSLResult.INTENDED_TO_FAIL: return "intended to fail"
+            case _:                                   return "unknown"
+
 class Report:
     def __init__(self, report_type: ReportType, line_number: int, message: str):
         self.report_type: ReportType = report_type
@@ -172,8 +189,8 @@ class TestContext:
         self.expected_outputs: list[ExpectedOutput] = []
         self.shader_stage: ShaderStage = ShaderStage.COMPUTE
         self.out_path: str = ""
-        self.expect_glsl_failure: bool = False
-        self.glsl_failure_pattern: str = "" # only applies when expect_glsl_failure == True
+        self.expected_glsl_result: ExpectedGLSLResult = ExpectedGLSLResult.EXPECTED_TO_PASS
+        self.glsl_failure_pattern: str = "" # only applies when expected_glsl_result != ExpectedGLSLResult.EXPECTED_TO_PASS
         self.expect_transpiler_failure: bool = False
         self.transpiler_failure_pattern: str = "" # only applies when expect_transpiler_failure == True
         self.expect_transpiler_internal_error: bool = False # only applies when expect_transpiler_failure == True
@@ -260,7 +277,9 @@ def parse_subproc_output(output: bytes | str | None) -> str:
 #   GLSL                   along with the 'missing' argument, specifies that the shader is currently expected to not pass validation via glslangValidator. must be used at most once per test file.
 #       <arguments>:
 #           *missing       must be passed with GLSL for readability
-#       <text_argument>:   if provided, can be used to specify a message pattern that has to appear as a substring of the glslangValidator output for the validation failure to be treated as skipped.
+#           intended       turns glslangValidator failing expectedly from a skip to a pass. this should only be used for testing flags where the transpiler allows itself to generate potentially
+#                          invalid GLSL, like function forwarding.
+#       <text_argument>:   if provided, can be used to specify a message pattern that has to appear as a substring of the glslangValidator output for the validation failure to be treated as skipped/passed.
 #   STC                    same as GLSL(missing) but for the transpiler. marks that an otherwise valid test file is currently expected to fail transpilation. internal error checks and report validation
 #                          is still performed on the transpiler output (since ERROR is not allowed in a valid file, this effectively means WARNING checks).
 #       <arguments>:
@@ -474,11 +493,25 @@ def parse_annotation(test_context: TestContext, line_number: int, raw_annotation
             if not test_context.should_be_valid():
                 logger.warning("'GLSL' directive will not have any effect in non-valid file.\n" +
                                "  Hint: Files that are expected to transpile without error (and can thus be GLSL validated) should be marked by prefixing their name with 'valid'.")
-                        
-            if len(args) != 1 or args[0] != "missing":
-                return log_error(f"Invalid arguments in 'GLSL' directive.", "The 'GLSL' directive's only supported argument is 'missing', which must always be used.")
 
-            test_context.expect_glsl_failure = True
+            missing = False
+            intended = False
+            for arg in args:
+                if arg == "missing":
+                    if missing:
+                        logger.warning("Multiple 'missing' arguments passed to 'GLSL' directive.")
+                    missing = True
+                elif arg == "intended":
+                    if intended:
+                        logger.warning("Multiple 'intended' arguments passed to 'GLSL' directive.")
+                    intended = True
+                else:
+                    return log_error(get_not_a_valid_arg_message(arg, directive), "Supported arguments are 'missing' and 'intended'.")
+
+            if not missing:
+                return log_error("'GLSL' directive without a 'missing' argument.", "'missing' must be passed to the 'GLSL' directive for readability.")
+
+            test_context.expected_glsl_result = ExpectedGLSLResult.INTENDED_TO_FAIL if intended else ExpectedGLSLResult.EXPECTED_TO_FAIL
             test_context.glsl_failure_pattern = text_arg
             
         case "STC":
@@ -1014,8 +1047,8 @@ def validate_glsl(test_context: TestContext, config: Config) -> TestResult | Exi
     
     if proc_result.returncode == 0:
         logger.info(f"{base_log} passed")
-        if test_context.expect_glsl_failure:
-            handle_stale(f"GLSL validation was marked as an expected failure (annotated with 'GLSL(missing)'), but glslangValidator reported no errors.", config, test_context)
+        if test_context.expected_glsl_result.expected_to_fail():
+            handle_stale(f"GLSL validation was marked as an expected or intended failure (annotated with 'GLSL(missing)'), but glslangValidator reported no errors.", config, test_context)
         return TestResult.PASSED
     
     def dump_glslang_validator_output():
@@ -1025,11 +1058,16 @@ def validate_glsl(test_context: TestContext, config: Config) -> TestResult | Exi
                     "\n== GLSLANG VALIDATOR OUTPUT END ==")
     
     if proc_result.returncode in GLSLANG_VALIDATOR_REJECTED_CODES:
-        if test_context.expect_glsl_failure:
+        if test_context.expected_glsl_result.expected_to_fail():
             matched_pattern = (test_context.glsl_failure_pattern == "" or proc_result.stdout.find(test_context.glsl_failure_pattern) != -1)
             if matched_pattern:
-                logger.info(f"{base_log} skipped (marked missing)")
-                return TestResult.PASSED_WITH_SKIPS
+                if test_context.expected_glsl_result == ExpectedGLSLResult.EXPECTED_TO_FAIL:
+                    logger.info(f"{base_log} skipped (marked missing)")
+                    return TestResult.PASSED_WITH_SKIPS
+                if test_context.expected_glsl_result == ExpectedGLSLResult.INTENDED_TO_FAIL:
+                    logger.info(f"{base_log} passed (marked missing and intended)")
+                    return TestResult.PASSED
+                assert False, "unexpected ExpectedGLSLResult value"
             else:
                 logger.error(f"{base_log} failed (marked missing, but output did not match the provided pattern)")
         else:
