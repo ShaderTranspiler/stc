@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 function main()
     v = Vec3F(0)
     a = [1.5f0, 2.5f0]

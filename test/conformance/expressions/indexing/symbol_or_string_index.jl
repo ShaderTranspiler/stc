@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 # COMMENT: special error messages left over from pre-0.0.2 JuliaGLM swizzling
 
 function main()

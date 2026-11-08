@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 function main()
     local i::Int32 = 2
     local u::UInt32 = 2

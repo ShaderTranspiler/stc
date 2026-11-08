@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 # OUTPUT: struct Immutable
 struct Immutable
     x::Float32

@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 mutable struct Mutable
     x::Float32
 end

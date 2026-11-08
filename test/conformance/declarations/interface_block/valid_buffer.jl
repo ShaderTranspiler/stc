@@ -1,3 +1,5 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
 # OUTPUT: layout(std430, binding = 0) buffer
 @gl_layout std430 binding=0 @gl_buffer struct Data
     values::Vector{Float32}
