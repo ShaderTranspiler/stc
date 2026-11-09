@@ -98,16 +98,16 @@ void print_quals(const stc::types::DeclQualifiers& decl_quals, std::ostream& out
 
 namespace stc::glsl {
 
-void GLSLCodeGenVisitor::dump(const NodeBase& node, std::ostream& out) const {
-    SIRDumper dumper{ctx, out};
+void GLSLCodeGenVisitor::dump(const NodeBase& node, std::ostream& dump_out) const {
+    SIRDumper dumper{ctx, dump_out};
 
     switch (ctx.config.err_dump_verbosity) {
         case DumpVerbosity::None:
             break;
 
         case stc::DumpVerbosity::Verbose:
-            out << "The GLSL code generation pass does not currently support verbose error "
-                   "dumping, only partial output will be printed!\n";
+            dump_out << "The GLSL code generation pass does not currently support verbose error "
+                        "dumping, only partial output will be printed!\n";
             [[fallthrough]];
 
         case DumpVerbosity::Partial:

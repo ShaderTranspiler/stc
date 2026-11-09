@@ -62,6 +62,7 @@ constexpr std::array general_entries{
     HelpEntry{"--no-out",          "do not output the generated code to stdout or disk"},
     HelpEntry{"--gl-version <N>",  "set OpenGL version for #version directive (default: \"460\")"},
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
+    HelpEntry{"--track-memory",    "print per-phase memory usage statistics for arenas"},
     HelpEntry{"--no-benchmark",    "disable the measuring and printing of transpilation time benchmarks"},
     HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-benchmark)"),
     HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"},

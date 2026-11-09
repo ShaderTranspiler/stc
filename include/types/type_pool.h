@@ -37,8 +37,8 @@ public:
         assert(TypeId{offset} == TypeId::void_id() && "invalid void type id");
     }
 
-    explicit TypePool(SizeTy initial_capacity, const std::vector<BuiltinTD>& builtins)
-        : TypePool{initial_capacity} {
+    explicit TypePool(SizeTy initial_capacity_kb, const std::vector<BuiltinTD>& builtins)
+        : TypePool{initial_capacity_kb} {
 
         for (BuiltinTD td : builtins)
             std::ignore = insert_or_get(td, true);
@@ -50,6 +50,15 @@ public:
     TypePool& operator=(TypePool&&)      = default;
 
     ~TypePool() = default;
+
+    // type erased view
+    ErasedArenaView get_erased_arena_view() const {
+        return {
+            .name    = "Type Pool",
+            .arena   = &arena,
+            .size_id = ErasedArenaView::get_size_id<TypeId::id_type>(),
+        };
+    }
 
     const TypeDescriptor& get_td(TypeId id) const;
 

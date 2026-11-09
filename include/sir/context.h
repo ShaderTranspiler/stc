@@ -16,7 +16,7 @@ public:
 
     template <typename T, typename U>
     [[nodiscard]] static SIRCtx move_pools_from(ASTCtx<T, U>&& other,
-                                                NodeId::id_type node_arena_kb = 128U) {
+                                                NodeId::id_type node_arena_kb = 48U) {
         return SIRCtx{std::move(other), node_arena_kb};
     }
 

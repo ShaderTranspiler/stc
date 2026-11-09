@@ -17,7 +17,7 @@ class QualifierPool {
     ArenaTy arena;
 
 public:
-    explicit QualifierPool(QualId::id_type initial_capacity_kb = 16U)
+    explicit QualifierPool(QualId::id_type initial_capacity_kb = 1U)
         : arena{static_cast<QualId::id_type>(initial_capacity_kb * 1024U)} {}
 
     QualifierPool(const QualifierPool&)            = delete;
@@ -26,6 +26,14 @@ public:
     QualifierPool& operator=(QualifierPool&&)      = default;
 
     ~QualifierPool() = default;
+
+    ErasedArenaView get_erased_arena_view() const {
+        return {
+            .name    = "Type Qualifier Pool",
+            .arena   = &arena,
+            .size_id = ErasedArenaView::get_size_id<QualId::id_type>(),
+        };
+    }
 
     std::pair<QualId, DeclQualifiers&> emplace(std::vector<QualKind> quals,
                                                LQPayload layout_payloads);

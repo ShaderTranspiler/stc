@@ -56,7 +56,7 @@ public:
     // clang-format on
 
 private:
-    void dump(const NodeBase& node, std::ostream& out) const;
+    void dump(const NodeBase& node, std::ostream& dump_out) const;
     void fail(std::string_view msg, const NodeBase& node);
     void internal_error(std::string_view msg, const NodeBase& node);
 

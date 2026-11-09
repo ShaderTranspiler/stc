@@ -28,10 +28,10 @@ public:
     // clang-format on
 
     explicit JLCtx(std::string_view juliaglm_path = "Main.JuliaGLM",
-                   const TargetInfo* target_info = nullptr, NodeId::id_type node_arena_kb = 128U,
-                   SrcLocationId::id_type src_info_arena_kb = 128U,
-                   TypeId::id_type type_arena_kb = 32U, SymbolId::id_type sym_arena_kb = 64U,
-                   QualId::id_type qual_arena_kb = 16U)
+                   const TargetInfo* target_info = nullptr, NodeId::id_type node_arena_kb = 64U,
+                   SrcLocationId::id_type src_info_arena_kb = 4U,
+                   TypeId::id_type type_arena_kb = 4U, SymbolId::id_type sym_arena_kb = 4U,
+                   QualId::id_type qual_arena_kb = 1U)
         : ASTCtx{{{BuiltinTypeKind::Nothing}, {BuiltinTypeKind::String}, {BuiltinTypeKind::Symbol}},
                  target_info,
                  node_arena_kb,

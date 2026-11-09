@@ -98,6 +98,14 @@ public:
 
     ~SrcInfoPool() = default;
 
+    ErasedArenaView get_erased_arena_view() const {
+        return {
+            .name    = "Source Info Pool",
+            .arena   = &arena,
+            .size_id = ErasedArenaView::get_size_id<SrcLocationId::id_type>(),
+        };
+    }
+
     [[nodiscard]] SrcLocationId get_location(intptr_t line, uint32_t col);
     [[nodiscard]] size_t get_file(std::string path);
 

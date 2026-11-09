@@ -50,9 +50,9 @@ protected:
 public:
     explicit ASTCtx(
         const std::vector<types::BuiltinTD>& type_builtins = std::vector<types::BuiltinTD>{},
-        const TargetInfo* target_info = nullptr, NodeIdTy::id_type node_arena_kb = 128U,
-        SrcLocationId::id_type src_info_arena_kb = 128U, types::TypeId::id_type type_arena_kb = 32U,
-        SymbolId::id_type sym_arena_kb = 64U, QualId::id_type qual_arena_kb = 16U)
+        const TargetInfo* target_info = nullptr, NodeIdTy::id_type node_arena_kb = 64U,
+        SrcLocationId::id_type src_info_arena_kb = 4U, types::TypeId::id_type type_arena_kb = 4U,
+        SymbolId::id_type sym_arena_kb = 4U, QualId::id_type qual_arena_kb = 1U)
         : target_info{target_info},
           node_arena{node_arena_kb * 1024U},
           type_pool{type_arena_kb, type_builtins},
@@ -66,6 +66,14 @@ public:
     ASTCtx& operator=(const ASTCtx&) const = delete;
     ASTCtx(ASTCtx&&) noexcept              = default;
     ASTCtx& operator=(ASTCtx&&) noexcept   = default;
+
+    ErasedArenaView get_node_pool_erased_arena_view() const {
+        return {
+            .name    = "Node Pool",
+            .arena   = &node_arena,
+            .size_id = ErasedArenaView::get_size_id<typename NodeIdTy::id_type>(),
+        };
+    }
 
     // ! use with caution
     NodeIdTy calculate_node_id(const void* ptr, node_kind_type kind) const {

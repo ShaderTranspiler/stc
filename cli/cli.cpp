@@ -96,6 +96,7 @@ int run(int argc, char* argv[]) {
     std::string pre_eval_path{};
     uint32_t ite_count = 1U;
     bool run_benchmark = true;
+    bool track_memory  = false;
     bool no_out        = false;
     bool quiet         = false;
     bool add_no_commit = true;
@@ -115,6 +116,8 @@ int run(int argc, char* argv[]) {
 
         if (arg == "--no-benchmark")
             run_benchmark = false;
+        else if (arg == "--track-memory")
+            track_memory = true;
         else if (arg == "--quiet")
             quiet = true;
         else if (arg == "--dump-parsed")
@@ -319,9 +322,24 @@ int run(int argc, char* argv[]) {
         if (run_benchmark && !quiet && ite_count != 1)
             print_header(std::cout, fmt::format("Transpilation #{}", i + 1), false);
 
-        auto result = run_benchmark && !quiet
-                          ? api::transpile<true>(code, tail_from_cwd(path).string(), config)
-                          : api::transpile<false>(code, tail_from_cwd(path).string(), config);
+        // TODO: we tie memory tracking to benchmarking here temporarily, until the API gets a
+        // runtime endpoint for benchmarking and memory tracking
+        stc::api::MaybeString result;
+        if (!quiet) {
+            if (run_benchmark) {
+                result =
+                    track_memory
+                        ? api::transpile<true, true>(code, tail_from_cwd(path).string(), config)
+                        : api::transpile<true, false>(code, tail_from_cwd(path).string(), config);
+            } else {
+                result =
+                    track_memory
+                        ? api::transpile<false, true>(code, tail_from_cwd(path).string(), config)
+                        : api::transpile<false, false>(code, tail_from_cwd(path).string(), config);
+            }
+        } else {
+            result = api::transpile<false, false>(code, tail_from_cwd(path).string(), config);
+        }
 
         if (!quiet)
             print_header(std::cout, "Result");

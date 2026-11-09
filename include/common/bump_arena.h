@@ -1,34 +1,125 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 #include "common/utils.h"
 
 namespace stc {
 
+namespace detail {
+
+// helpers to avoid integer promotion issues
+template <std::unsigned_integral SizeTy>
+static constexpr SizeTy size_add(SizeTy a, SizeTy b) noexcept {
+    return static_cast<SizeTy>(a + b);
+}
+
+template <std::unsigned_integral SizeTy>
+static constexpr SizeTy size_sub(SizeTy a, SizeTy b) noexcept {
+    return static_cast<SizeTy>(a - b);
+}
+
+template <std::unsigned_integral SizeTy>
+static constexpr SizeTy size_mul(SizeTy a, SizeTy b) noexcept {
+    return static_cast<SizeTy>(a * b);
+}
+
+template <std::unsigned_integral SizeTy>
+static constexpr SizeTy size_div(SizeTy a, SizeTy b) noexcept {
+    return static_cast<SizeTy>(a / b);
+}
+
+// storage and info for a memory block reserved by BumpArena
+template <std::unsigned_integral SizeTy>
+struct Slab {
+    static constexpr SizeTy size_max = std::numeric_limits<SizeTy>::max();
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    std::unique_ptr<std::byte[]> buffer;
+    SizeTy capacity;
+    SizeTy start_offset;
+
+    // the memory in-use inside the memory block, excluding alignment and end-of-slab padding
+    // only used for memory usage statistics, not for alloc calculations
+    // updated by BumpArena on allocs
+    SizeTy effective_bytes = 0U;
+
+    explicit Slab(SizeTy capacity, SizeTy start_offset)
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+        : buffer{std::make_unique_for_overwrite<std::byte[]>(capacity)},
+          capacity{capacity},
+          start_offset{start_offset} {
+        assert(capacity != 0 && "slab capacity cannot be zero");
+    }
+
+    Slab(const Slab&)                = delete;
+    Slab& operator=(const Slab&)     = delete;
+    Slab(Slab&&) noexcept            = default;
+    Slab& operator=(Slab&&) noexcept = default;
+
+    ~Slab() = default;
+
+    // pointer to first byte past buffer
+    [[nodiscard]] std::byte* get_end_ptr() const { return buffer.get() + capacity; }
+
+    // offset to first byte past buffer
+    [[nodiscard]] SizeTy get_end_offset() const {
+        return detail::size_add<SizeTy>(start_offset, capacity);
+    }
+
+    [[nodiscard]] bool contains_offset(SizeTy offset) const {
+        return start_offset <= offset && offset < get_end_offset();
+    }
+
+    [[nodiscard]] void* offset_to_ptr(SizeTy offset) const {
+        assert(contains_offset(offset) && "offset outside slab's buffer");
+        return buffer.get() + detail::size_sub(offset, start_offset);
+    }
+
+    [[nodiscard]] bool contains_ptr(const void* ptr) const {
+        return ptr != nullptr && buffer.get() <= ptr && ptr < get_end_ptr();
+    }
+
+    // ! only use with pointers that originated from the arena
+    // ! assumes ptr points to the beginning of an object in memory
+    SizeTy ptr_to_offset(const void* ptr) const {
+        assert(contains_ptr(ptr) && "ptr outside slab's buffer");
+
+        const auto internal_offset =
+            static_cast<SizeTy>(static_cast<const std::byte*>(ptr) - buffer.get());
+        return detail::size_add<SizeTy>(start_offset, internal_offset);
+    }
+};
+
+} // namespace detail
+
 template <std::unsigned_integral SizeTy>
 class BumpArena final {
-private:
-    static constexpr SizeTy SizeT_max = std::numeric_limits<SizeTy>::max();
+    using Slab = stc::detail::Slab<SizeTy>;
 
-    // CLEANUP: wrap these into an ArenaIdx type with overloaded +/-/+=/-= operators
-    // helpers to avoid integer promotion issues
-    static constexpr SizeTy SizeT_add(SizeTy a, SizeTy b) noexcept {
-        return static_cast<SizeTy>(a + b);
-    }
-    static constexpr SizeTy SizeT_sub(SizeTy a, SizeTy b) noexcept {
-        return static_cast<SizeTy>(a - b);
-    }
-    static constexpr SizeTy SizeT_mul(SizeTy a, SizeTy b) noexcept {
-        return static_cast<SizeTy>(a * b);
-    }
-    static constexpr SizeTy SizeT_div(SizeTy a, SizeTy b) noexcept {
-        return static_cast<SizeTy>(a / b);
-    }
+private:
+    struct DestructorNode {
+        void (*call_dtor)(void*);
+        void* obj;
+        DestructorNode* prev;
+    };
+
+    static constexpr SizeTy size_max = std::numeric_limits<SizeTy>::max();
+
+    std::vector<std::unique_ptr<Slab>> slabs{}; // reserved (pre-allocated) memory blocks
+    std::vector<SizeTy> slab_end_offsets{};     // list of slab ends, for efficient slab lookup
+    Slab* slabs_tail              = nullptr;    // points to current slab
+    std::byte* cur_ptr            = nullptr;    // points to first free reserved byte
+    std::byte* end_ptr            = nullptr;    // end of current slab's reserved memory
+    SizeTy cur_offset             = 1U;         // points to cur_ptr, in offset form
+    DestructorNode* dtor_tail     = nullptr;    // linked list of destructors to call
+    mutable SizeTy last_slab_hint = null_id; // hint that accelerates slab lookup on contiguous read
 
 public:
     static constexpr SizeTy null_id = 0;
@@ -92,15 +183,15 @@ public:
             aligned_ptr = get_aligned_ptr(cur_ptr, alignment);
 
         return static_cast<SizeTy>(aligned_ptr - cur_ptr) <=
-               SizeT_sub(SizeT_sub(SizeT_max, cur_offset), size);
+               detail::size_sub(detail::size_sub(size_max, cur_offset), size);
     }
 
     template <typename T>
     bool can_allocate(SizeTy n = 1) {
-        return can_allocate(SizeT_mul(sizeof(T), n), alignof(T));
+        return can_allocate(detail::size_mul<SizeTy>(sizeof(T), n), alignof(T));
     }
 
-    // ! allocations that would not fit into a newly allocated slab are bad_alloc-ed.
+    // ! allocations that would not fit into a freshly allocated slab are bad_alloc-ed.
     // ! this is intentional, as BumpArena is mostly meant to store small types.
     // ! to work around this, provide an appropriate initial_slab_capacity when creating the arena
     [[nodiscard]] std::pair<SizeTy, void*> allocate(SizeTy size, SizeTy alignment = 8) {
@@ -123,18 +214,23 @@ public:
         if (!can_allocate(size, alignment, aligned_ptr))
             throw std::bad_alloc{}; // allocation would overflow offset type
 
-        cur_offset = SizeT_add(cur_offset, static_cast<SizeTy>(aligned_ptr + size - cur_ptr));
-        cur_ptr    = aligned_ptr + size;
+        cur_offset =
+            detail::size_add<SizeTy>(cur_offset, static_cast<SizeTy>(aligned_ptr + size - cur_ptr));
+        cur_ptr = aligned_ptr + size;
 
         if (cur_ptr > end_ptr)
             throw std::bad_alloc{}; // allocation too large for BumpArena
 
-        return {SizeT_sub(cur_offset, size), aligned_ptr};
+        // assumes we don't wanna count an allocation if it ends in bad_alloc
+        assert(slabs_tail != nullptr);
+        slabs_tail->effective_bytes = detail::size_add<SizeTy>(slabs_tail->effective_bytes, size);
+
+        return {detail::size_sub(cur_offset, size), aligned_ptr};
     }
 
     template <typename T>
     [[nodiscard]] std::pair<SizeTy, void*> allocate_for(SizeTy n = 1) {
-        return allocate(SizeT_mul(sizeof(T), n), alignof(T));
+        return allocate(detail::size_mul<SizeTy>(sizeof(T), n), alignof(T));
     }
 
     template <typename T, typename... Args>
@@ -147,11 +243,11 @@ public:
 
         void* dtor_mem = nullptr;
 
-        // in the trivially destructible case, dtor_call is unused
+        // [[maybe_unused]] because in the trivially destructible case, dtor_call is unused
         [[maybe_unused]] void (*dtor_call)(void*) = nullptr;
 
         if constexpr (!std::is_trivially_destructible_v<T>) {
-            dtor_mem  = allocate_for<DtorLLNode>().second;
+            dtor_mem  = allocate_for<DestructorNode>().second;
             dtor_call = [](void* obj) { static_cast<T*>(obj)->~T(); };
         }
 
@@ -162,7 +258,7 @@ public:
 
         if constexpr (!std::is_trivially_destructible_v<T>) {
             // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-            dtor_tail = new (dtor_mem) DtorLLNode{dtor_call, obj_ptr, dtor_tail};
+            dtor_tail = new (dtor_mem) DestructorNode{dtor_call, obj_ptr, dtor_tail};
         }
 
         return {offset, obj_ptr};
@@ -232,74 +328,89 @@ public:
 
     [[nodiscard]] SizeTy get_current_offset() const { return cur_offset; }
 
+    // ==================
+    // MEMORY USAGE STATS
+    // ==================
+
+    // number of slabs used
+    size_t slab_count() const { return slabs.size(); }
+
+    struct SlabMemoryUsage {
+        // the total reserved memory (capacity of the slab)
+        SizeTy allocated_bytes = 0;
+        // the memory that is in use inside the slab (excluding alignment and end-of-slab padding)
+        SizeTy effective_bytes = 0;
+
+        // the memory that is in use inside the slab (including alignment and end-of-slab padding)
+        // this is effectively the same as allocated_bytes for every slab except the last one, where
+        // it's the memory in use, including alignment padding only
+        // we provide it for consistency and convenience, but it does not provide too much extra
+        // information under the current bookkeeping approach
+        SizeTy used_bytes = 0;
+    };
+
+    std::vector<SlabMemoryUsage> per_slab_memory_usage() const {
+        if (slabs.empty())
+            return {};
+
+        std::vector<SlabMemoryUsage> result(slabs.size());
+
+        for (size_t i = 0; i < slabs.size() - 1; i++) {
+            auto& slab_usage = result[i];
+
+            assert(slabs[i] != nullptr);
+
+            // see comment on used_bytes of non-last slabs in SlabMemoryUsage
+            slab_usage.allocated_bytes = slabs[i]->capacity;
+            slab_usage.used_bytes      = slab_usage.allocated_bytes;
+            slab_usage.effective_bytes = slabs[i]->effective_bytes;
+        }
+
+        assert(slabs.back() != nullptr);
+        const auto& last_slab = *slabs.back();
+        auto& last_slab_usage = result.back();
+
+        last_slab_usage.allocated_bytes = last_slab.capacity;
+        last_slab_usage.effective_bytes = last_slab.effective_bytes;
+
+        // ptr diff of two ptrs not pointing to the same array is UB
+        // the only case when cur_ptr isn't a ptr of the slab's buffer, is when it's full
+        // without padding, but a new slab hasn't been alloced yet, because the last allocation
+        // fit into it exactly.
+        // for those cases, cur_ptr == end_ptr, pointing exactly one byte past the buffer
+        // otherwise, there's no need to widen to uintptr_t
+        assert(cur_ptr <= last_slab.get_end_ptr());
+        if (cur_ptr == last_slab.get_end_ptr())
+            last_slab_usage.used_bytes = slabs_tail->capacity;
+        else
+            last_slab_usage.used_bytes = static_cast<SizeTy>(cur_ptr - slabs_tail->buffer.get());
+
+        return result;
+    }
+
+    // we report the arena's memory statistics as a convenience, by summing the individual
+    // slab statistics
+    // since this needs the per-slab calculations anyways, we include them in the result
+    struct ArenaMemoryUsage {
+        std::vector<SlabMemoryUsage> per_slab_usage;
+        SizeTy allocated_bytes = 0;
+        SizeTy used_bytes      = 0;
+        SizeTy effective_bytes = 0;
+
+        ArenaMemoryUsage() = delete;
+        ArenaMemoryUsage(std::vector<SlabMemoryUsage> per_slab_usage)
+            : per_slab_usage{std::move(per_slab_usage)} {
+            for (const auto& slab_usage : this->per_slab_usage) {
+                allocated_bytes += slab_usage.allocated_bytes;
+                used_bytes += slab_usage.used_bytes;
+                effective_bytes += slab_usage.effective_bytes;
+            }
+        }
+    };
+
+    ArenaMemoryUsage memory_usage() const { return ArenaMemoryUsage(per_slab_memory_usage()); }
+
 private:
-    struct Slab {
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-        std::unique_ptr<std::byte[]> buffer;
-        SizeTy capacity;
-        SizeTy start_offset;
-
-        explicit Slab(SizeTy capacity, SizeTy start_offset)
-            // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-            : buffer{std::make_unique_for_overwrite<std::byte[]>(capacity)},
-              capacity{capacity},
-              start_offset{start_offset} {
-
-            assert(capacity != 0 && "slab capacity cannot be zero");
-        }
-
-        Slab(const Slab&)                = delete;
-        Slab& operator=(const Slab&)     = delete;
-        Slab(Slab&&) noexcept            = default;
-        Slab& operator=(Slab&&) noexcept = default;
-
-        ~Slab() = default;
-
-        // pointer to first byte past buffer
-        [[nodiscard]] std::byte* get_end_ptr() const { return buffer.get() + capacity; }
-
-        // offset to first byte past buffer
-        [[nodiscard]] SizeTy get_end_offset() const { return SizeT_add(start_offset, capacity); }
-
-        [[nodiscard]] bool contains_offset(SizeTy offset) const {
-            return start_offset <= offset && offset < get_end_offset();
-        }
-
-        [[nodiscard]] void* offset_to_ptr(SizeTy offset) const {
-            assert(contains_offset(offset) && "offset outside slab's buffer");
-            return buffer.get() + SizeT_sub(offset, start_offset);
-        }
-
-        [[nodiscard]] bool contains_ptr(const void* ptr) const {
-            return ptr != nullptr && buffer.get() <= ptr && ptr < get_end_ptr();
-        }
-
-        // ! only use with pointers that originated from the arena
-        // ! assumes ptr points to the beginning of an object in memory
-        SizeTy ptr_to_offset(const void* ptr) const {
-            assert(contains_ptr(ptr) && "ptr outside slab's buffer");
-
-            const auto internal_offset =
-                static_cast<SizeTy>(static_cast<const std::byte*>(ptr) - buffer.get());
-            return SizeT_add(start_offset, internal_offset);
-        }
-    };
-
-    struct DtorLLNode {
-        void (*call_dtor)(void*);
-        void* obj;
-        DtorLLNode* prev;
-    };
-
-    std::vector<std::unique_ptr<Slab>> slabs{};
-    std::vector<SizeTy> slab_end_offsets{};
-    Slab* slabs_tail              = nullptr;
-    std::byte* cur_ptr            = nullptr;
-    std::byte* end_ptr            = nullptr;
-    SizeTy cur_offset             = 1U;
-    DtorLLNode* dtor_tail         = nullptr;
-    mutable SizeTy last_slab_hint = null_id;
-
     static uintptr_t get_aligned_size(uintptr_t size, SizeTy alignment) {
         if (size > std::numeric_limits<uintptr_t>::max() - alignment + 1)
             throw std::overflow_error{"The specified pointer alignment would overflow"};
@@ -331,8 +442,9 @@ private:
         if (!slabs.empty()) {
             assert(slabs.back() != nullptr && "Slab pointer is nullptr");
             SizeTy old_capacity = slabs.back()->capacity;
-            new_capacity =
-                old_capacity < SizeT_div(SizeT_max, 2) ? SizeT_mul(old_capacity, 2U) : SizeT_max;
+            new_capacity        = old_capacity < detail::size_div<SizeTy>(size_max, 2)
+                                      ? detail::size_mul<SizeTy>(old_capacity, 2U)
+                                      : size_max;
         } else {
             assert(capacity_fallback != 0 &&
                    "creating first slab through make_new_slab without a fallback value");
@@ -343,13 +455,13 @@ private:
 
         // prevent unnecessary offset overflows with smaller idx types
         // by limiting slab sizes based on max idx from start_offset
-        new_capacity = std::min(new_capacity, SizeT_sub(SizeT_max, start_offset));
+        new_capacity = std::min(new_capacity, detail::size_sub(size_max, start_offset));
 
         if (new_capacity == 0)
             throw std::overflow_error{"BumpArena index type exhausted"};
 
-        slabs.push_back(std::make_unique<Slab>(new_capacity, start_offset));
-        slab_end_offsets.push_back(SizeT_add(start_offset, new_capacity));
+        slabs.emplace_back(std::make_unique<Slab>(new_capacity, start_offset));
+        slab_end_offsets.emplace_back(detail::size_add<SizeTy>(start_offset, new_capacity));
 
         slabs_tail = slabs.back().get();
         cur_ptr    = slabs_tail->buffer.get();
@@ -388,5 +500,35 @@ struct is_bump_arena<BumpArena<SizeTy>> : std::true_type {};
 
 template <typename T>
 concept CBumpArena = is_bump_arena<T>::value;
+
+// this is a very simple type erased view of an arena (not pretty, but it works)
+// it should only be used for debug tooling, like the memory tracker which stores a std::vector of
+// arenas with differing sizes, it shouldn't be relied on for actual transpilation logic
+// it's declared here so that pools can see it and provide an accessor for it, without exposing
+// their core arenas to their owning contexts
+// see MemoryTracker for usage
+struct ErasedArenaView {
+    enum class ArenaSizeID : uint8_t { U8, U16, U32, U64 };
+
+    std::string_view name;
+    const void* arena;
+    ArenaSizeID size_id;
+
+    template <std::unsigned_integral SizeTy>
+    static ArenaSizeID get_size_id() {
+        using enum ArenaSizeID;
+
+        if constexpr (std::is_same_v<SizeTy, uint8_t>)
+            return U8;
+        else if constexpr (std::is_same_v<SizeTy, uint16_t>)
+            return U16;
+        else if constexpr (std::is_same_v<SizeTy, uint32_t>)
+            return U32;
+        else if constexpr (std::is_same_v<SizeTy, uint64_t>)
+            return U64;
+        else
+            static_assert(dependent_false_v<SizeTy>, "No ArenaSizeID exists for specified type!");
+    }
+};
 
 }; // namespace stc
