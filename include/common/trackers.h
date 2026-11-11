@@ -54,58 +54,52 @@ public:
     // we still assume timings cannot overlap, this is just  useful for automatically ending timings
     // on throwing paths and not leaving a tracker entry open
     struct Timer {
+    private:
         TimingTracker& tracker;
-        bool is_running = true;
+        bool is_running_ = false;
 
+    public:
         explicit Timer(TimingTracker& tracker)
             : tracker{tracker} {}
 
         ~Timer() {
-            if (is_running)
+            if (is_running_)
                 tracker.end_timing();
         }
 
-        Timer(const Timer&)            = delete;
-        Timer& operator=(const Timer&) = delete;
-
+        Timer(const Timer&) = delete;
         Timer(Timer&& other) noexcept
-            : tracker{other.tracker}, is_running{other.is_running} {
-            other.is_running = false;
+            : tracker{other.tracker}, is_running_{other.is_running_} {
+            other.is_running_ = false;
         };
 
-        Timer& operator=(Timer&& other) noexcept {
-            if (this != &other) {
-                if (is_running)
-                    end();
-                tracker    = other.tracker;
-                is_running = std::exchange(other.is_running, false);
-            }
+        Timer& operator=(const Timer&)  = delete;
+        Timer& operator=(Timer&& other) = delete;
 
-            return *this;
-        }
+        bool is_running() const { return is_running_; }
 
         void start(std::string_view name, bool include_in_sum = true,
                    TimePoint start_time = Clock::now()) {
             // same debug vs release reasoning as in end()
-            assert(!is_running && "trying to start timer while it is already running");
-            if (is_running)
+            assert(!is_running_ && "trying to start timer while it is already running");
+            if (is_running_)
                 end();
-            assert(!is_running);
+            assert(!is_running_);
 
             tracker.start_timing(name, include_in_sum, start_time);
-            is_running = true;
+            is_running_ = true;
         }
 
         void end(TimePoint end_time = Clock::now()) noexcept {
             // this indicates some start/end mismatch at the caller site
             // we can just ignore the request in release builds, but it's nice to have some checking
             // in debug builds
-            assert(is_running && "trying to end timer that is not currently running");
-            if (!is_running)
+            assert(is_running_ && "trying to end timer that is not currently running");
+            if (!is_running_)
                 return;
 
             tracker.end_timing(end_time);
-            is_running = false;
+            is_running_ = false;
         }
     };
 

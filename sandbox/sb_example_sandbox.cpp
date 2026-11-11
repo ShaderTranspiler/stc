@@ -1,7 +1,7 @@
 // example meant to demonstrate sandbox usage
 
 // sandboxes can include and use libstc headers
-#include "api/transpiler.h"
+#include "api/stc.hpp"
 #include "common/utils.h"      // ScopeGuard
 #include "frontend/jl/utils.h" // jl::check_exception
 

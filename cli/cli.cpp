@@ -1,7 +1,7 @@
 #include <external/julia.h>
 JULIA_DEFINE_FAST_TLS
 
-#include <api/transpiler.h>
+#include <api/stc.hpp>
 #include <common/config.h>
 #include <common/report.h>
 #include <common/term_utils.h>
@@ -334,7 +334,7 @@ int run(int argc, char* argv[]) {
 
         auto result = api::transpile(code, config);
 
-        if (result.status != stc::api::STC_Status::Success) {
+        if (result.status != stc::api::Status::Success) {
             std::cerr << colored("\nTranspilation failed.\n", ansi_codes::red);
             return EXIT_FAILURE;
         }

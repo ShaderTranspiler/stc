@@ -156,7 +156,9 @@ add_custom_target(${BUILD_META_TARGET}
     VERBATIM
 )
 
-file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
+# currently only the api is exported as hpp
+# i wanna shift towards hpp overall at some point, but for now we pin the exported api's hpp explicitly
+file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "include/api/stc.hpp" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
 
 # dev tooling (ccache, clang-format, clang-tidy)
 # needed before dependencies, since compiler caching should propagate to those
@@ -506,6 +508,27 @@ if (STC_BUILD_TESTS)
         endforeach()
     else()
         message(WARNING "Tests are enabled, but CLI building is not. Running conformance tests relies on the CLI as an stc API, so conformance tests will not be enabled")
+    endif()
+
+    # compile-only check that the stc.h header is a valid C header that can be included in C11 without problem
+    # we only compile, since that should already catch if the header is invalid, without having to link the actual library
+    set(C_HEADER_CHECK_TARGET stc_c_header_check)
+    add_library(${C_HEADER_CHECK_TARGET} OBJECT test/c_header_check.c)
+    target_include_directories(${C_HEADER_CHECK_TARGET} PRIVATE "${STC_SRC_DIR}/include")
+    set_target_properties(${C_HEADER_CHECK_TARGET} PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+
+    if (MSVC)
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
+    if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE -Wstrict-prototypes)
     endif()
 
     message(STATUS "Catch2 found, test targets enabled")

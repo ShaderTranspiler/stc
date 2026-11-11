@@ -1,4 +1,6 @@
-#include "api/config.h"
+#include "api/stc.h"
+
+#include "common/config.h"
 
 #define STC_SET_CFG_VALUE(handle, field, value)                                                    \
     if ((handle) != STC_NULL_CONFIG) {                                                             \

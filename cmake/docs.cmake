@@ -58,6 +58,9 @@ if (Doxygen_FOUND)
     set(DOXYGEN_INCLUDE_GRAPH YES)
     set(DOXYGEN_INCLUDED_BY_GRAPH YES)
 
+    # make sure that our ifdef-ing to keep the header C-includable doesn't drop anything from the docs
+    set(DOXYGEN_PREDEFINED __cplusplus)
+    
     doxygen_add_docs(
         docs
         ${STC_SRC_DIR}/include

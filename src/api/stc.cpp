@@ -1,4 +1,5 @@
-#include "api/transpiler.h"
+#include "api/stc.h"
+#include "api/stc.hpp"
 
 #include <cstdio>
 #include <utility>
@@ -11,7 +12,6 @@
 #include "frontend/jl/parser.h"
 #include "frontend/jl/rt/utils.h"
 #include "frontend/jl/sema.h"
-#include "meta.h"
 #include "sir/dumper.h"
 
 namespace stc::api {
@@ -176,7 +176,7 @@ TranspilationResult transpile_impl(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
 
     return {
         .code   = code_gen_vis.move_result(),
-        .status = STC_Status::Success,
+        .status = Status::Success,
     };
 }
 
@@ -406,7 +406,7 @@ STC_StatusValue process_transpilation_result(TranspilationResult& result,
     // if we don't get to the end of the function (e.g. bad alloc), default to null result
     result_handle = STC_NULL_RESULT;
 
-    if (result.status == STC_Status::Success) {
+    if (result.status == Status::Success) {
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         auto* code_ptr = new std::string(std::move(result.code));
         result_handle  = code_ptr;
@@ -423,10 +423,6 @@ STC_StatusValue process_transpilation_result(TranspilationResult& result,
 // ===========
 
 extern "C" {
-    STC_API uint8_t stc_abi_version() noexcept {
-        return stc::meta::version_major;
-    }
-
     STC_API STC_StatusValue stc_transpile(jl_value_t* expr_v, STC_ConfigHandle cfg_handle,
                                           STC_ResultHandle* result_handle) noexcept {
         return wrap_as_noexcept(
