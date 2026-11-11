@@ -1,10 +1,10 @@
 #pragma once
 
-#include "external/julia.hpp"
-
 #include "frontend/jl/ast.hpp"
 #include "frontend/jl/context.hpp"
 #include "sir/context.hpp"
+
+#include "external/julia.hpp"
 
 #define PARSER_DECL(name) NodeId parse_##name(jl_expr_t* expr, size_t nargs)
 

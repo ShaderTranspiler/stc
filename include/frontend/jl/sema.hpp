@@ -1,6 +1,7 @@
 #pragma once
 
-#include "external/julia.hpp"
+#include <deque>
+#include <span>
 
 #include "common/report.hpp"
 #include "frontend/jl/ctor_resolver.hpp"
@@ -10,8 +11,7 @@
 #include "frontend/jl/type_conversion.hpp"
 #include "frontend/jl/visitor.hpp"
 
-#include <deque>
-#include <span>
+#include "external/julia.hpp"
 
 namespace stc::jl {
 

@@ -3,8 +3,9 @@
 #include <optional>
 #include <string_view>
 
-#include "external/julia.hpp"
 #include "frontend/jl/rt/env.hpp"
+
+#include "external/julia.hpp"
 
 namespace stc::jl::rt {
 

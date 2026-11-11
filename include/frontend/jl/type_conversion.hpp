@@ -1,9 +1,9 @@
 #pragma once
 
-#include "external/julia.hpp"
-
 #include "frontend/jl/context.hpp"
 #include "types/type_visitor.hpp"
+
+#include "external/julia.hpp"
 
 namespace stc::jl {
 

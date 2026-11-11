@@ -1,11 +1,13 @@
 #include "frontend/jl/sema.hpp"
-#include "external/julia.hpp"
+
+#include <sstream>
+
 #include "frontend/jl/ast_utils.hpp"
 #include "frontend/jl/dumper.hpp"
 #include "frontend/jl/rt/utils.hpp"
 #include "types/type_to_string.hpp"
 
-#include <sstream>
+#include "external/julia.hpp"
 
 namespace stc::jl {
 

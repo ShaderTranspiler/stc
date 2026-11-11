@@ -1,6 +1,14 @@
 #include <external/julia.hpp>
 JULIA_DEFINE_FAST_TLS
 
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <optional>
+#include <sstream>
+
 #include <api/stc.hpp>
 #include <common/config.hpp>
 #include <common/report.hpp>
@@ -9,14 +17,6 @@ JULIA_DEFINE_FAST_TLS
 #include <frontend/jl/utils.hpp>
 
 #include "cli_utils.hpp"
-
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <limits>
-#include <optional>
-#include <sstream>
 
 #define STC_CHECK_EXCEPTIONS                                                                       \
     if (jl::check_exceptions()) {                                                                  \
