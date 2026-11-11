@@ -120,9 +120,9 @@ jobs:
             --exclude "$(realpath build)/*" \
             --exclude '*/test/*' \
             --exclude '*/sandbox/*' \
-            --ignore-errors unused \
+            --ignore-errors unused,inconsistent \
             --output-file coverage.info
-          lcov --ignore-errors unused --remove coverage.info '/usr/*' "$(realpath build)/*" '*/test/*' '*/sandbox/*' --output-file coverage.info
+          lcov --ignore-errors unused,inconsistent --remove coverage.info '/usr/*' "$(realpath build)/*" '*/test/*' '*/sandbox/*' --output-file coverage.info
 
       - name: Upload Coverage
         if: matrix.config.compiler == 'gcc'
