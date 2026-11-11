@@ -740,7 +740,7 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
     if config.julia_bin_dir is not None:
         stc_proc_env["PATH"] = config.julia_bin_dir + os.pathsep + stc_proc_env.get("PATH", "")
 
-    cli_args = ["--no-time", "--quiet", "--cg-indent", "0"]
+    cli_args = ["--no-timing", "--quiet", "--cg-indent", "0"]
     if should_be_valid:
         assert test_context.out_path != ""
         cli_args.extend(["-o", test_context.out_path])

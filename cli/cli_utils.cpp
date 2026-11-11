@@ -64,7 +64,7 @@ constexpr std::array general_entries{
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
     HelpEntry{"--track-memory",    "print per-phase memory usage statistics for arenas"},
     HelpEntry{"--no-timing",       "disable the measuring and printing of transpilation time breakdown stats"},
-    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-time)"),
+    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-timing)"),
     HelpEntry{"--timing",          "print transpilation time breakdown stats, even if --quiet is passed"},
     HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"},
     HelpEntry{"--skip-no-commit",  "avoids the CLI adding a no-commit tag to the generated output file"},
