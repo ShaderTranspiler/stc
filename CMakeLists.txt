@@ -185,6 +185,8 @@ if(NOT fmt_FOUND)
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
         GIT_TAG        11.1.1
     )
+    # we link fmt statically, so we don't wanna ship their headers and such
+    set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(fmt)
     
     get_target_property(FMT_INCLUDES fmt INTERFACE_INCLUDE_DIRECTORIES)
@@ -248,6 +250,7 @@ else()
     target_link_options(CommonConfig INTERFACE
         $<$<CONFIG:Release>:-Wl,-s>
         $<$<CONFIG:MinSizeRel>:-Wl,-s>
+        -Wl,--exclude-libs,ALL # avoid fmt's (or other dependency's) symbols getting exported from our binaries (Linux-only issue)
     )
 
     if (MINGW)
