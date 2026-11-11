@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-// ? metadata updated before every build
+// ? metadata updated before every CMake build
 
 namespace stc::meta {
 

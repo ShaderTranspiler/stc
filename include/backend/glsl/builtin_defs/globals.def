@@ -1,7 +1,5 @@
 #include "common/x_macros/begin_def.inc"
 
-// clang-format off
-
 // requires stc::glsl::detail::BuiltinType to be using enum-d in including scope
 
 // format:

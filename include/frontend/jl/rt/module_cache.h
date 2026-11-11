@@ -43,13 +43,13 @@ class JuliaModuleCache {
     using MaybeModRef = std::optional<std::reference_wrapper<JuliaModule>>;
 
 public:
-    explicit JuliaModuleCache(std::string_view juliaglm_path = "Main.JuliaGLM")
+    explicit JuliaModuleCache(std::string_view julia_glm_path)
         : main_mod{register_mod("Main", jl_main_module)},
           base_mod{register_mod("Base", jl_base_module)},
           core_mod{register_mod("Core", jl_core_module)},
           meta_mod{get_mod_or_throw("Base.Meta")},
           comp_mod{get_mod_or_throw("Core.Compiler")},
-          glm_mod{get_mod_or_throw(juliaglm_path)} {}
+          glm_mod{get_mod_or_throw(julia_glm_path)} {}
 
     // returns JuliaModule from cache, or retrieves it from julia, adds to cache and returns
     // mod_path format: X.Y.Z
@@ -82,7 +82,7 @@ public:
     JuliaModule& core_mod; // Core
     JuliaModule& meta_mod; // Base.Meta
     JuliaModule& comp_mod; // Core.Compiler
-    JuliaModule& glm_mod;  // determined by juliaglm_path (Main.JuliaGLM by default)
+    JuliaModule& glm_mod;  // determined by julia_glm_path (Main.JuliaGLM by default)
 
 private:
     [[nodiscard]] JuliaModule& register_mod(std::string_view mod_path, jl_module_t* mod);

@@ -34,6 +34,8 @@ class GLSLTypes {
 public:
     TypePool& type_pool;
 
+    const TypeId gl_void, gl_bool, gl_int, gl_uint, gl_float, gl_double;
+
     explicit GLSLTypes(TypePool& type_pool)
         : type_pool{type_pool},
           gl_void{type_pool.void_td()},
@@ -49,8 +51,6 @@ public:
           STC_GL_INIT_VECS(gl_uint, u),
           STC_GL_INIT_MATS(),
           STC_GL_INIT_MATS(d) {}
-
-    const TypeId gl_void, gl_bool, gl_int, gl_uint, gl_float, gl_double;
 
     STC_GL_DECL_VECS()
     STC_GL_DECL_VECS(d)

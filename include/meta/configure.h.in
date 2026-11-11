@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-// ? metadata available at during CMake's configuration-time
+// metadata available during CMake configuration
 
 namespace stc::meta {
 
