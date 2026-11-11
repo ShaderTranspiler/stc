@@ -27,6 +27,7 @@ inline std::string dump_label(std::string_view label_str) {
 }
 
 void print_header(std::ostream& out, std::string_view header_text,
-                  bool extra_trailing_newline = true, bool color_header_text = true);
+                  bool extra_trailing_newline = true, bool color_header_text = true,
+                  bool empty_line_before = true);
 
 } // namespace stc

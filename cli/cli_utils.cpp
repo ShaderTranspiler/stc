@@ -28,7 +28,7 @@
 void stc::cli::print_version_info() {
     static constexpr auto val_col = ansi_codes::yellow;
 
-    print_header(std::cout, "Shader Transpiler Core (STC)", true, false);
+    print_header(std::cout, "Shader Transpiler Core (STC)", true, true, false);
 
     // clang-format off
     std::cout << "version:      " << stc::colored(stc::meta::version, val_col) << '\n';
@@ -117,7 +117,7 @@ void print_help() {
     static constexpr auto title_col = ansi_codes::cyan;
     static constexpr auto flag_col  = ansi_codes::yellow;
 
-    std::cout << stc::colored("Usage:", title_col) << " stc <input file> [OPTIONS]\n\n";
+    std::cout << stc::colored("Usage:", title_col) << " stc INPUT [OPTIONS]\n\n";
 
     for (size_t i = 0; i < help_categories.size(); i++) {
         const auto& category = help_categories[i];

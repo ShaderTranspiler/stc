@@ -67,8 +67,8 @@ int run(int argc, char* argv[]) {
     setup_process();
 
     if (argc < 2) {
-        std::cerr << stc::colored("Not enough arguments\n", ansi_codes::red);
-        std::cerr << "Usage: stc <input file> [OPTIONS]\n";
+        std::cerr << stc::colored("Not enough arguments\n\n", ansi_codes::red);
+        std::cerr << stc::colored("Usage: ", ansi_codes::cyan) << "stc INPUT [OPTIONS]\n";
         std::cerr << "Run with " << stc::colored("--help", ansi_codes::yellow) << " or "
                   << stc::colored("-h", ansi_codes::yellow) << " for a list of available options\n";
         return EXIT_FAILURE;
@@ -268,7 +268,7 @@ int run(int argc, char* argv[]) {
         config.track_timing = false;
 
     if (!quiet)
-        print_header(std::cout, "Pre-transpilation (CLI-only work)");
+        print_header(std::cout, "Pre-transpilation (CLI-only work)", true, true, false);
 
     if (!quiet)
         std::cout << "Reading Julia code from disk...\n";
