@@ -35,9 +35,9 @@ extern "C" {
     }
 
     STC_API void stc_set_error_dump_verbosity(STC_ConfigHandle cfg_handle,
-                                              STC_DumpVerbosityValue value) noexcept {
-        if (value < static_cast<STC_DumpVerbosityValue>(DumpVerbosity::FIRST) ||
-            value > static_cast<STC_DumpVerbosityValue>(DumpVerbosity::LAST))
+                                              STC_DumpVerbosity value) noexcept {
+        if (value < static_cast<STC_DumpVerbosity>(DumpVerbosity::FIRST) ||
+            value > static_cast<STC_DumpVerbosity>(DumpVerbosity::LAST))
             return;
 
         STC_SET_CFG_VALUE(cfg_handle, error_dump_verbosity, static_cast<DumpVerbosity>(value));

@@ -401,8 +401,8 @@ const stc::TranspilerConfig& get_config_from_handle(STC_ConfigHandle cfg_handle)
                                          : default_config;
 }
 
-STC_StatusValue process_transpilation_result(TranspilationResult& result,
-                                             STC_ResultHandle& result_handle) {
+STC_Status process_transpilation_result(TranspilationResult& result,
+                                        STC_ResultHandle& result_handle) {
     // if we don't get to the end of the function (e.g. bad alloc), default to null result
     result_handle = STC_NULL_RESULT;
 
@@ -412,7 +412,7 @@ STC_StatusValue process_transpilation_result(TranspilationResult& result,
         result_handle  = code_ptr;
     }
 
-    return static_cast<STC_StatusValue>(result.status);
+    return static_cast<STC_Status>(result.status);
 }
 
 } // namespace
@@ -423,10 +423,10 @@ STC_StatusValue process_transpilation_result(TranspilationResult& result,
 // ===========
 
 extern "C" {
-    STC_API STC_StatusValue stc_transpile(jl_value_t* expr_v, STC_ConfigHandle cfg_handle,
-                                          STC_ResultHandle* result_handle) noexcept {
+    STC_API STC_Status stc_transpile(jl_value_t* expr_v, STC_ConfigHandle cfg_handle,
+                                     STC_ResultHandle* result_handle) noexcept {
         return wrap_as_noexcept(
-            [expr_v, cfg_handle, &result_handle]() -> STC_StatusValue {
+            [expr_v, cfg_handle, &result_handle]() -> STC_Status {
                 if (result_handle == nullptr) {
                     try_report_error("NULL passed as result_handle in a call to stc_transpile");
                     return STC_FAILED;
@@ -451,10 +451,10 @@ extern "C" {
             STC_INTERNAL_ERROR);
     }
 
-    STC_API STC_StatusValue stc_transpile_code(const char* code, STC_ConfigHandle cfg_handle,
-                                               STC_ResultHandle* result_handle) noexcept {
+    STC_API STC_Status stc_transpile_code(const char* code, STC_ConfigHandle cfg_handle,
+                                          STC_ResultHandle* result_handle) noexcept {
         return wrap_as_noexcept(
-            [code, cfg_handle, &result_handle]() -> STC_StatusValue {
+            [code, cfg_handle, &result_handle]() -> STC_Status {
                 if (result_handle == nullptr) {
                     try_report_error(
                         "NULL passed as result_handle in a call to stc_transpile_code");
