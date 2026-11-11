@@ -17,6 +17,13 @@ static_assert(std::same_as<_jl_value_t, jl_value_t>,
 namespace stc::api {
 
 extern "C" {
+    static_assert(STC_ABI_VERSION == stc::meta::version_major,
+                  "STC_ABI_VERSION drifted from stc::meta::version_major");
+
+    STC_API uint8_t stc_abi_version() noexcept {
+        return stc::meta::version_major;
+    }
+
     STC_API const STC_ResultHandle STC_NULL_RESULT = nullptr;
     STC_API const STC_ConfigHandle STC_NULL_CONFIG = nullptr;
 
@@ -40,10 +47,6 @@ extern "C" {
     STC_API const STC_DumpVerbosityValue STC_DUMP_VERBOSITY_PARTIAL = STC_GET_UNDERLYING(DumpVerbosity::Partial);
     STC_API const STC_DumpVerbosityValue STC_DUMP_VERBOSITY_VERBOSE = STC_GET_UNDERLYING(DumpVerbosity::Verbose);
     // clang-format on
-
-    STC_API uint8_t stc_abi_version() noexcept {
-        return stc::meta::version_major;
-    }
 }
 
 } // namespace stc::api

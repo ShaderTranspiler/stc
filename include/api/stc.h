@@ -34,6 +34,17 @@ extern "C" {
     //   TYPES AND CONSTANTS
     // =======================
 
+    // this is validated against stc::meta by a static_assert in c_api.cpp, so it's not as hard
+    // coded as it looks
+#define STC_ABI_VERSION 0
+
+    /// @brief Returns the current ABI version of the library. Every change that breaks backwards
+    /// compatibility increments this number (matching the project's major version thanks to
+    /// semver).
+    /// @important This offers no guarantees while it's still @c 0, regular semver guarantees begin
+    /// when it reaches @c 1
+    extern STC_API uint8_t stc_abi_version(void) STC_NOEXCEPT;
+
     /// Underlying type of the @b Status enum class, used in the C API in place of @b Status
     /// @see stc::api::Status
     typedef uint8_t STC_StatusValue;
@@ -81,11 +92,6 @@ extern "C" {
     extern STC_API const STC_DumpVerbosityValue STC_DUMP_VERBOSITY_PARTIAL;
     /// @see stc::DumpVerbosity::Verbose
     extern STC_API const STC_DumpVerbosityValue STC_DUMP_VERBOSITY_VERBOSE;
-
-    /// @brief Queries the current ABI version of the library. Note that this offers no guarantees
-    /// while it's zero, regular semver guarantees begin when it reaches 1.
-    /// @return The current ABI version number
-    STC_API uint8_t stc_abi_version(void) STC_NOEXCEPT;
 
     // ========================
     //   TRANSPILER FUNCTIONS

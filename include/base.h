@@ -12,7 +12,7 @@
         #endif
     #else
         #if defined(__GNUC__) || defined(__clang__)
-            #define STC_API __attribute__((visibility("default"), used))
+            #define STC_API __attribute__((visibility("default")))
         #else
             #define STC_API
         #endif

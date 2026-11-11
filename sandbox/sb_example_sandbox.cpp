@@ -1,7 +1,7 @@
 // example meant to demonstrate sandbox usage
 
-// sandboxes can include and use libstc headers
-#include "api/stc.hpp"
+// sandboxes can include and use libstc headers (exported and internal)
+#include "api/stc.hpp"         // C++ API for the transpiler
 #include "common/utils.h"      // ScopeGuard
 #include "frontend/jl/utils.h" // jl::check_exception
 
@@ -16,12 +16,9 @@ JULIA_DEFINE_FAST_TLS
 
 #include <cstdlib>
 #include <iostream>
-#include <optional>
 #include <string_view>
 
 int main() {
-    fmt::println("libstc ABI version: {}", stc::api::stc_abi_version());
-
     jl_init();
 
     // sandboxes are free to use libstc internals (like the ScopeGuard util)
@@ -40,6 +37,7 @@ int main() {
     // error check omitted for brevity
 
     // clang-format off
+    // julia_code must represent a compound expression
     static constexpr std::string_view julia_code =
         "begin\n"
             "@gl_out global frag_col::Vec4\n"
@@ -50,16 +48,20 @@ int main() {
         "end\n";
     // clang-format on
 
-    // see docs for using the transpiler's public C++ (or C) API
+    // see docs for using the transpiler's public C++ API
     stc::TranspilerConfig cfg{};
     cfg.dump_sema = true;
 
-    std::optional<std::string> glsl_code = stc::api::transpile<true>(julia_code, std::nullopt, cfg);
+    // or the C API (pulled in transitively via stc.hpp, accessible under stc::api in C++, similar
+    // to the main C++ API)
+    fmt::println("libstc ABI version: {}", stc::api::stc_abi_version());
 
-    if (glsl_code)
-        fmt::println("Transpiled GLSL code:\n{}", *glsl_code);
+    stc::api::TranspilationResult result = stc::api::transpile(julia_code, cfg);
+
+    if (result.status == stc::api::Status::Success)
+        fmt::println("Transpiled GLSL code:\n{}", result.code);
     else
         fmt::println("Transpilation failed\n");
 
-    return glsl_code ? EXIT_SUCCESS : EXIT_FAILURE;
+    return result.status == stc::api::Status::Success ? EXIT_SUCCESS : EXIT_FAILURE;
 }

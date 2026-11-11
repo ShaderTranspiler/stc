@@ -113,10 +113,10 @@ int run(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (arg == "--no-time") {
+        if (arg == "--no-timing") {
             config.track_timing         = false;
             explicitly_asked_for_timing = false;
-        } else if (arg == "--time") {
+        } else if (arg == "--timing") {
             config.track_timing         = true;
             explicitly_asked_for_timing = true;
         } else if (arg == "--track-memory")

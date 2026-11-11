@@ -3,6 +3,8 @@
 /// @file
 /// @brief The C++ API of stc
 
+#include "api/stc.h"
+
 #include "common/config.h"
 #include "common/trackers.h"
 #include "frontend/jl/context.h"
