@@ -12,6 +12,9 @@
 #include <string>
 #include <string_view>
 
+/// @warning The C++ API is only meant to be used when building the library along the program that
+/// is linking it. It does nothing to resolve implementation-related conflicts when it comes to name
+/// mangling, implementation of std types, etc.
 namespace stc::api {
 
 /// @addtogroup api

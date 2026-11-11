@@ -6,7 +6,7 @@
 #include "frontend/jl/utils.hpp" // jl::check_exception
 
 // they can also access libjulia if needed
-// (recommended to include via the libstc guard)
+// (recommended to include via stc's wrapper guard in external/julia.hpp)
 #include "external/julia.hpp"
 // define this when including Julia since this is the main entry point of the sandbox program
 JULIA_DEFINE_FAST_TLS

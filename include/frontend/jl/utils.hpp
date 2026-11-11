@@ -1,11 +1,12 @@
 #pragma once
 
-#include "base.h"
-#include "external/julia.hpp"
-#include "types/type_pool.hpp"
-
 #include <iostream>
 #include <utility>
+
+#include "base.hpp"
+#include "types/type_pool.hpp"
+
+#include "external/julia.hpp"
 
 namespace stc::jl {
 

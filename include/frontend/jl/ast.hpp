@@ -1,10 +1,10 @@
 #pragma once
 
-#include "external/julia.hpp"
-
-#include "base.h"
+#include "base.hpp"
 #include "common/id_types.hpp"
 #include "types/qualifiers.hpp"
+
+#include "external/julia.hpp"
 
 #define SAME_NODE_KIND_DEF(Kind)                                                                   \
     static bool same_node_kind(NodeKind kind) {                                                    \

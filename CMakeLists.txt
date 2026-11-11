@@ -582,9 +582,7 @@ if(STC_BUILD_CLI)
     install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-# there's no point in shipping includes currently, since they'll be broken
-# planned include redesign in v1.0
-# install(DIRECTORY ${STC_SRC_DIR}/include/api/
-#     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
-#     FILES_MATCHING PATTERN "*.h"
-# )
+install(DIRECTORY ${STC_SRC_DIR}/include/api/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
+    FILES_MATCHING PATTERN "*.h"
+)
