@@ -1,4 +1,4 @@
-#include "backend/glsl/builtin_data.h"
+#include "backend/glsl/builtin_data.hpp"
 
 #include <algorithm>
 #include <array>

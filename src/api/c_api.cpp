@@ -3,10 +3,10 @@
 #include <type_traits>
 
 #include "api/stc.hpp"
-#include "common/config.h"
-#include "meta.h"
+#include "common/config.hpp"
+#include "meta.hpp"
 
-#include "external/julia.h"
+#include "external/julia.hpp"
 
 #define STC_GET_UNDERLYING(value) static_cast<std::underlying_type_t<decltype(value)>>(value)
 #define STATIC_ASSERT_IS_SV_NULL_TERMINATED(string_view)                                           \

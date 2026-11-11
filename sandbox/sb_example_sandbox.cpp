@@ -1,13 +1,13 @@
 // example meant to demonstrate sandbox usage
 
 // sandboxes can include and use libstc headers (exported and internal)
-#include "api/stc.hpp"         // C++ API for the transpiler
-#include "common/utils.h"      // ScopeGuard
-#include "frontend/jl/utils.h" // jl::check_exception
+#include "api/stc.hpp"           // C++ API for the transpiler
+#include "common/utils.hpp"      // ScopeGuard
+#include "frontend/jl/utils.hpp" // jl::check_exception
 
 // they can also access libjulia if needed
 // (recommended to include via the libstc guard)
-#include "external/julia.h"
+#include "external/julia.hpp"
 // define this when including Julia since this is the main entry point of the sandbox program
 JULIA_DEFINE_FAST_TLS
 

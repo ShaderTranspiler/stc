@@ -1,4 +1,4 @@
-#include "frontend/jl/rt/module_cache.h"
+#include "frontend/jl/rt/module_cache.hpp"
 
 namespace stc::jl::rt {
 

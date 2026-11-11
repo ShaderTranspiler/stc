@@ -1,11 +1,11 @@
-#include "types/type_pool.h"
+#include "types/type_pool.hpp"
 
 #include <algorithm>
 #include <limits>
 #include <optional>
 #include <stdexcept>
 
-#include "common/utils.h"
+#include "common/utils.hpp"
 
 namespace stc::types {
 

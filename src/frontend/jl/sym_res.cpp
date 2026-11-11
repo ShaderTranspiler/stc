@@ -1,6 +1,6 @@
-#include "frontend/jl/sym_res.h"
-#include "common/report.h"
-#include "frontend/jl/ast_utils.h"
+#include "frontend/jl/sym_res.hpp"
+#include "common/report.hpp"
+#include "frontend/jl/ast_utils.hpp"
 
 #include <algorithm>
 #include <ranges>

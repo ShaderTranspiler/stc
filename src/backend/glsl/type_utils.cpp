@@ -1,4 +1,4 @@
-#include "backend/glsl/type_utils.h"
+#include "backend/glsl/type_utils.hpp"
 
 #include <fmt/format.h>
 

@@ -5,9 +5,9 @@
 
 #include "api/stc.h"
 
-#include "common/config.h"
-#include "common/trackers.h"
-#include "frontend/jl/context.h"
+#include "common/config.hpp"
+#include "common/trackers.hpp"
+#include "frontend/jl/context.hpp"
 
 #include <string>
 #include <string_view>

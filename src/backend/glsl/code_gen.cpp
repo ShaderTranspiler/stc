@@ -1,8 +1,8 @@
-#include "backend/glsl/code_gen.h"
-#include "backend/glsl/type_utils.h"
-#include "common/config.h"
-#include "common/report.h"
-#include "sir/dumper.h"
+#include "backend/glsl/code_gen.hpp"
+#include "backend/glsl/type_utils.hpp"
+#include "common/config.hpp"
+#include "common/report.hpp"
+#include "sir/dumper.hpp"
 
 #include <algorithm>
 #include <array>

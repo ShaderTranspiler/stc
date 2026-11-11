@@ -1,4 +1,4 @@
-#include "common/bump_arena.h"
+#include "common/bump_arena.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
 

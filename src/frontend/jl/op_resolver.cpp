@@ -1,4 +1,4 @@
-#include "frontend/jl/op_resolver.h"
+#include "frontend/jl/op_resolver.hpp"
 
 #include <algorithm>
 

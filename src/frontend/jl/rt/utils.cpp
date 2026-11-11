@@ -1,6 +1,6 @@
-#include "frontend/jl/rt/utils.h"
+#include "frontend/jl/rt/utils.hpp"
 
-#include "external/tracy.h"
+#include "external/tracy.hpp"
 
 namespace stc::jl::rt {
 

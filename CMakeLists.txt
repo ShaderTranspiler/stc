@@ -116,15 +116,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.h.in")
-set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.h")
+set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.hpp.in")
+set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.hpp")
 
 # generate config-time metadata
 configure_file("${STC_CONFIG_META_TEMPLATE}" "${STC_CONFIG_META_OUT}" @ONLY)
 
 set(STC_BUILD_META_SCRIPT "${STC_SRC_DIR}/cmake/gen_build_meta.cmake")
-set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.h.in")
-set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.h")
+set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.hpp.in")
+set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.hpp")
 set(STC_BUILD_META_BASE_ARGS
     "-DSTC_SRC_DIR=${STC_SRC_DIR}"
     "-DSTC_GIT_EXECUTABLE=${STC_GIT_EXECUTABLE}"
@@ -157,9 +157,16 @@ add_custom_target(${BUILD_META_TARGET}
     VERBATIM
 )
 
-# currently only the api is exported as hpp
-# i wanna shift towards hpp overall at some point, but for now we pin the exported api's hpp explicitly
-file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "include/api/stc.hpp" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
+# currently, C++ headers are named .hpp and C headers are named .h
+# this is mostly because the C API of the library needs to produce a C-includable header
+# some internal headers may also be C-compatible (to help usage of the C API)
+# we just simply combine hpp/h in here so that C++ has access to the C headers too
+file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS
+    "include/*.hpp" "include/*.h"
+    "src/*.cpp"
+    "cli/*.hpp"     "cli/*.h"     "cli/*.cpp"
+    "sandbox/*.hpp" "sandbox/*.h" "sandbox/*.cpp"
+    "test/*.hpp"    "test/*.h"    "test/*.cpp")
 
 # dev tooling (ccache, clang-format, clang-tidy)
 # needed before dependencies, since compiler caching should propagate to those

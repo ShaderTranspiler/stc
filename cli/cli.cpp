@@ -1,14 +1,14 @@
-#include <external/julia.h>
+#include <external/julia.hpp>
 JULIA_DEFINE_FAST_TLS
 
 #include <api/stc.hpp>
-#include <common/config.h>
-#include <common/report.h>
-#include <common/term_utils.h>
-#include <common/utils.h>
-#include <frontend/jl/utils.h>
+#include <common/config.hpp>
+#include <common/report.hpp>
+#include <common/term_utils.hpp>
+#include <common/utils.hpp>
+#include <frontend/jl/utils.hpp>
 
-#include "cli_utils.h"
+#include "cli_utils.hpp"
 
 #include <cstdlib>
 #include <filesystem>

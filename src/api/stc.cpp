@@ -4,15 +4,15 @@
 #include <cstdio>
 #include <utility>
 
-#include "backend/glsl/code_gen.h"
-#include "backend/glsl/target_info.h"
-#include "external/tracy.h"
-#include "frontend/jl/dumper.h"
-#include "frontend/jl/lowering.h"
-#include "frontend/jl/parser.h"
-#include "frontend/jl/rt/utils.h"
-#include "frontend/jl/sema.h"
-#include "sir/dumper.h"
+#include "backend/glsl/code_gen.hpp"
+#include "backend/glsl/target_info.hpp"
+#include "external/tracy.hpp"
+#include "frontend/jl/dumper.hpp"
+#include "frontend/jl/lowering.hpp"
+#include "frontend/jl/parser.hpp"
+#include "frontend/jl/rt/utils.hpp"
+#include "frontend/jl/sema.hpp"
+#include "sir/dumper.hpp"
 
 namespace stc::api {
 

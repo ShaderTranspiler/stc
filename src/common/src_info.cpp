@@ -1,6 +1,6 @@
-#include "common/src_info.h"
-#include "common/report.h"
-#include "common/term_utils.h"
+#include "common/src_info.hpp"
+#include "common/report.hpp"
+#include "common/term_utils.hpp"
 
 namespace {
 

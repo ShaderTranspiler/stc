@@ -1,9 +1,9 @@
-#include "frontend/jl/sema.h"
-#include "external/julia.h"
-#include "frontend/jl/ast_utils.h"
-#include "frontend/jl/dumper.h"
-#include "frontend/jl/rt/utils.h"
-#include "types/type_to_string.h"
+#include "frontend/jl/sema.hpp"
+#include "external/julia.hpp"
+#include "frontend/jl/ast_utils.hpp"
+#include "frontend/jl/dumper.hpp"
+#include "frontend/jl/rt/utils.hpp"
+#include "types/type_to_string.hpp"
 
 #include <sstream>
 

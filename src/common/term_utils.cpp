@@ -1,8 +1,8 @@
-#include "common/term_utils.h"
+#include "common/term_utils.hpp"
 
 #ifdef _WIN32
     #include <cstdlib>
-    #include <external/io_windows.h>
+    #include <external/io_windows.hpp>
 #else
     #include <unistd.h>
 #endif

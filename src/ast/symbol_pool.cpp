@@ -1,4 +1,4 @@
-#include "ast/symbol_pool.h"
+#include "ast/symbol_pool.hpp"
 
 namespace stc {
 

@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "common/report.h"
-#include "common/term_utils.h"
+#include "common/report.hpp"
+#include "common/term_utils.hpp"
 
 namespace stc {
 

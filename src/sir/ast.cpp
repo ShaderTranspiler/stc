@@ -1,4 +1,4 @@
-#include "sir/ast.h"
+#include "sir/ast.hpp"
 
 namespace stc::sir {
 

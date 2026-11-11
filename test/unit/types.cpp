@@ -1,6 +1,6 @@
-#include "ast/symbol_pool.h"
-#include "types/type_descriptors.h"
-#include "types/type_pool.h"
+#include "ast/symbol_pool.hpp"
+#include "types/type_descriptors.hpp"
+#include "types/type_pool.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 using namespace stc;

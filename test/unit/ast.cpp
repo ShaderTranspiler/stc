@@ -1,6 +1,6 @@
-#include "ast/context.h"
-#include "ast/visitor.h"
-#include "common/utils.h"
+#include "ast/context.hpp"
+#include "ast/visitor.hpp"
+#include "common/utils.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 using namespace stc;
