@@ -27,20 +27,21 @@ public:
     #undef X
     // clang-format on
 
-    explicit JLCtx(std::string_view juliaglm_path = "Main.JuliaGLM",
-                   const TargetInfo* target_info = nullptr, NodeId::id_type node_arena_kb = 64U,
-                   SrcLocationId::id_type src_info_arena_kb = 4U,
-                   TypeId::id_type type_arena_kb = 4U, SymbolId::id_type sym_arena_kb = 4U,
-                   QualId::id_type qual_arena_kb = 1U)
-        : ASTCtx{{{BuiltinTypeKind::Nothing}, {BuiltinTypeKind::String}, {BuiltinTypeKind::Symbol}},
+    explicit JLCtx(std::string_view julia_glm_path, NodeId::id_type initial_node_arena_size,
+                   SrcLocationId::id_type initial_src_info_arena_size,
+                   TypeId::id_type initial_type_arena_size,
+                   SymbolId::id_type initial_symbol_arena_size,
+                   QualId::id_type initial_qualifier_arena_size,
+                   const TargetInfo* target_info = nullptr)
+        : ASTCtx{initial_node_arena_size,
+                 initial_src_info_arena_size,
+                 initial_type_arena_size,
+                 initial_symbol_arena_size,
+                 initial_qualifier_arena_size,
+                 {{BuiltinTypeKind::Nothing}, {BuiltinTypeKind::String}, {BuiltinTypeKind::Symbol}},
                  target_info,
-                 node_arena_kb,
-                 src_info_arena_kb,
-                 type_arena_kb,
-                 sym_arena_kb,
-                 qual_arena_kb},
-          jl_env{juliaglm_path} {
-
+                 "Julia Node Pool"},
+          jl_env{julia_glm_path} {
         init_jl_types();
     }
 
@@ -56,16 +57,16 @@ public:
 
 protected:
     template <typename T, typename U>
-    explicit JLCtx(ASTCtx<T, U>&& other, NodeId::id_type node_arena_kb = 128U)
-        : Base{std::move(other), node_arena_kb} {
+    explicit JLCtx(ASTCtx<T, U>&& other, NodeId::id_type initial_node_arena_size)
+        : Base{std::move(other), initial_node_arena_size} {
         init_jl_types();
     }
 
 public:
     template <typename T, typename U>
     [[nodiscard]] static JLCtx move_pools_from(ASTCtx<T, U>&& other,
-                                               NodeId::id_type node_arena_kb) {
-        return JLCtx{std::move(other), node_arena_kb};
+                                               NodeId::id_type initial_node_arena_size) {
+        return JLCtx{std::move(other), initial_node_arena_size};
     }
 
     // safe to run on partially-moved contexts

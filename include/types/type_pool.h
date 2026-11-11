@@ -1,9 +1,9 @@
 #pragma once
 
-#include <optional>
 #include <unordered_map>
 #include <vector>
 
+#include "ast/symbol_pool.h"
 #include "common/bump_arena.h"
 #include "types/type_descriptors.h"
 
@@ -13,40 +13,42 @@ class TypePool final {
     using SizeTy  = TypeId::id_type;
     using ArenaTy = BumpArena<SizeTy>;
 
-    TypeId any_func = TypeId::null_id();
+    ArenaTy arena;
+
+    std::unordered_map<TDVariantType, TypeId> pool{};
+    std::unordered_map<SymbolId, TypeId> struct_map{};
+
     std::unordered_map<uint8_t, std::string> builtin_str_map{};
 
+    // these don't have any properties, so they're added to the pool on construction, and registered
+    // here manually as a singleton
+    TypeId void_id = TypeId::null_id();
+    TypeId bool_id = TypeId::null_id();
+
+    TypeId any_func = TypeId::null_id();
+
 public:
-    explicit TypePool(SizeTy initial_capacity_kb)
-        : arena{static_cast<SizeTy>(initial_capacity_kb * 1024U)} {
-
-        // handling void id as constant 1U should be fine as long as this holds,
-        // because arena starts counting offsets from 1 (to allow a null state),
-        // which means 1U points exactly to the beginning of the first Slab's buffer.
-        // Slabs are allocated using make_unique, which uses new, so they have the below alignment.
-        // so as long as the buffer's alignment is not less than TD's, we're fine. hopefully.
-        static_assert(TypeId::void_id() == TypeId{1U} &&
-                      alignof(TypeDescriptor) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
-
+    explicit TypePool(SizeTy initial_capacity_bytes)
+        : arena{initial_capacity_bytes} {
         // doesn't use arena.emplace to keep TypeDescriptor ctors private to TDs and TypePool
-        auto [offset, mem] = arena.allocate_for<TypeDescriptor>();
-        new (mem) TypeDescriptor{VoidTD{}};
+        auto [offset_void, mem_void] = arena.allocate_for<TypeDescriptor>();
+        new (mem_void) TypeDescriptor{VoidTD{}};
+        void_id = offset_void;
 
-        // this is a run-time check for the same thing as above, as I don't trust my math
-        // (or C++. or the OS.)
-        assert(TypeId{offset} == TypeId::void_id() && "invalid void type id");
+        auto [offset_bool, mem_bool] = arena.allocate_for<TypeDescriptor>();
+        new (mem_bool) TypeDescriptor{BoolTD{}};
+        bool_id = offset_bool;
     }
 
-    explicit TypePool(SizeTy initial_capacity_kb, const std::vector<BuiltinTD>& builtins)
-        : TypePool{initial_capacity_kb} {
-
+    explicit TypePool(SizeTy initial_capacity_bytes, const std::vector<BuiltinTD>& builtins)
+        : TypePool{initial_capacity_bytes} {
         for (BuiltinTD td : builtins)
             std::ignore = insert_or_get(td, true);
     }
 
     TypePool(const TypePool&)            = delete;
     TypePool& operator=(const TypePool&) = delete;
-    TypePool(TypePool&&)                 = default;
+    TypePool(TypePool&&) noexcept        = default;
     TypePool& operator=(TypePool&&)      = default;
 
     ~TypePool() = default;
@@ -75,9 +77,8 @@ public:
         return td->is<T>();
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    [[nodiscard]] TypeId void_td() { return TypeId::void_id(); }
-    [[nodiscard]] TypeId bool_td();
+    [[nodiscard]] TypeId void_td() { return void_id; }
+    [[nodiscard]] TypeId bool_td() { return bool_id; }
     [[nodiscard]] TypeId int_td(uint32_t width, bool is_signed);
     [[nodiscard]] TypeId float_td(uint32_t width,
                                   FloatTD::Encoding encoding = FloatTD::Encoding::ieee754);
@@ -152,10 +153,6 @@ public:
 private:
     TypeId get(TDVariantType type) const;
     TypeId insert_or_get(TDVariantType type, bool fail_on_get = false);
-
-    ArenaTy arena;
-    std::unordered_map<TDVariantType, TypeId> pool;
-    std::unordered_map<SymbolId, TypeId> struct_map;
 };
 
 } // namespace stc::types

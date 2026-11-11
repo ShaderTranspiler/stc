@@ -1,9 +1,11 @@
-#include "common/utils.h"
+#include "types/type_pool.h"
+
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
-#include "types/type_pool.h"
+#include "common/utils.h"
 
 namespace stc::types {
 
@@ -37,10 +39,6 @@ TypeId TypePool::insert_or_get(TDVariantType type, bool fail_on_get) {
 
     pool[type] = id;
     return static_cast<TypeId>(id);
-}
-
-TypeId TypePool::bool_td() {
-    return insert_or_get(BoolTD{});
 }
 
 TypeId TypePool::int_td(uint32_t width, bool is_signed) {
@@ -149,7 +147,7 @@ TypeId TypePool::any_func_td() {
 }
 
 TypeId TypePool::any_array_td(TypeId el_type) {
-    if (el_type == TypeId::void_id())
+    if (el_type == void_td())
         throw std::logic_error{"Cannot create any-size-array type with void as element type"};
 
     return insert_or_get(ArrayTD{el_type, std::numeric_limits<uint32_t>::max()});

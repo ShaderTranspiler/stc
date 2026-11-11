@@ -10,26 +10,17 @@
 #include <variant>
 #include <vector>
 
-#include "ast/symbol_pool.h"
+#include "common/id_types.h"
 #include "common/utils.h"
 
 namespace stc::types {
+
+class TypePool; // friend of TypeDescriptor, some TD-s also define helpers for it
 
 // basic types modeled after SPIR-V's unified specs
 // some liberties have been taken for a more general sir type system
 // this includes allowing non-float types as matrix component types,
 // these can potentially be rewritten as arrays in the output (similarly to slang -> GLSL/SPIR-V)
-
-class TypePool;
-
-struct TypeId : public StrongId<uint16_t> {
-    using StrongId::StrongId;
-
-    constexpr bool is_null() const { return *this == null_id(); }
-
-    static constexpr TypeId null_id() { return 0U; }
-    static constexpr TypeId void_id() { return 1U; }
-};
 
 struct VoidTD {
     constexpr bool operator==(const VoidTD&) const = default;
@@ -167,13 +158,9 @@ struct BuiltinTD {
 using TDVariantType = std::variant<VoidTD, BoolTD, IntTD, FloatTD, VectorTD, MatrixTD, ArrayTD,
                                    StructTD, MethodTD, FunctionTD, BuiltinTD>;
 
-// CLEANUP: use a variadic template instead
 template <typename T>
-concept CTypeDescriptorTy =
-    std::is_same_v<T, VoidTD> || std::is_same_v<T, BoolTD> || std::is_same_v<T, IntTD> ||
-    std::is_same_v<T, FloatTD> || std::is_same_v<T, VectorTD> || std::is_same_v<T, MatrixTD> ||
-    std::is_same_v<T, ArrayTD> || std::is_same_v<T, StructTD> || std::is_same_v<T, MethodTD> ||
-    std::is_same_v<T, FunctionTD> || std::is_same_v<T, BuiltinTD>;
+concept CTypeDescriptorTy = CIsAnyOf<T, VoidTD, BoolTD, IntTD, FloatTD, VectorTD, MatrixTD, ArrayTD,
+                                     StructTD, MethodTD, FunctionTD, BuiltinTD>;
 
 struct TypeDescriptor {
     TypeDescriptor(const TypeDescriptor&)                      = delete;
@@ -223,7 +210,7 @@ private:
     TDVariantType _type_data;
 
     explicit TypeDescriptor(TDVariantType type_data)
-        : _type_data{std::move(type_data)} {}
+        : _type_data{type_data} {}
 };
 static_assert(sizeof(TypeDescriptor) == sizeof(TDVariantType));
 

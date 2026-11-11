@@ -23,7 +23,7 @@ namespace stc::jl {
 
 void JLLoweringVisitor::dump(const Expr& expr, std::ostream& out) {
     NodeId subtree_root = ctx.calculate_node_id(expr);
-    ctx.dump(subtree_root, jl_ast_root, sir_ctx.config.err_dump_verbosity, out, sir_ctx.type_pool,
+    ctx.dump(subtree_root, jl_ast_root, sir_ctx.config.error_dump_verbosity, out, sir_ctx.type_pool,
              sir_ctx.sym_pool, sir_ctx.config);
 }
 
@@ -41,7 +41,8 @@ SIRNodeId JLLoweringVisitor::internal_error(std::string_view msg, const Expr& ex
     if (!_success)
         return SIRNodeId::null_id();
 
-    _success = false;
+    _success            = false;
+    _had_internal_error = true;
 
     auto [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(expr.location);
     stc::internal_error(file, loc, msg, sir_ctx.config,
@@ -634,9 +635,9 @@ SIRNodeId JLLoweringVisitor::visit_FieldAccess(FieldAccess& acc) {
                 return internal_error("invalid swizzle component not caught by sema", acc);
         }
 
-        SIRNodeId lowered_swizzle =
-            emplace_node<sir::SwizzleLiteral>(field_node->location, static_cast<uint8_t>(swizzle_n),
-                                              comps[0], comps[1], comps[2], comps[3]);
+        SIRNodeId lowered_swizzle = emplace_node<sir::SwizzleLiteral>(
+            field_node->location, sir_ctx.type_pool.void_td(), static_cast<uint8_t>(swizzle_n),
+            comps[0], comps[1], comps[2], comps[3]);
 
         return emplace_node<sir::IndexerExpr>(acc.location, visit_and_check(acc.target),
                                               lowered_swizzle);

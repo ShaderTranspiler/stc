@@ -74,33 +74,32 @@ int run(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // only help or version info can be invoked on their own
+    std::string src_file_path = argv[1];
+
+    // only help and version info can be invoked on their own
     // for every other case, arguments must start with the input path
 
-    std::string argv1{argv[1]};
-
-    if (argv1 == "-h" || argv1 == "--help") {
+    if (src_file_path == "-h" || src_file_path == "--help") {
         print_help();
         return EXIT_SUCCESS;
     }
-
-    if (argv1 == "-v" || argv1 == "--version") {
+    if (src_file_path == "-v" || src_file_path == "--version") {
         print_version_info();
         return EXIT_SUCCESS;
     }
 
-    std::string path = argv[1];
-
     TranspilerConfig config{};
+    config.track_timing       = true;
+    config.fallback_file_path = tail_from_cwd(src_file_path).string();
+
     std::string out_path{};
     std::string pre_eval_path{};
     uint32_t ite_count = 1U;
-    bool run_benchmark = true;
-    bool track_memory  = false;
     bool no_out        = false;
     bool quiet         = false;
     bool add_no_commit = true;
 
+    bool explicitly_asked_for_timing = false;
     for (int i = 2; i < argc; i++) {
         std::string arg{argv[i]};
 
@@ -114,10 +113,14 @@ int run(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (arg == "--no-benchmark")
-            run_benchmark = false;
-        else if (arg == "--track-memory")
-            track_memory = true;
+        if (arg == "--no-time") {
+            config.track_timing         = false;
+            explicitly_asked_for_timing = false;
+        } else if (arg == "--time") {
+            config.track_timing         = true;
+            explicitly_asked_for_timing = true;
+        } else if (arg == "--track-memory")
+            config.track_memory = true;
         else if (arg == "--quiet")
             quiet = true;
         else if (arg == "--dump-parsed")
@@ -153,9 +156,9 @@ int run(int argc, char* argv[]) {
             config.warn_on_jl_sema_query = true;
         else if (arg == "--skip-no-commit")
             add_no_commit = false;
-        else if (arg == "--err-dump") {
+        else if (arg == "--error-dump") {
             if (i + 1 >= argc) {
-                std::cerr << "--err-dump must be followed by a verbosity level (options: none, "
+                std::cerr << "--error-dump must be followed by a verbosity level (options: none, "
                              "partial, verbose)\n";
                 return EXIT_FAILURE;
             }
@@ -163,11 +166,11 @@ int run(int argc, char* argv[]) {
             std::string_view verbosity{argv[i + 1]};
 
             if (verbosity == "none")
-                config.err_dump_verbosity = DumpVerbosity::None;
+                config.error_dump_verbosity = DumpVerbosity::None;
             else if (verbosity == "partial")
-                config.err_dump_verbosity = DumpVerbosity::Partial;
+                config.error_dump_verbosity = DumpVerbosity::Partial;
             else if (verbosity == "verbose")
-                config.err_dump_verbosity = DumpVerbosity::Verbose;
+                config.error_dump_verbosity = DumpVerbosity::Verbose;
             else {
                 std::cerr << fmt::format("'{}' is not a valid error dumping verbosity level "
                                          "(options: none, partial, verbose)\n",
@@ -251,6 +254,7 @@ int run(int argc, char* argv[]) {
     if (no_out && !out_path.empty())
         print_conflicting_flags_warning("--no-out", fmt::format("-o {}", out_path),
                                         "No output will be written after transpilation.");
+
     if (!add_no_commit && out_path.empty()) {
         std::cerr << stc::colored("Warning: ", ansi_codes::yellow);
         std::cerr << stc::colored("--skip-no-commit", ansi_codes::cyan) << " without "
@@ -260,13 +264,16 @@ int run(int argc, char* argv[]) {
                   << stc::colored("-o", ansi_codes::cyan) << " is not provided along with it.\n";
     }
 
+    if (quiet && !explicitly_asked_for_timing)
+        config.track_timing = false;
+
     if (!quiet)
         print_header(std::cout, "Pre-transpilation (CLI-only work)");
 
     if (!quiet)
         std::cout << "Reading Julia code from disk...\n";
 
-    auto maybe_code = open_julia_file_as_cmpd(path);
+    auto maybe_code = open_julia_file_as_cmpd(src_file_path);
     if (!maybe_code.has_value())
         return EXIT_FAILURE;
     std::string code = std::move(*maybe_code);
@@ -312,45 +319,28 @@ int run(int argc, char* argv[]) {
         }
     }
 
-    if (!quiet) {
+    bool print_per_transpile_header =
+        ite_count > 1 && (config.track_timing || config.track_memory || !quiet);
+
+    if (!print_per_transpile_header && !quiet)
         print_header(std::cout, "Transpilation", true);
 
-        std::cout << "Starting transpilation...\n";
-    }
-
     for (size_t i = 0; i < ite_count; i++) {
-        if (run_benchmark && !quiet && ite_count != 1)
-            print_header(std::cout, fmt::format("Transpilation #{}", i + 1), false);
-
-        // TODO: we tie memory tracking to benchmarking here temporarily, until the API gets a
-        // runtime endpoint for benchmarking and memory tracking
-        stc::api::MaybeString result;
-        if (!quiet) {
-            if (run_benchmark) {
-                result =
-                    track_memory
-                        ? api::transpile<true, true>(code, tail_from_cwd(path).string(), config)
-                        : api::transpile<true, false>(code, tail_from_cwd(path).string(), config);
-            } else {
-                result =
-                    track_memory
-                        ? api::transpile<false, true>(code, tail_from_cwd(path).string(), config)
-                        : api::transpile<false, false>(code, tail_from_cwd(path).string(), config);
-            }
-        } else {
-            result = api::transpile<false, false>(code, tail_from_cwd(path).string(), config);
-        }
+        if (print_per_transpile_header)
+            print_header(std::cout, fmt::format("Transpilation #{}", i + 1), !quiet);
 
         if (!quiet)
-            print_header(std::cout, "Result");
+            std::cout << "Starting transpilation...\n";
 
-        if (!result.has_value()) {
-            std::cerr << colored("An error occurred during transpilation!\n", ansi_codes::red);
+        auto result = api::transpile(code, config);
+
+        if (result.status != stc::api::STC_Status::Success) {
+            std::cerr << colored("\nTranspilation failed.\n", ansi_codes::red);
             return EXIT_FAILURE;
         }
 
         if (!quiet)
-            std::cout << "Transpilation successful.\n";
+            std::cout << colored("\nTranspilation finished successfully.\n", ansi_codes::green);
 
         if (!no_out && i + 1 == ite_count) {
             if (out_path.empty()) {
@@ -359,7 +349,7 @@ int run(int argc, char* argv[]) {
                                  ite_count == 1 ? "Output" : "Output (last transpilation)");
                 }
 
-                std::cout << *result << '\n';
+                std::cout << result.code << '\n';
                 break;
             }
 
@@ -380,35 +370,34 @@ int run(int argc, char* argv[]) {
             // off when saving the output long-term is desired, via --skip-no-commit. the sample
             // pre-commit hook (scripts/pre-commit) checks for this tag by default
             if (add_no_commit) {
-                assert(result.has_value());
                 // we already have a trailing newline in result, so this is placed in its own line
                 // it's written this way so that it doesn't trip the actual hook
-                *result += "// no"
-                           "commit\n";
+                result.code += "// no"
+                               "commit\n";
             }
 
             stc::FileRAII out_file{out_path, "w"};
             if (out_file.get() == nullptr) {
-                std::cerr << "Failed to open '" << out_path << "' for writing! (errno: " << errno
-                          << ")\n";
+                std::cerr << colored(fmt::format("\nFailed to open '{}' for writing! (errno: {})\n",
+                                                 out_path, errno),
+                                     ansi_codes::red);
                 return EXIT_FAILURE;
             }
 
-            size_t written = fwrite(result->data(), 1, result->size(), out_file.get());
-            if (written != result->size()) {
-                std::cerr << "Failed to write output to file!\n";
+            size_t written = fwrite(result.code.data(), 1, result.code.size(), out_file.get());
+            if (written != result.code.size()) {
+                std::cerr << colored("\nFailed to write output to file!\n", ansi_codes::red);
                 return EXIT_FAILURE;
             }
 
             if (!quiet)
-                std::cout << "Output written.\n";
+                std::cout << colored("\nOutput written successfully.\n", ansi_codes::green);
         }
     }
 
 #ifdef STC_PROFILING
-    if (!quiet)
-        std::cout << "Profiling enabled, waiting for key press so that Tracy can flush data "
-                     "properly...\n";
+    std::cout << "Profiling enabled, waiting for key press so that Tracy can flush data "
+                 "properly...\n";
     std::cin.get();
 #endif
 
@@ -421,10 +410,9 @@ int main(int argc, char* argv[]) {
     try {
         return stc::cli::run(argc, argv);
     } catch (const std::exception& ex) {
-        std::cerr << "An unexpected error occurred while running stc:\n";
-        std::cerr << ex.what() << '\n';
+        fprintf(stderr, "An unexpected error occurred while running stc:\n%s\n", ex.what());
     } catch (...) {
-        std::cerr << "An unexpected error occurred while running stc\n";
+        fprintf(stderr, "An unexpected error occurred while running stc!\n");
     }
 
     return EXIT_FAILURE;

@@ -1,23 +1,30 @@
 #include "api/transpiler.h"
 
+#include <cstdio>
+#include <utility>
+
 #include "backend/glsl/code_gen.h"
 #include "backend/glsl/target_info.h"
 #include "external/tracy.h"
 #include "frontend/jl/dumper.h"
 #include "frontend/jl/lowering.h"
 #include "frontend/jl/parser.h"
+#include "frontend/jl/rt/utils.h"
 #include "frontend/jl/sema.h"
 #include "meta.h"
 #include "sir/dumper.h"
-#include "types/qualifier_pool.h"
 
 namespace stc::api {
 
 namespace {
 
-template <bool TrackMemoryUsage, typename CtxIdTy, typename CtxNodeBaseTy>
-void init_memory_tracker(detail::MemoryTracker<TrackMemoryUsage>& memory_tracker,
-                         const ASTCtx<CtxIdTy, CtxNodeBaseTy>& ctx) {
+// ================
+//     C++ API
+//    (helpers)
+// ================
+
+template <typename CtxIdTy, typename CtxNodeBaseTy>
+void init_memory_tracker(MemoryTracker& memory_tracker, const ASTCtx<CtxIdTy, CtxNodeBaseTy>& ctx) {
     memory_tracker.register_arena(ctx.get_node_pool_erased_arena_view());
     memory_tracker.register_arena(ctx.type_pool.get_erased_arena_view());
     memory_tracker.register_arena(ctx.sym_pool.get_erased_arena_view());
@@ -25,39 +32,72 @@ void init_memory_tracker(detail::MemoryTracker<TrackMemoryUsage>& memory_tracker
     memory_tracker.register_arena(ctx.qual_pool.get_erased_arena_view());
 }
 
-// assumes the memory tracker is currently initialized to a JLCtx
-template <bool TrackMemoryUsage, typename OldCtxIdTy, typename OldCtxNodeBaseTy,
-          typename NewCtxIdTy, typename NewCtxNodeBaseTy>
-void reinit_memory_tracker(detail::MemoryTracker<TrackMemoryUsage>& memory_tracker,
-                           const ASTCtx<OldCtxIdTy, OldCtxNodeBaseTy>& old_ctx,
-                           const ASTCtx<NewCtxIdTy, NewCtxNodeBaseTy>& new_ctx) {
-    memory_tracker.unregister_arena(old_ctx.get_node_pool_erased_arena_view().arena);
-    memory_tracker.unregister_arena(old_ctx.type_pool.get_erased_arena_view().arena);
-    memory_tracker.unregister_arena(old_ctx.sym_pool.get_erased_arena_view().arena);
-    memory_tracker.unregister_arena(old_ctx.src_info_pool.get_erased_arena_view().arena);
-    memory_tracker.unregister_arena(old_ctx.qual_pool.get_erased_arena_view().arena);
+// since the node pool doesn't get moved at the same time the shared pools do, its unregistration
+// isn't handled here
+template <typename CtxIdTy, typename CtxNodeBaseTy>
+void uninit_memory_tracker(MemoryTracker& memory_tracker, const ASTCtx<CtxIdTy, CtxNodeBaseTy>& ctx,
+                           bool include_node_pool) {
+    // since MemoryTracker might come from the user and not have the context's pools registered, we
+    // don't wanna throw if the arena wasn't tracked to begin with.
+    // if they were registered by the user, we have to remove them, since we just moved them.
 
-    init_memory_tracker(memory_tracker, new_ctx);
+    if (include_node_pool)
+        memory_tracker.unregister_arena(ctx.get_node_pool_erased_arena_view().arena, false);
+    memory_tracker.unregister_arena(ctx.type_pool.get_erased_arena_view().arena, false);
+    memory_tracker.unregister_arena(ctx.sym_pool.get_erased_arena_view().arena, false);
+    memory_tracker.unregister_arena(ctx.src_info_pool.get_erased_arena_view().arena, false);
+    memory_tracker.unregister_arena(ctx.qual_pool.get_erased_arena_view().arena, false);
+}
+
+// this is a bit iffy, but it allows us to avoid a heap alloc for the trackers, allow callers to
+// pass in their own one for recording (without copy) and doesn't pollute the public API
+// this is safe because transpilations are currently not allowed to be interleaved within a single
+// thread (and even multithreaded usage is not guaranteed to work).
+// also, initializing a disabled (false) tracker is pretty cheap
+void ensure_trackers(TimingTracker*& timing_tracker, MemoryTracker*& memory_tracker,
+                     const TranspilerConfig& config) {
+    static thread_local TimingTracker timing_tracker_storage(false);
+    static thread_local MemoryTracker memory_tracker_storage(false);
+
+    if (timing_tracker == nullptr) {
+        timing_tracker_storage = TimingTracker(config.track_timing);
+        timing_tracker         = &timing_tracker_storage;
+    }
+
+    if (memory_tracker == nullptr) {
+        memory_tracker_storage = MemoryTracker(config.track_memory);
+        memory_tracker         = &memory_tracker_storage;
+    }
 }
 
 } // namespace
 
-template <bool RunBenchmark, bool TrackMemoryUsage>
-MaybeString transpile_parsed(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
-                             detail::BenchmarkTracker<RunBenchmark>& benchmark_tracker,
-                             detail::MemoryTracker<TrackMemoryUsage>& memory_tracker) {
+// ================
+//     C++ API
+// (implementation)
+// ================
+
+namespace {
+
+TranspilationResult transpile_impl(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
+                                   TimingTracker* timing_tracker, MemoryTracker* memory_tracker) {
     using namespace stc::jl;
+
+    ensure_trackers(timing_tracker, memory_tracker, jl_ctx.config);
+    assert(timing_tracker != nullptr);
+    assert(memory_tracker != nullptr);
+
+    auto timer = timing_tracker->create_timer();
 
     auto* cmpd = jl_ctx.get_and_dyn_cast<CompoundExpr>(jl_ast);
     if (cmpd == nullptr) {
-        std::cerr << "outermost AST node is not a compound expression\n";
-        return std::nullopt;
+        error("outermost AST node is not a compound expression\n");
+        return TranspilationResult::failed_result;
     }
 
     // unwrap nested blocks, if any
     while (cmpd->body.size() == 1) {
         auto* inner = jl_ctx.get_and_dyn_cast<CompoundExpr>(cmpd->body[0]);
-
         if (inner == nullptr)
             break;
 
@@ -65,282 +105,392 @@ MaybeString transpile_parsed(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
         cmpd   = inner;
     }
 
-    benchmark_tracker.sema_start();
+    timer.start("Julia sema");
 
     JLSema sema{jl_ctx, *cmpd};
     sema.infer(jl_ast);
     sema.finalize();
 
-    benchmark_tracker.sema_end();
-
     if (!sema.success()) {
         std::cerr << "\nJulia sema failed\n";
-        return std::nullopt;
+        return sema.had_internal_error() ? TranspilationResult::internal_error_result
+                                         : TranspilationResult::failed_result;
     }
 
-    memory_tracker.print("sema done", std::cout);
+    timer.end();
+    memory_tracker->print("after sema", std::cout);
 
     if (jl_ctx.config.dump_sema) {
         JLDumper dumper{jl_ctx, std::cout};
         dumper.visit(jl_ast);
     }
 
-    benchmark_tracker.lowering_start();
+    // unregisters shared pools which are about to get moved
+    // Julia node pool stays, since we only partial moved, and jl_ctx lives at least until the end
+    // of this function. unregistering it is the caller's responsibility (both internally and
+    // externally), since they're the ones managing the jl_ctx's lifetime
+    uninit_memory_tracker(*memory_tracker, jl_ctx, false);
+    timer.start("AST lowering");
 
-    JLLoweringVisitor lowering{std::move(jl_ctx)};
+    auto node_pool_init = jl_ctx.config.initial_pool_sizes.sir_node_pool;
+    JLLoweringVisitor lowering{std::move(jl_ctx), node_pool_init};
     auto sir_ast = lowering.lower(jl_ast);
 
     if (!lowering.success()) {
         std::cerr << "\nJulia -> SIR lowering failed\n";
-        return std::nullopt;
+        return lowering.had_internal_error() ? TranspilationResult::internal_error_result
+                                             : TranspilationResult::failed_result;
     }
 
     auto glsl_ctx = glsl::GLSLCtx(std::move(lowering.sir_ctx));
 
-    benchmark_tracker.lowering_end();
+    timer.end(); // includes initing the GLSL context
 
-    reinit_memory_tracker(memory_tracker, jl_ctx, glsl_ctx);
-    memory_tracker.print("lowering done", std::cout);
+    // registers shared pools and SIR node pool
+    init_memory_tracker(*memory_tracker, glsl_ctx);
+    // might result in a harmless double unregister, see transpile(jl_value_t*, ...)
+    ScopeGuard uninit_guard{[&]() { uninit_memory_tracker(*memory_tracker, glsl_ctx, true); }};
+
+    memory_tracker->print("after lowering", std::cout);
 
     if (glsl_ctx.config.dump_lowered) {
         sir::SIRDumper dumper{glsl_ctx, std::cout};
         dumper.visit(sir_ast);
     }
 
-    benchmark_tracker.code_gen_start();
+    timer.start("Code generation");
 
     glsl::GLSLCodeGenVisitor code_gen_vis{glsl_ctx};
     code_gen_vis.visit(sir_ast);
 
     if (!code_gen_vis.success()) {
         std::cerr << "\nGLSL code generation failed\n";
-        return std::nullopt;
+        return code_gen_vis.had_internal_error() ? TranspilationResult::internal_error_result
+                                                 : TranspilationResult::failed_result;
     }
 
-    benchmark_tracker.code_gen_end();
-    benchmark_tracker.end();
-    memory_tracker.print("all done", std::cout);
+    timer.end();
+    memory_tracker->print("all done", std::cout);
 
-    benchmark_tracker.print(std::cout);
+    timing_tracker->print(std::cout);
 
-    return code_gen_vis.move_result();
+    return {
+        .code   = code_gen_vis.move_result(),
+        .status = STC_Status::Success,
+    };
 }
 
-template STC_API MaybeString transpile_parsed<true, true>(jl::NodeId, jl::JLCtx&,
-                                                          detail::BenchmarkTracker<true>&,
-                                                          detail::MemoryTracker<true>&);
-template STC_API MaybeString transpile_parsed<false, true>(jl::NodeId, jl::JLCtx&,
-                                                           detail::BenchmarkTracker<false>&,
-                                                           detail::MemoryTracker<true>&);
-template STC_API MaybeString transpile_parsed<true, false>(jl::NodeId, jl::JLCtx&,
-                                                           detail::BenchmarkTracker<true>&,
-                                                           detail::MemoryTracker<false>&);
-template STC_API MaybeString transpile_parsed<false, false>(jl::NodeId, jl::JLCtx&,
-                                                            detail::BenchmarkTracker<false>&,
-                                                            detail::MemoryTracker<false>&);
-
-template <bool RunBenchmark, bool TrackMemoryUsage>
-MaybeString transpile(std::string_view code, std::optional<std::string_view> file_path,
-                      stc::TranspilerConfig config, std::string_view juliaglm_path) {
+TranspilationResult transpile_impl(jl_value_t* expr_v, const stc::TranspilerConfig& config,
+                                   TimingTracker* timing_tracker, MemoryTracker* memory_tracker) {
     using namespace stc::jl;
 
-    detail::BenchmarkTracker<RunBenchmark> benchmark_tracker{};
-    detail::MemoryTracker<TrackMemoryUsage> memory_tracker{};
+    ensure_trackers(timing_tracker, memory_tracker, config);
+    assert(timing_tracker != nullptr);
+    assert(memory_tracker != nullptr);
 
-    benchmark_tracker.start();
-    benchmark_tracker.init_start();
+    auto timer = timing_tracker->create_timer();
 
-    JLCtx jl_ctx{juliaglm_path};
-    jl_ctx.config = std::move(config);
+    timer.start("Resource init");
 
-    glsl::GLSLTargetInfo target_info{jl_ctx.type_pool};
-    jl_ctx.target_info = &target_info;
+    const auto& init_sizes = config.initial_pool_sizes;
+    JLCtx jl_ctx{config.julia_glm_path, init_sizes.julia_node_pool, init_sizes.source_info_pool,
+                 init_sizes.type_pool,  init_sizes.symbol_pool,     init_sizes.qualifier_pool};
 
-    benchmark_tracker.init_end();
+    // CLEANUP: check if we can avoid this copy freely by making a context's config non-owning
+    jl_ctx.config = config;
 
-    init_memory_tracker(memory_tracker, jl_ctx);
-    memory_tracker.print("initial", std::cout);
+    glsl::GLSLTargetInfo glsl_target_info{jl_ctx.type_pool};
+    jl_ctx.target_info = &glsl_target_info;
 
-    benchmark_tracker.parser_start();
+    timer.end();
+
+    init_memory_tracker(*memory_tracker, jl_ctx);
+    // this might result in shared pools getting unregistered twice (once by us and once by the
+    // post-parser overload), but that's fine since uninit_memory_tracker passes false to
+    // unregister_tracker, making a redundant removal a no-op
+    // this way we're sure to not leak any dead resources to the caller through the memory tracker
+    ScopeGuard tracker_uninit_guard{
+        [&]() { uninit_memory_tracker(*memory_tracker, jl_ctx, true); }};
+
+    memory_tracker->print("after resource init", std::cout);
+
+    timer.start("Expr parser");
 
     JLParser parser{jl_ctx};
 
-    if (file_path.has_value())
-        parser.fallback_file = *file_path;
-
-    NodeId jl_ast = parser.parse_code(code);
-
-    if (!parser.success()) {
-        std::cerr << "\nJulia parser failed\n";
-        return std::nullopt;
-    }
-
-    benchmark_tracker.parser_end();
-    memory_tracker.print("parser done", std::cout);
-
-    if (jl_ctx.config.dump_parsed) {
-        JLDumper dumper{jl_ctx, std::cout};
-        dumper.visit(jl_ast);
-    }
-
-    return transpile_parsed<RunBenchmark, TrackMemoryUsage>(jl_ast, jl_ctx, benchmark_tracker,
-                                                            memory_tracker);
-}
-
-template STC_API MaybeString transpile<true, true>(std::string_view,
-                                                   std::optional<std::string_view>,
-                                                   stc::TranspilerConfig, std::string_view);
-template STC_API MaybeString transpile<true, false>(std::string_view,
-                                                    std::optional<std::string_view>,
-                                                    stc::TranspilerConfig, std::string_view);
-template STC_API MaybeString transpile<false, true>(std::string_view,
-                                                    std::optional<std::string_view>,
-                                                    stc::TranspilerConfig, std::string_view);
-template STC_API MaybeString transpile<false, false>(std::string_view,
-                                                     std::optional<std::string_view>,
-                                                     stc::TranspilerConfig, std::string_view);
-
-template <bool RunBenchmark, bool TrackMemoryUsage>
-MaybeString transpile(jl_value_t* expr_v, stc::TranspilerConfig config,
-                      std::string_view juliaglm_path) {
-    using namespace stc::jl;
-
-    detail::BenchmarkTracker<RunBenchmark> benchmark_tracker{};
-    detail::MemoryTracker<TrackMemoryUsage> memory_tracker{};
-
-    benchmark_tracker.start();
-    benchmark_tracker.init_start();
-
-    JLCtx jl_ctx{juliaglm_path};
-    jl_ctx.config = std::move(config);
-
-    glsl::GLSLTargetInfo target_info{jl_ctx.type_pool};
-    jl_ctx.target_info = &target_info;
-
-    benchmark_tracker.init_end();
-
-    init_memory_tracker(memory_tracker, jl_ctx);
-    memory_tracker.print("initial", std::cout);
-
-    benchmark_tracker.parser_start();
-
-    JLParser parser{jl_ctx};
+    // even though the parser burns the fallback file path (if needed) into the source location
+    // info, and we never read it again during transpilation, we copy here instead of moving, since
+    // the config itself might be reused by the end user between transpilations!
+    if (config.fallback_file_path.has_value())
+        parser.fallback_file = *config.fallback_file_path;
 
     NodeId jl_ast = parser.parse(expr_v);
 
     if (!parser.success()) {
         std::cerr << "\nJulia parser failed\n";
-        return std::nullopt;
+        return parser.had_internal_error() ? TranspilationResult::internal_error_result
+                                           : TranspilationResult::failed_result;
     }
 
-    benchmark_tracker.parser_end();
-    memory_tracker.print("parser done", std::cout);
+    timer.end();
+    memory_tracker->print("after parser", std::cout);
+
     if (jl_ctx.config.dump_parsed) {
         JLDumper dumper{jl_ctx, std::cout};
         dumper.visit(jl_ast);
     }
 
-    return transpile_parsed<RunBenchmark, TrackMemoryUsage>(jl_ast, jl_ctx, benchmark_tracker,
-                                                            memory_tracker);
+    return transpile_impl(jl_ast, jl_ctx, timing_tracker, memory_tracker);
 }
 
-template STC_API MaybeString transpile<true, true>(jl_value_t*, stc::TranspilerConfig,
-                                                   std::string_view);
-template STC_API MaybeString transpile<true, false>(jl_value_t*, stc::TranspilerConfig,
-                                                    std::string_view);
-template STC_API MaybeString transpile<false, true>(jl_value_t*, stc::TranspilerConfig,
-                                                    std::string_view);
-template STC_API MaybeString transpile<false, false>(jl_value_t*, stc::TranspilerConfig,
-                                                     std::string_view);
+TranspilationResult transpile_impl(std::string_view code, const stc::TranspilerConfig& config,
+                                   TimingTracker* timing_tracker, MemoryTracker* memory_tracker) {
+    using namespace stc::jl;
 
-namespace {
+    ensure_trackers(timing_tracker, memory_tracker, config);
+    assert(timing_tracker != nullptr);
+    assert(memory_tracker != nullptr);
 
-template <typename TranspileFn>
-requires std::invocable<TranspileFn&, stc::TranspilerConfig&> &&
-         std::same_as<std::invoke_result_t<TranspileFn&, stc::TranspilerConfig&>, std::string*>
-void* invoke_transpilation(void* cfg_handle, TranspileFn&& transpile_fn) noexcept {
-    try {
-        stc::TranspilerConfig config = cfg_handle != nullptr
-                                           ? *(static_cast<stc::TranspilerConfig*>(cfg_handle))
-                                           : stc::TranspilerConfig{};
+    auto timer = timing_tracker->create_timer();
 
-        return static_cast<void*>(transpile_fn(config));
-    } catch (const std::exception& ex) {
-        std::cerr << "the following std::exception was thrown during transpilation:\n";
-        std::cerr << ex.what() << '\n';
-    } catch (...) {
-        std::cerr << "an unexpected error was thrown during transpilation\n";
+    // OPTIMIZE: we currently only have utils for function lookup via the whole runtime env
+    // interface and its subcomponents (like the module cache), so we're being a bit wasteful
+    // here and initializing a temporary module cache to run the lookup logic
+    rt::JuliaModuleCache temp_module_cache{config.julia_glm_path};
+
+    jl_value_t* expr_v = nullptr;
+    JL_GC_PUSH1(&expr_v);
+    const ScopeGuard jl_gc_pop_guard{[]() { JL_GC_POP(); }};
+
+    timer.start("Julia's parser", false);
+    expr_v = rt::parse_code(code, temp_module_cache);
+    timer.end();
+
+    if (expr_v == nullptr) {
+        std::cerr << "\nFailed to run Meta.parse on the source Julia code";
+        return TranspilationResult::failed_result;
     }
 
-    return nullptr;
-}
-
-// ugly, but for 2 bools gets the job done.
-// CLEANUP (especially if we want to do more profiling args like this)
-template <typename... Args>
-auto dispatch_transpilation(bool run_benchmarks, bool track_memory_usage, Args&&... args) {
-    if (run_benchmarks)
-        return track_memory_usage ? stc::api::transpile<true, true>(std::forward<Args>(args)...)
-                                  : stc::api::transpile<true, false>(std::forward<Args>(args)...);
-    else
-        return track_memory_usage ? stc::api::transpile<false, true>(std::forward<Args>(args)...)
-                                  : stc::api::transpile<false, false>(std::forward<Args>(args)...);
+    return transpile_impl(expr_v, config, timing_tracker, memory_tracker);
 }
 
 } // namespace
+
+// ==============
+//   Shared API
+//   (helpers)
+// ==============
+
+namespace {
+
+template <typename Fn>
+requires std::same_as<std::invoke_result_t<Fn>, void>
+void wrap_as_noexcept(Fn&& fn) noexcept {
+    try {
+        std::forward<Fn>(fn)();
+    } catch (const std::exception& ex) {
+        // doesn't use a helper like try_report_error since fmt::format exceptions would have to
+        // be caught separately anyways
+        try {
+            stc::internal_error(fmt::format("exception thrown during transpilation:\n"
+                                            "{}",
+                                            ex.what()));
+        } catch (...) {
+            // ex.what() is noexcept, so this is fine
+            fprintf(stderr,
+                    "[Internal Error] exception thrown during transpilation:\n"
+                    "%s\n",
+                    ex.what());
+        }
+    } catch (...) {
+        // same logic as with a concrete exception
+        try {
+            stc::internal_error("non-exception throw during transpilation!");
+        } catch (...) {
+            fprintf(stderr, "[Internal Error] non-exception throw during transpilation!\n");
+        }
+    }
+}
+
+// performs some copying on the return value, only use with cheap to copy types!
+template <typename Fn>
+requires (!std::same_as<std::invoke_result_t<Fn>, void>) &&
+         std::is_copy_constructible_v<std::invoke_result_t<Fn>> &&
+         std::is_copy_assignable_v<std::invoke_result_t<Fn>>
+auto wrap_as_noexcept(Fn&& fn, std::invoke_result_t<Fn> value_on_throw) noexcept {
+    using RetTy = std::invoke_result_t<Fn>;
+
+    auto run_wrapped = [&fn, &value_on_throw]() {
+        RetTy return_value(std::move(value_on_throw));
+        wrap_as_noexcept([&fn, &return_value]() { return_value = std::forward<Fn>(fn)(); });
+        return return_value;
+    };
+
+    if constexpr (std::is_nothrow_move_constructible_v<RetTy> &&
+                  std::is_nothrow_copy_assignable_v<RetTy>) {
+        return run_wrapped();
+    }
+
+    try {
+        return run_wrapped();
+    } catch (...) {
+        // this can only occur if move constructing, or copy assigning RetTy throws
+        // besides getting this information out, we don't do much further reporting
+        fprintf(
+            stderr,
+            "[Internal Error] Error thrown while handling return value in a wrap_as_noexcept call");
+        return value_on_throw;
+    }
+}
+
+} // namespace
+
+// ===============
+//     C++ API
+//   (endpoints)
+// ===============
+
+STC_API TranspilationResult transpile(std::string_view code, const stc::TranspilerConfig& config,
+                                      TimingTracker* timing_tracker,
+                                      MemoryTracker* memory_tracker) noexcept {
+    return wrap_as_noexcept(
+        [=, &config]() { return transpile_impl(code, config, timing_tracker, memory_tracker); },
+        TranspilationResult::internal_error_result);
+}
+
+STC_API TranspilationResult transpile(jl_value_t* expr_v, const stc::TranspilerConfig& config,
+                                      TimingTracker* timing_tracker,
+                                      MemoryTracker* memory_tracker) noexcept {
+    return wrap_as_noexcept(
+        [=, &config]() { return transpile_impl(expr_v, config, timing_tracker, memory_tracker); },
+        TranspilationResult::internal_error_result);
+}
+
+STC_API TranspilationResult transpile(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
+                                      TimingTracker* timing_tracker,
+                                      MemoryTracker* memory_tracker) noexcept {
+    return wrap_as_noexcept(
+        [=, &jl_ctx]() { return transpile_impl(jl_ast, jl_ctx, timing_tracker, memory_tracker); },
+        TranspilationResult::internal_error_result);
+}
+
+// ===========
+//    C API
+//  (helpers)
+// ===========
+
+namespace {
+
+// assumes msg is null-terminated (since it's used with literals only)
+void try_report_error(std::string_view msg) noexcept {
+    // we try to use our custom error format first, but that might still throw
+    // fprintf is C-lib, so it can't throw (if it does error, we don't print any output, that's fine
+    // at that point, we're just trying to quit then without an exception to satisfy C rules)
+    // because we're already reporting an error, the exception here doesn't matter, we just (...) it
+    try {
+        stc::error(msg);
+    } catch (...) {
+        assert(*(msg.data() + msg.length()) == '\0');
+        fprintf(stderr, "[Error] %s\n", msg.data());
+    }
+}
+
+const stc::TranspilerConfig& get_config_from_handle(STC_ConfigHandle cfg_handle) {
+    static const stc::TranspilerConfig default_config{};
+    return cfg_handle != STC_NULL_CONFIG ? *static_cast<const stc::TranspilerConfig*>(cfg_handle)
+                                         : default_config;
+}
+
+STC_StatusValue process_transpilation_result(TranspilationResult& result,
+                                             STC_ResultHandle& result_handle) {
+    // if we don't get to the end of the function (e.g. bad alloc), default to null result
+    result_handle = STC_NULL_RESULT;
+
+    if (result.status == STC_Status::Success) {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        auto* code_ptr = new std::string(std::move(result.code));
+        result_handle  = code_ptr;
+    }
+
+    return static_cast<STC_StatusValue>(result.status);
+}
+
+} // namespace
+
+// ===========
+//    C API
+// (endpoints)
+// ===========
 
 extern "C" {
     STC_API uint8_t stc_abi_version() noexcept {
         return stc::meta::version_major;
     }
 
-    STC_API void* stc_transpile(jl_value_t* expr_v, bool run_benchmark, bool track_memory_usage,
-                                void* cfg_handle) noexcept {
-        if (!jl_is_expr(expr_v)) {
-            std::cerr << "non-Expr julia object cannot be transpiled\n";
-            return nullptr;
-        }
+    STC_API STC_StatusValue stc_transpile(jl_value_t* expr_v, STC_ConfigHandle cfg_handle,
+                                          STC_ResultHandle* result_handle) noexcept {
+        return wrap_as_noexcept(
+            [expr_v, cfg_handle, &result_handle]() -> STC_StatusValue {
+                if (result_handle == nullptr) {
+                    try_report_error("NULL passed as result_handle in a call to stc_transpile");
+                    return STC_FAILED;
+                }
 
-        return invoke_transpilation(cfg_handle, [&](TranspilerConfig& config) {
-            auto result = dispatch_transpilation(run_benchmark, track_memory_usage, expr_v, config);
+                // treat any unexpected exception as an internal error
+                *result_handle = STC_NULL_RESULT;
 
-            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-            return result.has_value() ? new std::string(std::move(*result)) : new std::string{};
-        });
+                if (expr_v == nullptr) {
+                    try_report_error("NULL passed as expr_v in a call to stc_transpile");
+                    return STC_FAILED;
+                }
+
+                if (!jl_is_expr(expr_v)) {
+                    try_report_error("non-Expr Julia object cannot be transpiled");
+                    return STC_FAILED;
+                }
+
+                auto result = transpile(expr_v, get_config_from_handle(cfg_handle));
+                return process_transpilation_result(result, *result_handle);
+            },
+            STC_INTERNAL_ERROR);
     }
 
-    STC_API void* stc_transpile_code(const char* code, bool run_benchmark, bool track_memory_usage,
-                                     void* cfg_handle) noexcept {
-        if (code == nullptr) {
-            std::cerr << "nullptr passed to stc_transpile_code as the input code\n";
-            return nullptr;
-        }
+    STC_API STC_StatusValue stc_transpile_code(const char* code, STC_ConfigHandle cfg_handle,
+                                               STC_ResultHandle* result_handle) noexcept {
+        return wrap_as_noexcept(
+            [code, cfg_handle, &result_handle]() -> STC_StatusValue {
+                if (result_handle == nullptr) {
+                    try_report_error(
+                        "NULL passed as result_handle in a call to stc_transpile_code");
+                    return STC_FAILED;
+                }
 
-        return invoke_transpilation(cfg_handle, [&](TranspilerConfig& config) {
-            auto result = dispatch_transpilation(run_benchmark, track_memory_usage, code,
-                                                 std::nullopt, config);
+                // treat any unexpected exception from here as an internal error
+                *result_handle = STC_NULL_RESULT;
 
-            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-            return result.has_value() ? new std::string(std::move(*result)) : new std::string{};
-        });
+                if (code == nullptr) {
+                    try_report_error("NULL passed as code in a call to stc_transpile_code");
+                    return STC_FAILED;
+                }
+
+                auto result = transpile(code, get_config_from_handle(cfg_handle));
+                return process_transpilation_result(result, *result_handle);
+            },
+            STC_INTERNAL_ERROR);
     }
 
     // gets the underlying C string data of a result handle
-    STC_API const char* stc_get_result(void* result_handle) noexcept {
-        if (result_handle == nullptr) {
-            std::cerr << "nullptr passed to stc_get_result\n";
+    STC_API const char* stc_get_result(STC_ResultHandle result_handle) noexcept {
+        if (result_handle == STC_NULL_RESULT)
             return nullptr;
-        }
 
         return static_cast<std::string*>(result_handle)->c_str();
     }
 
     // frees the underlying string data belonging to a result handle
-    STC_API void stc_free_result(void* result_handle) noexcept {
-        if (result_handle == nullptr) {
-            std::cerr << "nullptr passed to stc_free_result\n";
+    STC_API void stc_free_result(STC_ResultHandle result_handle) noexcept {
+        if (result_handle == STC_NULL_RESULT)
             return;
-        }
 
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         delete static_cast<std::string*>(result_handle);

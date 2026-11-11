@@ -30,6 +30,9 @@ concept CEqualityComparable = requires (T a, T b) {
     { std::equal_to<T>{}(a, b) } -> std::same_as<bool>;
 };
 
+template <typename T, typename... Types>
+concept CIsAnyOf = sizeof...(Types) > 0 && (std::same_as<T, Types> || ...);
+
 template <typename T, typename Projection = std::identity>
 requires std::regular_invocable<Projection&, const T&> && requires {
     // unordered set is instantiable with the return type of Projection
@@ -255,7 +258,7 @@ class ScopeGuard {
 
 public:
     explicit ScopeGuard(DeferredFn fn)
-        : deferred_fn{fn} {}
+        : deferred_fn{std::move(fn)} {}
 
     ~ScopeGuard() { deferred_fn(); }
 

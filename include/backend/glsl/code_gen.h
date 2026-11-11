@@ -20,7 +20,9 @@ private:
 
     std::stringstream out{};
     size_t indent_level = 0U;
-    bool _success       = true;
+
+    bool _success            = true;
+    bool _had_internal_error = false;
 
     SymbolId sym_length{};
 
@@ -48,6 +50,7 @@ public:
     }
 
     bool success() const { return _success; }
+    bool had_internal_error() const { return _had_internal_error; }
 
     // clang-format off
     #define X(type, kind) STC_AST_VISITOR_DECL(void, type)

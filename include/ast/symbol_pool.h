@@ -4,22 +4,17 @@
 #include <string_view>
 
 #include "common/bump_arena.h"
+#include "common/id_types.h"
 #include "common/utils.h"
 
 namespace stc {
-
-struct SymbolId : public StrongId<uint32_t> {
-    static SymbolId null_id() { return SymbolId{0U}; }
-
-    [[nodiscard]] bool is_null() const { return value == null_id().value; }
-};
 
 class SymbolPool {
     using ArenaTy = BumpArena<SymbolId::id_type>;
 
 public:
-    explicit SymbolPool(SymbolId::id_type initial_capacity_kb = 4U)
-        : arena{initial_capacity_kb * 1024U}, pool{} {}
+    explicit SymbolPool(SymbolId::id_type initial_capacity_bytes)
+        : arena{initial_capacity_bytes}, pool{} {}
 
     SymbolPool(const SymbolPool&)            = delete;
     SymbolPool& operator=(const SymbolPool&) = delete;

@@ -42,40 +42,15 @@ private:
 
     bool first_cmpd = true;
     bool in_method  = false;
-    bool _success   = true;
+
+    bool _success            = true;
+    bool _had_internal_error = false;
 
 public:
-    explicit JLLoweringVisitor(JLCtx&& ctx)
-        : JLVisitor{ctx}, sir_ctx{sir::SIRCtx::move_pools_from(std::move(ctx))} {
-
-        sym_plus       = sir_ctx.sym_pool.get_id("+");
-        sym_minus      = sir_ctx.sym_pool.get_id("-");
-        sym_asterisk   = sir_ctx.sym_pool.get_id("*");
-        sym_slash      = sir_ctx.sym_pool.get_id("/");
-        sym_div        = sir_ctx.sym_pool.get_id("div");
-        sym_caret      = sir_ctx.sym_pool.get_id("^");
-        sym_perc       = sir_ctx.sym_pool.get_id("%");
-        sym_rem        = sir_ctx.sym_pool.get_id("rem");
-        sym_dbl_eq     = sir_ctx.sym_pool.get_id("==");
-        sym_neq        = sir_ctx.sym_pool.get_id("!=");
-        sym_lt         = sir_ctx.sym_pool.get_id("<");
-        sym_leq        = sir_ctx.sym_pool.get_id("<=");
-        sym_gt         = sir_ctx.sym_pool.get_id(">");
-        sym_geq        = sir_ctx.sym_pool.get_id(">=");
-        sym_xor        = sir_ctx.sym_pool.get_id("xor");
-        sym_amper      = sir_ctx.sym_pool.get_id("&");
-        sym_pipe       = sir_ctx.sym_pool.get_id("|");
-        sym_bang       = sir_ctx.sym_pool.get_id("!");
-        sym_tilde      = sir_ctx.sym_pool.get_id("~");
-        sym_dbl_langle = sir_ctx.sym_pool.get_id("<<");
-        sym_dbl_rangle = sir_ctx.sym_pool.get_id(">>");
-
-        sym_main = sir_ctx.sym_pool.get_id("main");
-
-        sym_x = sir_ctx.sym_pool.get_id("x");
-        sym_y = sir_ctx.sym_pool.get_id("y");
-        sym_z = sir_ctx.sym_pool.get_id("z");
-        sym_w = sir_ctx.sym_pool.get_id("w");
+    explicit JLLoweringVisitor(JLCtx&& ctx, sir::NodeId::id_type initial_node_arena_size)
+        : JLVisitor{ctx},
+          sir_ctx{sir::SIRCtx::move_pools_from(std::move(ctx), initial_node_arena_size)} {
+        cache_symbols();
     }
 
     bool pre_visit_ptr(Expr* expr);
@@ -90,6 +65,8 @@ public:
     SIRNodeId lower(NodeId global_cmpd_id);
 
     bool success() const { return _success; }
+    bool had_internal_error() const { return _had_internal_error; }
+
     sir::SIRCtx sir_ctx;
 
 private:
@@ -139,6 +116,37 @@ private:
         sym_bang, sym_tilde, sym_dbl_langle, sym_dbl_rangle;
     SymbolId sym_main;
     SymbolId sym_x, sym_y, sym_z, sym_w;
+
+    void cache_symbols() {
+        sym_plus       = sir_ctx.sym_pool.get_id("+");
+        sym_minus      = sir_ctx.sym_pool.get_id("-");
+        sym_asterisk   = sir_ctx.sym_pool.get_id("*");
+        sym_slash      = sir_ctx.sym_pool.get_id("/");
+        sym_div        = sir_ctx.sym_pool.get_id("div");
+        sym_caret      = sir_ctx.sym_pool.get_id("^");
+        sym_perc       = sir_ctx.sym_pool.get_id("%");
+        sym_rem        = sir_ctx.sym_pool.get_id("rem");
+        sym_dbl_eq     = sir_ctx.sym_pool.get_id("==");
+        sym_neq        = sir_ctx.sym_pool.get_id("!=");
+        sym_lt         = sir_ctx.sym_pool.get_id("<");
+        sym_leq        = sir_ctx.sym_pool.get_id("<=");
+        sym_gt         = sir_ctx.sym_pool.get_id(">");
+        sym_geq        = sir_ctx.sym_pool.get_id(">=");
+        sym_xor        = sir_ctx.sym_pool.get_id("xor");
+        sym_amper      = sir_ctx.sym_pool.get_id("&");
+        sym_pipe       = sir_ctx.sym_pool.get_id("|");
+        sym_bang       = sir_ctx.sym_pool.get_id("!");
+        sym_tilde      = sir_ctx.sym_pool.get_id("~");
+        sym_dbl_langle = sir_ctx.sym_pool.get_id("<<");
+        sym_dbl_rangle = sir_ctx.sym_pool.get_id(">>");
+
+        sym_main = sir_ctx.sym_pool.get_id("main");
+
+        sym_x = sir_ctx.sym_pool.get_id("x");
+        sym_y = sir_ctx.sym_pool.get_id("y");
+        sym_z = sir_ctx.sym_pool.get_id("z");
+        sym_w = sir_ctx.sym_pool.get_id("w");
+    }
 };
 
 } // namespace stc::jl

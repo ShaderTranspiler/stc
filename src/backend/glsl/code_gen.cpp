@@ -101,7 +101,7 @@ namespace stc::glsl {
 void GLSLCodeGenVisitor::dump(const NodeBase& node, std::ostream& dump_out) const {
     SIRDumper dumper{ctx, dump_out};
 
-    switch (ctx.config.err_dump_verbosity) {
+    switch (ctx.config.error_dump_verbosity) {
         case DumpVerbosity::None:
             break;
 
@@ -129,7 +129,9 @@ void GLSLCodeGenVisitor::fail(std::string_view msg, const NodeBase& node) {
 void GLSLCodeGenVisitor::internal_error(std::string_view msg, const NodeBase& node) {
     if (!_success)
         return;
-    _success = false;
+
+    _success            = false;
+    _had_internal_error = true;
 
     auto [loc, file] = ctx.src_info_pool.get_loc_and_file(node.location);
     stc::internal_error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(node, out); });

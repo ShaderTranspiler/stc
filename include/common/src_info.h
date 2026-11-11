@@ -4,11 +4,13 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/bump_arena.h"
 #include "common/bump_arena_allocator.h"
 #include "common/config.h"
+#include "common/id_types.h"
 #include "common/report.h"
 #include "common/utils.h"
 
@@ -40,14 +42,6 @@ private:
 // used by SrcInfoPool, to emplace invalid state into arena
 static_assert(std::is_trivially_copy_constructible_v<SrcLocation>);
 
-struct SrcLocationId : public StrongId<uint32_t> {
-    using StrongId::StrongId;
-
-    [[nodiscard]] constexpr bool is_null() const { return *this == null_id(); }
-
-    static constexpr SrcLocationId null_id() { return SrcLocationId{0U}; }
-};
-
 void report(const SrcFile& file, SrcLocation location, std::string_view msg,
             std::ostream& out = std::cerr);
 void error(const SrcFile& file, SrcLocation location, std::string_view msg,
@@ -66,11 +60,11 @@ void internal_error(const SrcFile& file, SrcLocation location, std::string_view 
             const TranspilerConfig& cfg, DumperFn&& dump, std::ostream& out = std::cerr) {         \
         out << '\n';                                                                               \
         ::stc::fn(file, location, msg, out);                                                       \
-        if (cfg.err_dump_verbosity != DumpVerbosity::None) {                                       \
+        if (cfg.error_dump_verbosity != DumpVerbosity::None) {                                     \
             ::stc::report("\nThe above " #report_name                                              \
                           " was emitted while processing the following AST node:",                 \
                           out);                                                                    \
-            dump(out);                                                                             \
+            std::forward<DumperFn>(dump)(out);                                                     \
         }                                                                                          \
     }
 
@@ -89,7 +83,7 @@ private:
 
 public:
     // ! expects arena to not be modified by others, only inspected
-    explicit SrcInfoPool(SizeTy initial_location_capacity_kb, size_t initial_file_capacity = 4);
+    explicit SrcInfoPool(SizeTy initial_location_capacity_bytes, size_t initial_file_capacity = 4);
 
     SrcInfoPool(const SrcInfoPool&)                = delete;
     SrcInfoPool& operator=(const SrcInfoPool&)     = delete;

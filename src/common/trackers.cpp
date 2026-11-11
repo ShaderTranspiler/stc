@@ -1,7 +1,6 @@
-#include "api/trackers.h"
+#include "common/trackers.h"
 
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <fmt/format.h>
 #include <numeric>
@@ -12,7 +11,7 @@
 
 namespace {
 
-using namespace stc::api::detail;
+using namespace stc;
 
 std::string format_duration(std::chrono::nanoseconds dur) {
     using namespace std::chrono;
@@ -117,68 +116,104 @@ void dispatch_print_arena(const stc::ErasedArenaView& arena_view, std::ostream& 
         case U64: return dispatch(*static_cast<const stc::BumpArena<uint64_t>*>(arena_view.arena));
         default:  throw std::logic_error{"Invalid size ID in erased arena view!"};
     }
-    // clang-format on        
+    // clang-format on
 }
 
 } // namespace
 
-namespace stc::api::detail {
+namespace stc {
 
-void BenchmarkTracker<true>::print(std::ostream& out) const {
-    using namespace std::string_view_literals;
+void TimingTracker::start_timing(std::string_view name, bool include_in_sum, TimePoint start_time) {
+    if (enabled)
+        timings.emplace_back(name, start_time, TimePoint::min(), include_in_sum);
+}
 
-    static constexpr std::array phase_display_names = {
-        "Transpiler init"sv, "Expr parser"sv, "Julia sema"sv, "AST lowering"sv, "Code generation"sv,
+void TimingTracker::end_timing(TimePoint end_time) noexcept {
+    if (enabled) {
+        // same debug vs release logic as in Timer::end()
+        assert(!timings.empty() && "trying to end a timing that wasn't started");
+        if (!timings.empty())
+            timings.back().end = end_time;
+    }
+}
+
+void TimingTracker::print(std::ostream& out) const {
+    if (!enabled)
+        return;
+
+    // timing names included in sum get 4 extra characters: " (*)"
+    auto real_name_length = [](const Timing& timing) {
+        return timing.include_in_sum ? timing.name.length() + 4 : timing.name.length();
     };
 
-    static constexpr size_t max_name_length = std::transform_reduce(
-        phase_display_names.begin(), phase_display_names.end(), size_t{0},
-        [](size_t a, size_t b) { return a > b ? a : b; },
-        [](std::string_view el) { return el.length(); });
+    size_t max_name_length = std::transform_reduce(
+        timings.begin(), timings.end(), size_t{0}, [](size_t a, size_t b) { return a > b ? a : b; },
+        real_name_length);
 
-    std::array phase_times = {
-        tp_init_end - tp_init_start,         tp_parser_end - tp_parser_start,
-        tp_sema_end - tp_sema_start,         tp_lowering_end - tp_lowering_start,
-        tp_code_gen_end - tp_code_gen_start,
-    };
+    Duration timings_sum = std::accumulate(timings.begin(), timings.end(), Duration::zero(),
+                                           [](auto acc, const auto& timing) {
+                                               if (!timing.include_in_sum)
+                                                   return acc;
 
-    auto phase_sum = std::accumulate(phase_times.begin(), phase_times.end(), clock::duration::zero(), [](auto acc, auto el) {return acc + el;});
+                                               return acc + (timing.end - timing.start);
+                                           });
 
-    print_header(out, "Benchmark");
+    print_header(out, "Timings");
 
-    static_assert(phase_display_names.size() == phase_times.size());
-    for (size_t i = 0; i < phase_display_names.size(); i++) {
-        out << colored(phase_display_names[i], ansi_codes::yellow);
-        assert(max_name_length >= phase_display_names[i].length());
-        std::string padding(max_name_length - phase_display_names[i].length(), ' ');
+    for (const Timing& timing : timings) {
+        assert(timing.end != TimePoint::min());
+        assert(timing.start <= timing.end);
+
+        Duration timing_duration = timing.end - timing.start;
+
+        out << colored(timing.name, ansi_codes::yellow);
+        if (timing.include_in_sum)
+            out << colored(" (*)", ansi_codes::yellow);
+        assert(max_name_length >= real_name_length(timing));
+        std::string padding(max_name_length - real_name_length(timing), ' ');
         out << padding;
         out << " finished in ";
-        out << colored(fmt::format("{} ({})", format_duration(phase_times[i]), format_percentage(phase_times[i].count(), phase_sum.count())), ansi_codes::yellow);
+        out << colored(format_duration(timing_duration), ansi_codes::yellow);
+        if (timing.include_in_sum) {
+            out << colored(fmt::format(" ({})", format_percentage(timing_duration.count(),
+                                                                  timings_sum.count())),
+                           ansi_codes::yellow);
+        }
         out << '\n';
     }
 
     out << "\nEntire transpilation finished in "
-        << colored(format_duration(tp_end - tp_start), ansi_codes::yellow);
-    out << ", sum of each phase is " << colored(format_duration(phase_sum), ansi_codes::yellow) << '\n';
+        << colored(format_duration(timings.back().end - timings.front().start), ansi_codes::yellow);
+    out << ", sum of " << colored("(*)", ansi_codes::yellow) << " is "
+        << colored(format_duration(timings_sum), ansi_codes::yellow) << '\n';
 
     out.flush();
 }
 
-void MemoryTracker<true>::unregister_arena(const void* arena_ptr) {
-    auto it = std::find_if(arenas.begin(), arenas.end(), [=](const auto& arena_view) {
-        return arena_view.arena == arena_ptr;
-    });
+void MemoryTracker::unregister_arena(const void* arena_ptr, bool fail_if_not_tracked) {
+    if (!enabled)
+        return;
 
-    if (it == arenas.end())
+    auto it = std::find_if(arenas.begin(), arenas.end(),
+                           [=](const auto& arena_view) { return arena_view.arena == arena_ptr; });
+
+    if (it == arenas.end()) {
+        if (!fail_if_not_tracked)
+            return;
+
         throw std::logic_error{"Trying to unregister arena not under memory tracking"};
+    }
 
     arenas.erase(it);
 }
 
-void MemoryTracker<true>::print(std::string_view dump_name, std::ostream& out) const {
-    print_header(out, fmt::format("Memory Dump: {}", dump_name), false);
+void MemoryTracker::print(std::string_view dump_name, std::ostream& out) const {
+    if (!enabled)
+        return;
+
+    print_header(out, fmt::format("Arena Memory Usage ({})", dump_name), false);
     for (const auto& arena_view : arenas)
         dispatch_print_arena(arena_view, out);
 }
 
-} // namespace stc::api::detail
+} // namespace stc

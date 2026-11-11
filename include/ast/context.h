@@ -38,6 +38,7 @@ protected:
     BumpArena<typename NodeIdTy::id_type> node_arena;
 
 public:
+    std::string node_pool_name;
     types::TypePool type_pool;
     SrcInfoPool src_info_pool;
     SymbolPool sym_pool;
@@ -48,17 +49,22 @@ protected:
     size_t usym_counter    = 0U;
 
 public:
+    // all arena sizes are in bytes
     explicit ASTCtx(
+        NodeIdTy::id_type initial_node_arena_size,
+        SrcLocationId::id_type initial_src_info_arena_size,
+        types::TypeId::id_type initial_type_arena_size, SymbolId::id_type initial_symbol_arena_size,
+        QualId::id_type initial_qualifier_arena_size,
+        // ref of temporary here is fine, since type_pool has to copy its members
         const std::vector<types::BuiltinTD>& type_builtins = std::vector<types::BuiltinTD>{},
-        const TargetInfo* target_info = nullptr, NodeIdTy::id_type node_arena_kb = 64U,
-        SrcLocationId::id_type src_info_arena_kb = 4U, types::TypeId::id_type type_arena_kb = 4U,
-        SymbolId::id_type sym_arena_kb = 4U, QualId::id_type qual_arena_kb = 1U)
+        const TargetInfo* target_info = nullptr, std::string node_pool_name = "Node Pool")
         : target_info{target_info},
-          node_arena{node_arena_kb * 1024U},
-          type_pool{type_arena_kb, type_builtins},
-          src_info_pool{src_info_arena_kb},
-          sym_pool{sym_arena_kb},
-          qual_pool{qual_arena_kb} {}
+          node_arena{initial_node_arena_size},
+          node_pool_name{std::move(node_pool_name)},
+          type_pool{initial_type_arena_size, type_builtins},
+          src_info_pool{initial_src_info_arena_size},
+          sym_pool{initial_symbol_arena_size},
+          qual_pool{initial_qualifier_arena_size} {}
 
     ~ASTCtx() = default;
 
@@ -67,9 +73,10 @@ public:
     ASTCtx(ASTCtx&&) noexcept              = default;
     ASTCtx& operator=(ASTCtx&&) noexcept   = default;
 
+    // safe to call on a partially moved context
     ErasedArenaView get_node_pool_erased_arena_view() const {
         return {
-            .name    = "Node Pool",
+            .name    = node_pool_name,
             .arena   = &node_arena,
             .size_id = ErasedArenaView::get_size_id<typename NodeIdTy::id_type>(),
         };
@@ -89,12 +96,15 @@ protected:
     // "partial" move ctor, moving the type and src info pools, and empty initializing node arena
     // protected to allow derived classes to use as a starting point, but publicly only accessible
     // from the factory function move_pools_from
+    // it copies node_pool_name instead of moving so that get_node_pool_erased_arena_view remains
+    // safe to call on a partially moved context
     template <typename T, typename U>
     // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
-    explicit ASTCtx(ASTCtx<T, U>&& other, NodeIdTy::id_type node_arena_kb)
+    explicit ASTCtx(ASTCtx<T, U>&& other, NodeIdTy::id_type initial_node_arena_size)
         : config{std::move(other.config)},
           target_info{other.target_info},
-          node_arena{node_arena_kb * 1024U},
+          node_arena{initial_node_arena_size},
+          node_pool_name{other.node_pool_name},
           type_pool{std::move(other.type_pool)},
           src_info_pool{std::move(other.src_info_pool)},
           sym_pool{std::move(other.sym_pool)},
@@ -103,10 +113,11 @@ protected:
           usym_counter{other.get_usym_counter()} {}
 
 public:
+    // initial_node_arena_size is in bytes
     template <typename T, typename U>
     [[nodiscard]] static ASTCtx move_pools_from(ASTCtx<T, U>&& other,
-                                                NodeIdTy::id_type node_arena_kb = 128U) {
-        return ASTCtx{std::move(other), node_arena_kb};
+                                                NodeIdTy::id_type initial_node_arena_size) {
+        return ASTCtx{std::move(other), initial_node_arena_size};
     }
 
     template <typename T, typename... Args>

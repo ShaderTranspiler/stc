@@ -63,8 +63,9 @@ constexpr std::array general_entries{
     HelpEntry{"--gl-version <N>",  "set OpenGL version for #version directive (default: \"460\")"},
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
     HelpEntry{"--track-memory",    "print per-phase memory usage statistics for arenas"},
-    HelpEntry{"--no-benchmark",    "disable the measuring and printing of transpilation time benchmarks"},
-    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-benchmark)"),
+    HelpEntry{"--no-time",         "disable the measuring and printing of transpilation time breakdown stats"},
+    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-time)"),
+    HelpEntry{"--time",            "print transpilation time breakdown stats, even if --quiet is passed"},
     HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"},
     HelpEntry{"--skip-no-commit", "avoids the CLI adding a no-commit tag to the generated output file"},
 };
@@ -93,9 +94,9 @@ constexpr std::array formatting_entries{
 };
 
 constexpr std::array errors_and_warnings_entries{
-    HelpEntry{"--err-dump none",    "disable AST dumping on errors (default)"},
-    HelpEntry{"--err-dump partial", "dump the AST subtree that caused the given error"},
-    HelpEntry{"--err-dump verbose", "dump the full AST at every error reported"},
+    HelpEntry{"--error-dump none",    "disable AST dumping on errors (default)"},
+    HelpEntry{"--error-dump partial", "dump the AST subtree that caused the given error"},
+    HelpEntry{"--error-dump verbose", "dump the full AST at every error reported"},
     HelpEntry{"-Wjl-query",         "warn when the Julia runtime was queried for function call resolution"},
 };
 

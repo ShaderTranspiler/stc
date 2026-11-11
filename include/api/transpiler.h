@@ -1,117 +1,181 @@
 #pragma once
 
-#include "api/trackers.h"
+#include "api/core.h"
 #include "common/config.h"
-#include "frontend/jl/ast.h"
+#include "common/trackers.h"
 #include "frontend/jl/context.h"
 
-#include <optional>
 #include <string>
 #include <string_view>
 
-/// @brief Functions for handling transpilation via the library, available for use both internally
-/// and externally. It exposes a set of C-side and C++-side endpoints.
-///
-/// @warning The C++-only templated transpile calls are only publicly exported because of the mixing
-/// of the project's architecture. They're meant to be used only if the linking project is also
-/// being built under identical conditions to the library (e.g. the CLI). Otherwise, prefer the C
-/// API.
+// NOTE: we're not aiming for C compatibility in terms of using the C API straight from a C program.
+// why we need the C ABI is so that Julia can access these end points through ccall-s. that's why
+// it does not get its own header, or why it uses 'using' over 'typedef' and other C++ specific
+// things.
+
 namespace stc::api {
 
 /// @addtogroup api
 /// @{
 
-using MaybeString = std::optional<std::string>;
+// ===========
+//   C++ API
+// ===========
 
-/// @brief  Invokes the Julia -> GLSL transpilation pipeline on an already parsed Julia AST
-/// @tparam RunBenchmark If true, times each transpilation phase and prints results to stdout at the
-/// end
-/// @tparam TrackMemoryUsage If true, prints each transpilation phase's memory usage to stdout
-/// during transpilation
-/// @param jl_ast The parsed Julia AST to transpile
-/// @param jl_ctx The Julia context used during parsing
-/// @param benchmark_tracker The stc::detail::BenchmarkTracker previously used to time parsing and
-/// init
-/// @param memory_tracker The stc::detail::MemoryTracker previously used to track parsing and init's
-/// memory usage
-/// @return The generated GLSL code as a std::string on success, std::nullopt on transpilation
-/// failure (both for invalid code, and internal error)
-/// @see stc::detail::BenchmarkTracker
-/// @see stc::detail::MemoryTracker
-template <bool RunBenchmark, bool TrackMemoryUsage>
-STC_API MaybeString transpile_parsed(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
-                                     detail::BenchmarkTracker<RunBenchmark>& benchmark_tracker);
+/// @brief Transpilation result returned by the C++ API.
+struct TranspilationResult {
+    /// The generated code if transpilation succeeded, or an empty string
+    std::string code;
+    /// Indicates the result status of the transpilation
+    STC_Status status;
 
-/// @brief Invokes the Julia -> GLSL transpilation pipeline on unparsed Julia code
-/// @tparam RunBenchmark If true, times each transpilation phase and prints results at the end
-/// @tparam TrackMemoryUsage If true, prints each transpilation phase's memory usage to stdout
-/// during transpilation
-/// @param code The raw string representation of the source code to transpile
-/// @param file_path The optional file path that will be used for source location information
-/// @param config The stc::TranspilerConfig that describes the configuration options to use during
-/// transpilation
-/// @param juliaglm_path Julia-side path to the JuliaGLM module
-/// @return The generated GLSL code as a std::string on success, std::nullopt on transpilation
-/// failure (both for invalid code, and internal error)
-/// @see stc::TranspilerConfig
-template <bool RunBenchmark, bool TrackMemoryUsage>
-STC_API MaybeString transpile(std::string_view code, std::optional<std::string_view> file_path,
-                              stc::TranspilerConfig config,
-                              std::string_view juliaglm_path = "Main.JuliaGLM");
+    /// A copy of this is returned upon transpilation that fails due to a code error
+    static const TranspilationResult failed_result;
+    /// A copy of this is returned upon transpilation that fails due to internal error(s)
+    static const TranspilationResult internal_error_result;
+};
+
+inline const TranspilationResult TranspilationResult::failed_result{
+    .code{},
+    .status = STC_Status::Failed,
+};
+
+inline const TranspilationResult TranspilationResult::internal_error_result{
+    .code{},
+    .status = STC_Status::InternalError,
+};
+
+/// @brief Invokes the Julia -> GLSL transpilation pipeline on an already parsed Julia AST
+/// @param jl_ast Root node of the parsed Julia AST to transpile
+/// @param jl_ctx The Julia context used during the parsing of @a jl_ast
+/// @param timing_tracker The @b TimingTracker to record timing information into, or @c nullptr if a
+/// fresh one should be created, based on the configuration's @a track_timing field. When passing a
+/// tracker explicitly, it must not be in recording state (i.e. @c start_timing called without a
+/// matching call to @c end_timing).
+/// @param memory_tracker The @b MemoryTracker to use for arena memory usage recording, or
+/// @c nullptr if a fresh one should be created, based on the configuration's @a track_memory field.
+/// @return A @b TranspilationResult describing the outcome of the transpilation attempt. If it was
+/// successful, the @a status field is set to @c Success, otherwise it's either @c Failed (if the
+/// code contained errors), or @c InternalError (if an internal error occurred in the transpiler).
+/// Its @a code field is set to the generated GLSL code if <tt>status == Success</tt>, otherwise
+/// it's an empty string.
+/// @important Partial moves @a jl_ctx, meaning while its node pool remains technically usable after
+/// a call to this function, all of its shared pools will have been destroyed, after they've been
+/// reused by the backend context. This means all IDs in the AST pointing into shared pools get
+/// invalidated. For safety, it should be treaten as if @a jl_ctx had been moved all together, and
+/// not used after a call to this function.
+/// @important If @a memory_tracker is passed explicitly, and it already has the resources of
+/// @a jl_ctx registered, all of its shared pools will be unregistered by the time the function
+/// returns. Since the node pool itself is kept alive, it remains registered by @a memory_tracker
+/// and it is the caller's responsibility to unregister before @a jl_ctx is destroyed. If the
+/// resources of @a jl_ctx have not been registered into @a memory_tracker prior to this call, they
+/// will not be used for tracking until the @b JLCtx is partial moved, and the function takes
+/// explicit ownership of its resources.
+/// @see stc::api::TranspilationResult
+/// @see stc::TimingTracker
+/// @see stc::MemoryTracker
+STC_API TranspilationResult transpile(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
+                                      TimingTracker* timing_tracker = nullptr,
+                                      MemoryTracker* memory_tracker = nullptr) noexcept;
 
 /// @overload
-/// @param expr_v The Julia-parsed Expr representation of the source code to transpile
-template <bool RunBenchmark, bool TrackMemoryUsage>
-STC_API MaybeString transpile(jl_value_t* expr_v, stc::TranspilerConfig config,
-                              std::string_view juliaglm_path = "Main.JuliaGLM");
+/// @brief Invokes the Julia -> GLSL transpilation pipeline on a Julia-parsed @b Expr AST
+/// @param expr_v The Julia-parsed @b Expr representation of the source code to transpile
+/// @param config The @b TranspilerConfig that describes the configuration options to use during
+/// transpilation
+/// @important If @a memory_tracker is passed explicitly, it will have the exact same set of arenas
+/// registered upon return as it had before the call.
+/// @see stc::TranspilerConfig
+STC_API TranspilationResult transpile(jl_value_t* expr_v, const stc::TranspilerConfig& config,
+                                      TimingTracker* timing_tracker = nullptr,
+                                      MemoryTracker* memory_tracker = nullptr) noexcept;
 
-// CLEANUP: improve the C API (no NULL vs "" results, no API as ABI only)
+/// @overload
+/// @brief Invokes the Julia -> GLSL transpilation pipeline on raw Julia source code.
+/// @param code The raw string representation of the Julia source code to transpile. The code must
+/// represent a compound expression (Julia <tt>begin ... end</tt> block), which is treated as the
+/// top level of the source code.
+/// @param config The @b TranspilerConfig that describes the configuration options to use during
+/// transpilation
+/// @important If @a memory_tracker is passed explicitly, it will have the exact same set of arenas
+/// registered upon return as it had before the call.
+/// @see stc::TranspilerConfig
+STC_API TranspilationResult transpile(std::string_view code, const stc::TranspilerConfig& config,
+                                      TimingTracker* timing_tracker = nullptr,
+                                      MemoryTracker* memory_tracker = nullptr) noexcept;
+
+// ===========
+//    C API
+// ===========
+
+// NOTE: we don't expose a C API endpoint for starting transpilation from our own Julia AST
+// format, since it is a CPP-only type. The C API is meant for Julia-side invocation anyway, where
+// either a String or an Expr is expected as the natural input type.
+
 extern "C" {
-    /// @brief Queries the current ABI version of the library
+    /// @brief Queries the current ABI version of the library. Note that this offers no guarantees
+    /// while it's zero, regular semver guarantees begin when it reaches 1.
     /// @return The current ABI version number
     STC_API uint8_t stc_abi_version() noexcept;
 
-    /// @brief Invokes the Julia -> GLSL transpilation pipeline on Julia-parsed code
-    /// @param expr_v The Expr representation of the source code to transpile
-    /// @param run_benchmark If true, times each transpilation phase and prints it to stdout at the
-    /// end
-    /// @param track_memory_usage If true, tracks each transpilation phase's memory usage and prints
-    /// it to stdout during transpilation
-    /// @param cfg_handle The configuration handle to use during transpilation (set to NULL for
-    /// default config options)
-    /// @return A result handle pointing to the generated GLSL code on success, nullptr on failure
-    /// @see stc_get_result, stc_free_result, stc_create_cfg
-    STC_API void* stc_transpile(jl_value_t* expr_v, bool run_benchmark, bool track_memory_usage,
-                                void* cfg_handle) noexcept;
+    // guard for stc_transpile* endpoints return type
+    // used alongside type alias because an ABI breaking change like this should be deliberate
+    static_assert(std::same_as<std::underlying_type_t<STC_Status>, uint32_t>,
+                  "STC_Status underlying type drifted without the C API getting updated");
 
-    /// @brief Invokes the Julia -> GLSL transpilation pipeline on raw Julia code
-    /// @param code The raw string form of the source code to transpile
-    /// @param run_benchmark If true, times each transpilation phase and prints it to stdout at the
-    /// end
-    /// @param track_memory_usage If true, tracks each transpilation phase's memory usage and prints
-    /// it to stdout during transpilation
-    /// @param cfg_handle The configuration hadnle to use during transpilation (set to NULL for
-    /// default config options)
-    /// @return A result handle pointing to the generated GLSL code on success, nullptr on failure
-    /// @see stc_get_result, stc_free_result, stc_create_cfg
-    STC_API void* stc_transpile_code(const char* code, bool run_benchmark, bool track_memory_usage,
-                                     void* cfg_handle) noexcept;
+    /// @brief Invokes the Julia -> GLSL transpilation pipeline on a Julia-parsed @b Expr AST
+    /// @param expr_v The @b Expr representation of the source code to transpile
+    /// @param cfg_handle The @b STC_ConfigHandle identifying the configuration to use during
+    /// transpilation (pass @c STC_NULL_CONFIG to use the default config options)
+    /// @param result_handle An @b STC_ResultHandle pointer, through which a result handle gets set
+    /// to the @b STC_ResultHandle identifying the generated GLSL code upon successful
+    /// transpilation, or to @c STC_NULL_RESULT if transpilation failed for any reason. Calling
+    /// stc_free_result is the caller's responsibility if it's not @c STC_NULL_RESULT after
+    /// transpilation (or equivalently, if the return value is @c STC_SUCCESS).
+    /// @return An @b STC_Status value describing the outcome of transpilation (also see the
+    /// @a result_handle parameter)
+    /// @see stc::api::STC_Result
+    /// @see stc::api::stc_get_result
+    /// @see stc::api::stc_free_result
+    /// @see stc::api::stc_create_cfg
+    STC_API STC_StatusValue stc_transpile(jl_value_t* expr_v, STC_ConfigHandle cfg_handle,
+                                          STC_ResultHandle* result_handle) noexcept;
+
+    /// @brief Invokes the Julia -> GLSL transpilation pipeline on raw Julia source code
+    /// @param code The raw string form of the source code to transpile.
+    /// @param cfg_handle The @b STC_ConfigHandle identifying the configuration to use during
+    /// transpilation (pass @c STC_NULL_CONFIG to use the default config options)
+    /// @param result_handle An @b STC_ResultHandle pointer, through which a result handle gets set
+    /// to the @b STC_ResultHandle identifying the generated GLSL code upon successful
+    /// transpilation, or to @c STC_NULL_RESULT if transpilation failed for any reason. Calling
+    /// stc_free_result is the caller's responsibility if it's not @c STC_NULL_RESULT after
+    /// transpilation (or equivalently, if the return value is @c STC_SUCCESS).
+    /// @return An @b STC_Status value describing the outcome of transpilation (also see the
+    /// @a result_handle parameter)
+    /// @see stc::api::STC_Result
+    /// @see stc::api::stc_get_result
+    /// @see stc::api::stc_free_result
+    /// @see stc::api::stc_create_cfg
+    STC_API STC_StatusValue stc_transpile_code(const char* code, STC_ConfigHandle cfg_handle,
+                                               STC_ResultHandle* result_handle) noexcept;
 
     /// @brief Retrieves the C string representation of the generated code belonging to a result
     /// handle
-    /// @param result_handle The result handled obtained through a successful transpilation via the
-    /// C API
-    /// @return A pointer to the beginning of a null-terminated string of the generated GLSL code
-    /// @see stc_free_result, stc_transpile
-    STC_API const char* stc_get_result(void* result_handle) noexcept;
+    /// @param result_handle The @b STC_ResultHandle obtained through a successful transpilation via
+    /// the C API.
+    /// @return A pointer to the beginning of a null-terminated string of the generated GLSL code,
+    /// or @c NULL if @c STC_NULL_RESULT was passed as the handle.
+    /// @see stc::api::stc_free_result
+    /// @see stc::api::stc_transpile
+    STC_API const char* stc_get_result(STC_ResultHandle result_handle) noexcept;
 
     /// @brief Frees the underlying resource of a result handle.
-    /// Should be called exactly once for every successful transpilation via the C API, after the
-    /// last usage of the result handle.
-    /// @param result_handle The result handle obtained through a successful transpilation via the C
-    /// API
-    /// @see stc_transpile
-    STC_API void stc_free_result(void* result_handle) noexcept;
+    /// Should be called exactly once for every successful transpilation via the C API, only after
+    /// the last usage of the result handle.
+    /// @param result_handle The @b STC_ResultHandle obtained through a successful transpilation via
+    /// the C API. Passing @c STC_NULL_RESULT is a no-op.
+    /// @see stc::api::stc_transpile
+    STC_API void stc_free_result(STC_ResultHandle result_handle) noexcept;
 }
 
 /// @}

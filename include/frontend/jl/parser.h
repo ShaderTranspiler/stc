@@ -15,7 +15,8 @@ class JLParser {
     rt::JuliaSymbolCache& sym_cache;
 
     SrcLocationId cur_loc;
-    bool _success = true;
+    bool _success            = true;
+    bool _had_internal_error = false;
 
     using ParseCallback = NodeId (JLParser::*)(jl_value_t*);
 
@@ -30,9 +31,9 @@ public:
     }
 
     NodeId parse(jl_value_t* node);
-    NodeId parse_code(std::string_view code);
 
     bool success() const { return _success; }
+    bool had_internal_error() const { return _had_internal_error; }
 
 private:
     NodeId parse_expr(jl_expr_t* expr);

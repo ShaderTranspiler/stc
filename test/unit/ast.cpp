@@ -49,7 +49,8 @@ public:
 };
 
 TEST_CASE("node emplace and retrieval", "[ASTCtx]") {
-    DummyCtx ctx;
+    // initial arena sizes, doesn't really matter here
+    DummyCtx ctx{128, 128, 128, 128, 128};
 
     SECTION("valid init and id returned") {
         auto [id, expr_ptr] = ctx.emplace_node<DummyExpr>(42);
@@ -114,7 +115,7 @@ public:
 };
 
 TEST_CASE("CRTP traversal", "ASTVisitor") {
-    DummyCtx ctx;
+    DummyCtx ctx{128, 128, 128, 128, 128};
     auto [expr_id, expr_ptr] = ctx.emplace_node<DummyExpr>(55);
     auto [stmt_id, stmt_ptr] = ctx.emplace_node<DummyStmt>();
 

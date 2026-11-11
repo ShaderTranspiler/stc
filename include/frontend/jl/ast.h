@@ -3,10 +3,8 @@
 #include "external/julia.h"
 
 #include "base.h"
-#include "common/src_info.h"
-#include "common/utils.h"
-#include "types/qualifier_pool.h"
-#include "types/type_pool.h"
+#include "common/id_types.h"
+#include "types/qualifiers.h"
 
 #define SAME_NODE_KIND_DEF(Kind)                                                                   \
     static bool same_node_kind(NodeKind kind) {                                                    \
@@ -54,14 +52,6 @@ static_assert(static_cast<uint8_t>(MaybeScopeType::Local) ==
 [[nodiscard]] STC_FORCE_INLINE constexpr MaybeScopeType st_to_mst(ScopeType st) {
     return static_cast<MaybeScopeType>(static_cast<uint8_t>(st));
 }
-
-struct NodeId : public SplitU32Id {
-    using SplitU32Id::SplitU32Id;
-
-    bool is_null() const { return *this == null_id(); }
-
-    static constexpr NodeId null_id() { return NodeId{0U, 0U}; }
-};
 
 using namespace stc::types;
 

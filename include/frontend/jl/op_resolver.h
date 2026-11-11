@@ -1,7 +1,9 @@
 #pragma once
 
-#include "common/target_info.h"
 #include <vector>
+
+#include "ast/symbol_pool.h"
+#include "common/target_info.h"
 
 namespace stc::jl {
 

@@ -7,7 +7,7 @@
 using namespace stc;
 
 TEST_CASE("SymbolPool basics", "[SymbolPool]") {
-    SymbolPool pool{1};
+    SymbolPool pool{1024}; // initial size in bytes
 
     SECTION("inserting symbols") {
         SymbolId id1 = pool.get_id("test");

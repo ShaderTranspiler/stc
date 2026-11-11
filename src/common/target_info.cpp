@@ -1,7 +1,5 @@
 #include "common/target_info.h"
 
-#include <algorithm>
-
 namespace stc {
 
 const TargetInfo::BuiltinFunction* TargetInfo::get_builtin_fn(std::string_view fn_name) const {

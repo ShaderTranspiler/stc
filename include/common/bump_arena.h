@@ -124,7 +124,8 @@ private:
 public:
     static constexpr SizeTy null_id = 0;
 
-    explicit BumpArena(SizeTy initial_slab_capacity = 4096) {
+    BumpArena() = delete;
+    explicit BumpArena(SizeTy initial_slab_capacity) {
         if (initial_slab_capacity == 0)
             throw std::logic_error{"Slab capacity cannot be zero"};
 
@@ -176,6 +177,8 @@ public:
         slabs_tail     = slabs[0].get();
         cur_ptr        = slabs[0]->buffer.get();
         end_ptr        = slabs[0]->get_end_ptr();
+
+        slabs[0]->effective_bytes = 0;
     }
 
     bool can_allocate(SizeTy size, SizeTy alignment = 8, std::byte* aligned_ptr = nullptr) const {

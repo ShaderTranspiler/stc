@@ -39,6 +39,7 @@ private:
     MethodDecl* current_method = nullptr;
     uint32_t loop_depth        = 0;
     bool _success              = true;
+    bool _had_internal_error   = false;
     bool visiting_method_body  = false;
     bool visiting_indexer      = false;
     bool allow_pretyped_nodes  = false;
@@ -64,6 +65,7 @@ public:
     }
 
     bool success() const { return _success; }
+    bool had_internal_error() const { return _had_internal_error; }
     bool is_interactive() const { return in_interactive_ctx; }
 
     void finalize();

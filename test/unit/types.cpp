@@ -8,8 +8,17 @@ using namespace stc::types;
 
 // if TypePool tests pass, that also verifies that TypeDescriptor is working properly
 
+TypePool create_type_pool() {
+    // initial arena size in bytes
+    return TypePool(1024);
+}
+
+SymbolPool create_sym_pool() {
+    return SymbolPool(1024);
+}
+
 TEST_CASE("TypePool init", "[TypePool]") {
-    TypePool pool{1};
+    TypePool pool = create_type_pool();
 
     SECTION("void auto initialized to 1") {
         TypeId void_id = pool.void_td();
@@ -24,7 +33,7 @@ TEST_CASE("TypePool init", "[TypePool]") {
 }
 
 TEST_CASE("scalar interning", "[TypePool]") {
-    TypePool pool{1};
+    TypePool pool = create_type_pool();
 
     SECTION("same type id") {
         REQUIRE(pool.bool_td() == pool.bool_td());
@@ -56,9 +65,9 @@ TEST_CASE("scalar interning", "[TypePool]") {
 }
 
 TEST_CASE("vec/mat", "[TypePool]") {
-    TypePool pool{1};
-    TypeId f32 = pool.float_td(32);
-    TypeId i32 = pool.int_td(32, true);
+    TypePool pool = create_type_pool();
+    TypeId f32    = pool.float_td(32);
+    TypeId i32    = pool.int_td(32, true);
 
     SECTION("vector interning") {
         TypeId vec3_f32_a = pool.vector_td(f32, 3);
@@ -96,8 +105,8 @@ TEST_CASE("vec/mat", "[TypePool]") {
 }
 
 TEST_CASE("structs", "[TypePool]") {
-    TypePool pool{1};
-    SymbolPool sym_pool{1};
+    TypePool pool       = create_type_pool();
+    SymbolPool sym_pool = create_sym_pool();
 
     SymbolId struct_name = sym_pool.get_id("SomeStruct");
     SymbolId field_a     = sym_pool.get_id("a");
@@ -134,8 +143,8 @@ TEST_CASE("structs", "[TypePool]") {
 }
 
 TEST_CASE("type desc casting", "[TypeDescriptor]") {
-    TypePool pool{1}; // td-s only initable by type pool
-    TypeId b_id = pool.bool_td();
+    TypePool pool = create_type_pool();
+    TypeId b_id   = pool.bool_td();
 
     const TypeDescriptor& td = pool.get_td(b_id);
 

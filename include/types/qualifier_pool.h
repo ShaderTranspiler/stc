@@ -1,15 +1,10 @@
 #pragma once
 
 #include "common/bump_arena.h"
+#include "common/id_types.h"
 #include "types/qualifiers.h"
 
 namespace stc::types {
-
-struct QualId : public StrongId<uint16_t> {
-    static QualId null_id() { return QualId{0U}; }
-
-    bool is_null() const { return value == null_id().value; }
-};
 
 class QualifierPool {
     using ArenaTy = BumpArena<QualId::id_type>;
@@ -17,8 +12,8 @@ class QualifierPool {
     ArenaTy arena;
 
 public:
-    explicit QualifierPool(QualId::id_type initial_capacity_kb = 1U)
-        : arena{static_cast<QualId::id_type>(initial_capacity_kb * 1024U)} {}
+    explicit QualifierPool(QualId::id_type initial_capacity_bytes)
+        : arena{initial_capacity_bytes} {}
 
     QualifierPool(const QualifierPool&)            = delete;
     QualifierPool& operator=(const QualifierPool&) = delete;

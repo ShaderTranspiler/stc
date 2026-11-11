@@ -12,7 +12,7 @@ namespace stc::jl {
 void JLSema::dump(const Expr& expr, std::ostream& out) const {
     NodeId subtree_root = ctx.calculate_node_id(expr);
     NodeId ast_root     = ctx.calculate_node_id(global_scope().body);
-    ctx.dump(subtree_root, ast_root, ctx.config.err_dump_verbosity, out);
+    ctx.dump(subtree_root, ast_root, ctx.config.error_dump_verbosity, out);
 }
 
 TypeId JLSema::fail(std::string_view msg, const Expr& expr) {
@@ -32,11 +32,12 @@ TypeId JLSema::warn(std::string_view msg, const Expr& expr) const {
 }
 
 TypeId JLSema::internal_error(std::string_view msg, const Expr& expr) {
-    // stop user errors from propagating into internal assumption errors
+    // stop user errors from propagating into internal errors
     if (!_success)
         return TypeId::null_id();
 
-    _success = false;
+    _success            = false;
+    _had_internal_error = true;
 
     auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
     stc::internal_error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
@@ -2410,7 +2411,7 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, SymbolId fn_name, std::vector
     }
 
     auto print_infer_info = [&]() {
-        if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
+        if (ctx.config.error_dump_verbosity != DumpVerbosity::None) {
             std::cerr << "\nFunction symbol:      " << get_jl_fn_name(fn)
                       << (is_broadcast ? " (broadcast)" : "");
             std::cerr << "\nInferred signature:   ";

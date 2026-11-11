@@ -11,13 +11,19 @@ public:
 
     GLSLTypes types;
 
-    explicit GLSLCtx(const TargetInfo* target_info            = nullptr,
-                     sir::NodeId::id_type node_arena_kb       = 48U,
-                     SrcLocationId::id_type src_info_arena_kb = 4U,
-                     TypeId::id_type type_arena_kb = 4U, SymbolId::id_type sym_arena_kb = 4U,
-                     QualId::id_type qual_arena_kb = 1U)
-        : sir::SIRCtx{{},           target_info,  node_arena_kb, src_info_arena_kb, type_arena_kb,
-                      sym_arena_kb, qual_arena_kb},
+    explicit GLSLCtx(sir::NodeId::id_type initial_node_arena_size,
+                     SrcLocationId::id_type initial_src_info_arena_size,
+                     TypeId::id_type initial_type_arena_size,
+                     SymbolId::id_type initial_symbol_arena_size,
+                     QualId::id_type initial_qualifier_arena_size,
+                     const TargetInfo* target_info = nullptr)
+        : sir::SIRCtx{initial_node_arena_size,
+                      initial_src_info_arena_size,
+                      initial_type_arena_size,
+                      initial_symbol_arena_size,
+                      initial_qualifier_arena_size,
+                      {},
+                      target_info},
           types{type_pool} {}
 
     explicit GLSLCtx(SIRCtx&& other)
@@ -25,14 +31,14 @@ public:
 
 protected:
     template <typename T, typename U>
-    explicit GLSLCtx(ASTCtx<T, U>&& other, sir::NodeId::id_type node_arena_kb)
-        : SIRCtx{std::move(other), node_arena_kb}, types{type_pool} {}
+    explicit GLSLCtx(ASTCtx<T, U>&& other, sir::NodeId::id_type initial_node_arena_size)
+        : SIRCtx{std::move(other), initial_node_arena_size}, types{type_pool} {}
 
 public:
     template <typename T, typename U>
     [[nodiscard]] static GLSLCtx move_pools_from(ASTCtx<T, U>&& other,
-                                                 sir::NodeId::id_type node_arena_kb = 48U) {
-        return GLSLCtx{std::move(other), node_arena_kb};
+                                                 sir::NodeId::id_type initial_node_arena_size) {
+        return GLSLCtx{std::move(other), initial_node_arena_size};
     }
 };
 

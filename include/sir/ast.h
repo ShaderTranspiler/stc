@@ -1,17 +1,10 @@
 #pragma once
 
-#include <cmath>
-#include <cstddef>
-#include <iostream>
-#include <optional>
-#include <tuple>
 #include <vector>
 
-#include "base.h"
-#include "common/src_info.h"
+#include "common/id_types.h"
 #include "common/utils.h"
-#include "types/qualifier_pool.h"
-#include "types/type_pool.h"
+#include "types/qualifiers.h"
 
 #define SAME_NODE_KIND_DEF(Kind)                                                                   \
     static bool same_node_kind(NodeKind kind) {                                                    \
@@ -25,15 +18,6 @@ using namespace stc::types;
 // CLEANUP: go through structs and make use of _node_storage properly
 // CLEANUP: remove need for explicit type in ctors if possible
 // FEATURE: trailing objects pattern where applicable
-
-struct NodeId : public SplitU32Id {
-    using SplitU32Id::SplitU32Id;
-
-    bool is_null() const { return *this == null_id(); }
-
-    // TODO: enforce in arenas
-    static constexpr NodeId null_id() { return NodeId{0U, 0U}; }
-};
 
 // ============
 //   NodeKind
@@ -321,10 +305,9 @@ struct SwizzleLiteral : public Expr {
     uint16_t _comp4    : 2;
     uint16_t _reserved : 5;
 
-    // CLEANUP: separate swizzle type?
-    explicit SwizzleLiteral(SrcLocationId location, uint8_t count, uint8_t comp1 = 0U,
+    explicit SwizzleLiteral(SrcLocationId location, TypeId type, uint8_t count, uint8_t comp1 = 0U,
                             uint8_t comp2 = 0U, uint8_t comp3 = 0U, uint8_t comp4 = 0U)
-        : Expr{location, NodeKind::SwizzleLit, TypeId::void_id()},
+        : Expr{location, NodeKind::SwizzleLit, type},
           _count{static_cast<uint16_t>(count & 0x07)},
           _comp1{static_cast<uint16_t>(comp1 & 0x03)},
           _comp2{static_cast<uint16_t>(comp2 & 0x03)},

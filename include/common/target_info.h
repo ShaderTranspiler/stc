@@ -1,9 +1,9 @@
 #pragma once
 
-#include "types/type_descriptors.h"
+#include "common/id_types.h"
 
+#include <algorithm>
 #include <optional>
-#include <unordered_map>
 
 namespace stc {
 

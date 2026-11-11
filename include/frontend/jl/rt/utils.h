@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string_view>
+
 #include "external/julia.h"
 #include "frontend/jl/rt/env.h"
 
@@ -8,31 +11,8 @@ namespace stc::jl::rt {
 // lookup chain's expected format is: [ModuleA.ModuleB.(...).]fn_name
 // the chain is expected to start from root_mod
 [[nodiscard]]
-inline jl_value_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
-                                    JuliaModule& root_mod, bool throw_on_not_found = true) {
-
-    size_t last_dot_idx = lookup_chain.find_last_of('.');
-
-    // TODO: check for dot end/begin
-
-    JuliaModule& mod = root_mod;
-
-    if (last_dot_idx != lookup_chain.npos) {
-        if (throw_on_not_found) {
-            mod = env.module_cache.get_mod_or_throw(lookup_chain.substr(0, last_dot_idx), root_mod);
-        } else {
-            auto maybe_mod =
-                env.module_cache.get_mod(lookup_chain.substr(0, last_dot_idx), root_mod);
-
-            if (!maybe_mod.has_value())
-                return nullptr;
-
-            mod = maybe_mod->get();
-        }
-    }
-
-    return mod.get_fn(lookup_chain.substr(last_dot_idx + 1), throw_on_not_found);
-}
+jl_value_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
+                             JuliaModule& root_mod, bool throw_on_not_found = true);
 
 [[nodiscard]]
 inline jl_value_t* find_jl_function(std::string_view lookup_chain, rt::JuliaRTEnv& env,
@@ -57,5 +37,11 @@ inline bool is_concrete_type(jl_value_t* value) {
 inline bool is_array_type(jl_datatype_t* value) {
     return jl_is_array_type(value) != 0;
 }
+
+// tries to parse a Julia code snippet string into a Julia AST (Expr-format)
+// if an error occurs Julia-side, the error is printed and nullptr is returned
+// result is jl_value_t*, since it might be a literal, LineNumberNode, Expr, etc.
+[[nodiscard]]
+jl_value_t* parse_code(std::string_view julia_code, JuliaModuleCache& module_cache);
 
 } // namespace stc::jl::rt

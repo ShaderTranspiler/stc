@@ -3,16 +3,18 @@
 #include "common/term_utils.h"
 
 namespace {
-using stc::SrcFile, stc::SrcLocation, stc::TerminalInfo;
 
-void print_locinfo(const SrcFile& file, SrcLocation location, std::ostream& out,
+void print_locinfo(const stc::SrcFile& file, stc::SrcLocation location, std::ostream& out,
                    std::string_view color = ansi_codes::reset) {
-    if (TerminalInfo::supports_color())
+    if (stc::TerminalInfo::supports_color())
         out << color;
 
-    out << '[' << file.path << ':' << location.line << ':' << location.col << "] ";
+    // we ignore location.col here, since the Julia parser doesn't collect any column information,
+    // only file + line
+    // it's included in SrcLocation so that if that changes later, we can easily include it
+    out << '[' << file.path << ':' << location.line << "] ";
 
-    if (TerminalInfo::supports_color())
+    if (stc::TerminalInfo::supports_color())
         out << ansi_codes::reset;
 }
 
@@ -65,8 +67,8 @@ void internal_error(const SrcInfoPool& pool, SrcLocationId loc_id, std::string_v
     return internal_error(file, loc, msg, out);
 }
 
-SrcInfoPool::SrcInfoPool(SizeTy initial_location_capacity_kb, size_t initial_file_capacity)
-    : arena{initial_location_capacity_kb * 1024U},
+SrcInfoPool::SrcInfoPool(SizeTy initial_location_capacity_bytes, size_t initial_file_capacity)
+    : arena{initial_location_capacity_bytes},
       arena_alloc{&arena},
       file_bounds{},
       last_loc_id{SrcLocationId::null_id()} {

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <type_traits>
+#include <utility>
+
 #include "ast/visitor.h"
 #include "external/tracy.h"
 #include "frontend/jl/ast.h"
 #include "frontend/jl/context.h"
-#include <type_traits>
 
 namespace stc::jl {
 
@@ -28,7 +30,7 @@ protected:
     template <typename Pass, typename Node, typename Func>
     static inline RetTy ProfiledVisit(Func&& func) {
         ZoneScopedN(STC_PRETTY_FUNC);
-        return func();
+        return std::forward<Func>(func)();
     }
 #endif
 
