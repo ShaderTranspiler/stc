@@ -1,9 +1,9 @@
 // example meant to demonstrate sandbox usage
 
 // sandboxes can include and use libstc headers (exported and internal)
-#include "api/stc.hpp"           // C++ API for the transpiler
 #include "common/utils.hpp"      // ScopeGuard
 #include "frontend/jl/utils.hpp" // jl::check_exception
+#include "stc/stc.hpp"           // C++ API for the transpiler
 
 // they can also access libjulia if needed
 // (recommended to include via stc's wrapper guard in external/julia.hpp)

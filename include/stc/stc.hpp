@@ -3,7 +3,7 @@
 /// @file
 /// @brief The C++ API of stc
 
-#include "api/stc.h"
+#include "stc/stc.h"
 
 #include "common/config.hpp"
 #include "common/trackers.hpp"

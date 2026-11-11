@@ -1,10 +1,10 @@
-#include "api/stc.h"
+#include "stc/stc.h"
 
 #include <type_traits>
 
-#include "api/stc.hpp"
 #include "common/config.hpp"
 #include "meta.hpp"
+#include "stc/stc.hpp"
 
 #include "external/julia.hpp"
 

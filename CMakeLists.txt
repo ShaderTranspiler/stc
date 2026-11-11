@@ -521,7 +521,7 @@ if (STC_BUILD_TESTS)
     # compile-only check that the stc.h header is a valid C header that can be included in C11 without problem
     # we only compile, since that should already catch if the header is invalid, without having to link the actual library
     set(C_HEADER_CHECK_TARGET stc_c_header_check)
-    add_library(${C_HEADER_CHECK_TARGET} OBJECT test/c_header_check.c)
+    add_library(${C_HEADER_CHECK_TARGET} OBJECT test/header_check.c)
     target_include_directories(${C_HEADER_CHECK_TARGET} PRIVATE "${STC_SRC_DIR}/include")
     set_target_properties(${C_HEADER_CHECK_TARGET} PROPERTIES
         C_STANDARD 11
@@ -582,7 +582,7 @@ if(STC_BUILD_CLI)
     install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-install(DIRECTORY ${STC_SRC_DIR}/include/api/
+install(DIRECTORY ${STC_SRC_DIR}/include/stc/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
     FILES_MATCHING PATTERN "*.h"
 )

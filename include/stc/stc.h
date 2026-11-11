@@ -9,7 +9,7 @@
 #include <stdbool.h> // NOLINT(modernize-deprecated-headers)
 #include <stdint.h>  // NOLINT(modernize-deprecated-headers)
 
-#include "api/export.h"
+#include "stc/export.h"
 
 // this is what libjulia typedefs to jl_value_t
 // since this is the only libjulia symbol the transpiler API needs, we just forward declare it

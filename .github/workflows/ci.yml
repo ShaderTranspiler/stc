@@ -131,6 +131,48 @@ jobs:
           file: coverage.info
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Install
+        run: cmake --install build --prefix "${{ runner.temp }}/stc-install"
+
+      # this locks down the install API, but I'm fine with this having to be updated after install tree changes
+      - name: Check Installed Files
+        shell: bash
+        run: |
+          INSTALL_DIR="${{ runner.temp }}/stc-install"
+
+          # built library binaries
+          find "$INSTALL_DIR" \( -name 'libstc.so*' -o -name 'stc.dll' \) | grep -q . || {
+            echo "::error::shared library missing from the install tree";
+            exit 1;
+          }
+          
+          # C headers
+          for f in include/stc/stc.h include/stc/export.h README.txt; do
+            [ -f "$INSTALL_DIR/$f" ] || {
+              echo "::error::$f missing from the install tree";
+              exit 1;
+            }
+          done
+        
+      # check that the produced C headers can be used in a C program
+      # linking would require libjulia, so we just compile the object file
+
+      - name: Compile With Installed Headers (GCC)
+        if: matrix.config.compiler == 'gcc'
+        run: >
+          gcc -std=c11 -Wall -Wextra -Wpedantic -Werror
+          -I "${{ runner.temp }}/stc-install/include"
+          -c "test/header_check.c"
+          -o "${{ runner.temp }}/install_header_check.o"
+
+      - name: Compile With Installed Headers (MSVC)
+        if: matrix.config.compiler == 'msvc'
+        run: >
+          cl /nologo /std:c11 /W4 /WX
+          /I "${{ runner.temp }}\stc-install\include"
+          /c "test\header_check.c"
+          /Fo"${{ runner.temp }}\install_header_check.obj"
+
   # central build-and-test aggregator
   # can be used for status check requirements without it having to be updated after CI matrix changes
   build-and-test-gate:

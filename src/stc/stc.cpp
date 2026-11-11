@@ -1,5 +1,5 @@
-#include "api/stc.h"
-#include "api/stc.hpp"
+#include "stc/stc.h"
+#include "stc/stc.hpp"
 
 #include <cstdio>
 #include <utility>

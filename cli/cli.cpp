@@ -9,12 +9,12 @@ JULIA_DEFINE_FAST_TLS
 #include <optional>
 #include <sstream>
 
-#include <api/stc.hpp>
 #include <common/config.hpp>
 #include <common/report.hpp>
 #include <common/term_utils.hpp>
 #include <common/utils.hpp>
 #include <frontend/jl/utils.hpp>
+#include <stc/stc.hpp>
 
 #include "cli_utils.hpp"
 
