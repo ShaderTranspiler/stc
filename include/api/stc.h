@@ -6,14 +6,15 @@
 /// @important This is the only header that is safe to include in C code. It still requires a
 /// pre-built binary, but the symbols, types and functions are all declared here.
 
-#include <stdbool.h>
-#include <stdint.h>
+#include <stdbool.h> // NOLINT(modernize-deprecated-headers)
+#include <stdint.h>  // NOLINT(modernize-deprecated-headers)
 
 #include "base.h"
 
 // this is what libjulia typedefs to jl_value_t
 // since this is the only libjulia symbol the transpiler API needs, we just forward declare it
 // instead of pulling in the entirety of julia.h
+// has a static_assert tying it to jl_value_t in c_api.cpp to catch libjulia drift
 struct _jl_value_t;
 
 #ifdef __cplusplus
@@ -30,20 +31,57 @@ namespace stc::api {
 extern "C" {
 #endif
 
-    // =======================
-    //   TYPES AND CONSTANTS
-    // =======================
+    // ==============
+    //   VERSIONING
+    // ==============
 
     // this is validated against stc::meta by a static_assert in c_api.cpp, so it's not as hard
     // coded as it looks
+    /// @brief Defines the ABI version of the interface that the stc.h C header declares. Compare
+    /// against the run-time stc_abi_version() return value to ensure that the header matches the
+    /// linked library's ABI version. For versioning specifics, see @c stc_abi_version.
+    /// @see stc::api::stc_abi_version
 #define STC_ABI_VERSION 0
 
     /// @brief Returns the current ABI version of the library. Every change that breaks backwards
     /// compatibility increments this number (matching the project's major version thanks to
-    /// semver).
+    /// semver). When using the stc.h C header, compare the return value against the STC_ABI_VERSION
+    /// macro to ensure that the header matches the linked library's ABI version.
     /// @important This offers no guarantees while it's still @c 0, regular semver guarantees begin
     /// when it reaches @c 1
+    /// @see STC_ABI_VERSION
     extern STC_API uint8_t stc_abi_version(void) STC_NOEXCEPT;
+
+    /// @brief Major component of the transpiler's current version (semver)
+    /// @important Though currently equivalent, prefer using @c stc_abi_version for performing
+    /// checks regarding the version of the API itself.
+    /// @see stc::api::stc_abi_version
+    extern STC_API uint8_t stc_version_major(void) STC_NOEXCEPT;
+    /// @brief Minor component of the transpiler's current version (semver)
+    extern STC_API uint8_t stc_version_minor(void) STC_NOEXCEPT;
+    /// @brief Patch component of the transpiler's current version (semver)
+    extern STC_API uint8_t stc_version_patch(void) STC_NOEXCEPT;
+
+    /// @brief Human readable text representing the current version of the transpiler. It should not
+    /// be used to perform checks on the version or its components; for checking we provide
+    /// @c stc_abi_version, @c stc_version_major, @c stc_version_minor and @c stc_version_patch.
+    /// @param include_build_commit_hash Whether to include the short hash of the git commit that
+    /// the current build originates from as a suffix.
+    /// @return A null-terminated string representing the requested version form. It remains valid
+    /// during the lifetime of the library and should not be freed by the caller. No allocations
+    /// happen.
+    /// @note Technically, the result points to data with static storage duration and external
+    /// linkage. This also means that all calls producing the same string content should return the
+    /// same address.
+    /// @see stc::api::stc_abi_version
+    /// @see stc::api::stc_version_major
+    /// @see stc::api::stc_version_minor
+    /// @see stc::api::stc_version_patch
+    extern STC_API const char* stc_version_string(bool include_build_commit_hash) STC_NOEXCEPT;
+
+    // =======================
+    //   TYPES AND CONSTANTS
+    // =======================
 
     /// Underlying type of the @b Status enum class, used in the C API in place of @b Status
     /// @see stc::api::Status
@@ -194,6 +232,9 @@ extern "C" {
 
     // GLSL
     STC_API void stc_set_target_version(STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
+    STC_API void stc_set_local_size_x  (STC_ConfigHandle cfg_handle, uint32_t x) STC_NOEXCEPT;
+    STC_API void stc_set_local_size_y  (STC_ConfigHandle cfg_handle, uint32_t y) STC_NOEXCEPT;
+    STC_API void stc_set_local_size_z  (STC_ConfigHandle cfg_handle, uint32_t z) STC_NOEXCEPT;
     STC_API void stc_set_local_size    (STC_ConfigHandle cfg_handle, uint32_t x, uint32_t y, uint32_t z) STC_NOEXCEPT;
 
     // Julia

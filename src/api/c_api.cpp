@@ -9,6 +9,9 @@
 #include "external/julia.h"
 
 #define STC_GET_UNDERLYING(value) static_cast<std::underlying_type_t<decltype(value)>>(value)
+#define STATIC_ASSERT_IS_SV_NULL_TERMINATED(string_view)                                           \
+    static_assert((string_view).data()[(string_view).length()] == '\0',                            \
+                  #string_view " is not null-terminated")
 
 // catch libjulia drift
 static_assert(std::same_as<_jl_value_t, jl_value_t>,
@@ -22,6 +25,26 @@ extern "C" {
 
     STC_API uint8_t stc_abi_version() noexcept {
         return stc::meta::version_major;
+    }
+
+    STC_API uint8_t stc_version_major() noexcept {
+        return stc::meta::version_major;
+    }
+
+    STC_API uint8_t stc_version_minor() noexcept {
+        return stc::meta::version_minor;
+    }
+
+    STC_API uint8_t stc_version_patch() noexcept {
+        return stc::meta::version_patch;
+    }
+
+    STC_API const char* stc_version_string(bool include_build_commit_hash) noexcept {
+        STATIC_ASSERT_IS_SV_NULL_TERMINATED(stc::meta::version);
+        STATIC_ASSERT_IS_SV_NULL_TERMINATED(stc::meta::version_and_build_commit);
+
+        return include_build_commit_hash ? stc::meta::version_and_build_commit.data()
+                                         : stc::meta::version.data();
     }
 
     STC_API const STC_ResultHandle STC_NULL_RESULT = nullptr;
@@ -51,4 +74,5 @@ extern "C" {
 
 } // namespace stc::api
 
+#undef STATIC_ASSERT_IS_SV_NULL_TERMINATED
 #undef STC_GET_UNDERLYING

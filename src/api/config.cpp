@@ -104,17 +104,27 @@ extern "C" {
         } catch (...) {}
     }
 
+    STC_API void stc_set_local_size_x(STC_ConfigHandle cfg_handle, uint32_t x) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, local_size_x, x);
+    }
+
+    STC_API void stc_set_local_size_y(STC_ConfigHandle cfg_handle, uint32_t y) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, local_size_y, y);
+    }
+
+    STC_API void stc_set_local_size_z(STC_ConfigHandle cfg_handle, uint32_t z) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, local_size_z, z);
+    }
+
     STC_API void stc_set_local_size(STC_ConfigHandle cfg_handle, uint32_t x, uint32_t y,
                                     uint32_t z) noexcept {
         if (cfg_handle == STC_NULL_CONFIG)
             return;
 
-        auto& conf = *static_cast<TranspilerConfig*>(cfg_handle);
-        // clang-format off
-        if (x != 0) conf.local_size_x = x;
-        if (y != 0) conf.local_size_y = y;
-        if (z != 0) conf.local_size_z = z;
-        // clang-format on
+        auto& conf        = *static_cast<TranspilerConfig*>(cfg_handle);
+        conf.local_size_x = x;
+        conf.local_size_y = y;
+        conf.local_size_z = z;
     }
 
     STC_API void stc_set_julia_glm_path(STC_ConfigHandle cfg_handle, const char* value) noexcept {

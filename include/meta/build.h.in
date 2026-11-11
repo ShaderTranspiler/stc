@@ -9,4 +9,6 @@ namespace stc::meta {
 inline constexpr std::string_view build_commit = "@STC_COMMIT_HASH@";
 inline constexpr std::string_view build_date   = "@STC_BUILD_TIMESTAMP@";
 
+inline constexpr std::string_view version_and_build_commit = "@STC_VERSION@+@STC_COMMIT_HASH@";
+
 } // namespace stc::meta
