@@ -16,7 +16,7 @@ namespace stc {
 #define STC_DEFINE_SPLIT_U32_ID_TYPE(name)                                                         \
     struct name : public SplitU32Id {                                                              \
         using SplitU32Id::SplitU32Id;                                                              \
-        static constexpr name null_id() { return (name){0U, 0U}; }                                 \
+        static constexpr name null_id() { return name{0U, 0U}; }                                   \
         bool is_null() const { return *this == null_id(); }                                        \
     }
 
