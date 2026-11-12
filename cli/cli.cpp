@@ -284,7 +284,7 @@ int run(int argc, char* argv[]) {
     jl_init();
     STC_CHECK_EXCEPTIONS
 
-    const ScopeGuard jl_guard{[]() { jl_atexit_hook(0); }};
+    const ScopeGuard jl_guard{[] { jl_atexit_hook(0); }};
 
     if (!quiet)
         std::cout << "Importing JuliaGLM...\n";

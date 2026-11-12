@@ -12,7 +12,7 @@ namespace stc::api {
 extern "C" {
     STC_API STC_ConfigHandle stc_create_cfg() noexcept {
         try {
-            return new TranspilerConfig{}; // NOLINT(cppcoreguidelines-owning-memory)
+            return new TranspilerConfig{};
         } catch (...) {
             return STC_NULL_CONFIG;
         }
@@ -22,7 +22,6 @@ extern "C" {
         if (cfg_handle == STC_NULL_CONFIG)
             return;
 
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         delete static_cast<TranspilerConfig*>(cfg_handle);
     }
 

@@ -256,11 +256,9 @@ public:
 
         auto [offset, mem] = allocate_for<T>();
 
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         T* obj_ptr = new (mem) T{std::forward<Args>(args)...};
 
         if constexpr (!std::is_trivially_destructible_v<T>) {
-            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
             dtor_tail = new (dtor_mem) DestructorNode{dtor_call, obj_ptr, dtor_tail};
         }
 
@@ -273,7 +271,6 @@ public:
             return nullptr;
 
         assert(last_slab_hint < slabs.size());
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
         const auto& last_accessed = slabs[last_slab_hint];
         assert(last_accessed != nullptr);
 
@@ -287,7 +284,6 @@ public:
 
         const auto idx = static_cast<SizeTy>(it - slab_end_offsets.begin());
 
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
         const auto& slab = slabs[idx];
 
         assert(slab != nullptr);
@@ -401,7 +397,7 @@ public:
         SizeTy effective_bytes = 0;
 
         ArenaMemoryUsage() = delete;
-        ArenaMemoryUsage(std::vector<SlabMemoryUsage> per_slab_usage)
+        explicit ArenaMemoryUsage(std::vector<SlabMemoryUsage> per_slab_usage)
             : per_slab_usage{std::move(per_slab_usage)} {
             for (const auto& slab_usage : this->per_slab_usage) {
                 allocated_bytes += slab_usage.allocated_bytes;

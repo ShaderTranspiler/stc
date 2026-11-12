@@ -92,7 +92,7 @@ STC_FORCE_INLINE bool check_exceptions() {
         return false;
 
     JL_GC_PUSH1(&ex);
-    ScopeGuard gc_pop_guard{[]() { JL_GC_POP(); }};
+    ScopeGuard gc_pop_guard{[] { JL_GC_POP(); }};
 
     jl_exception_clear();
 
@@ -135,7 +135,7 @@ inline std::string get_jl_fn_name(jl_value_t* fn) {
 inline bool is_spec_of(jl_datatype_t* dt, jl_unionall_t* ua) {
     jl_value_t* unwrapped_ua = nullptr;
     JL_GC_PUSH1(&unwrapped_ua);
-    const ScopeGuard jl_gc_pop_sg{[]() { JL_GC_POP(); }};
+    const ScopeGuard jl_gc_pop_sg{[] { JL_GC_POP(); }};
 
     unwrapped_ua = jl_unwrap_unionall(reinterpret_cast<jl_value_t*>(ua));
 

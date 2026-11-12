@@ -14,11 +14,11 @@ namespace stc::jl::rt {
 // the lifetime of JuliaRTEnv
 struct JuliaRTEnv {
     JuliaModuleCache module_cache;
-    JuliaSymbolCache symbol_cache;
+    JuliaSymbolCache symbol_cache{};
     JuliaTypeCache type_cache;
 
     explicit JuliaRTEnv(std::string_view julia_glm_path)
-        : module_cache{julia_glm_path}, symbol_cache{}, type_cache{module_cache} {}
+        : module_cache{julia_glm_path}, type_cache{module_cache} {}
 };
 
 } // namespace stc::jl::rt

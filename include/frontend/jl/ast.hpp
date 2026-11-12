@@ -77,8 +77,9 @@ enum class NodeKind : uint8_t {
     #define X_FIRST(type, kind) kind = FirstStmt,
         #include "frontend/jl/node_defs/stmt.def"
     #undef X_FIRST
-    LastStmt = Break
+    LastStmt = Break,
 
+    // NOLINTNEXTLINE(readability-trailing-comma)
     #undef X
 };
 // clang-format on
@@ -153,17 +154,16 @@ struct VarDecl : public Decl {
     TypeId annot_type;
     NodeId initializer;
 
+#define AS_U8(value) static_cast<uint8_t>(value)
     explicit VarDecl(SrcLocationId location, SymbolId identifier, TypeId annot_type,
                      MaybeScopeType scope, NodeId initializer = NodeId::null_id(),
                      bool is_builtin = false, bool is_silent_decl = false)
         : Decl{location, NodeKind::VarDecl, identifier,
-               static_cast<uint8_t>(
-                   static_cast<uint8_t>(scope) |
-                   static_cast<uint8_t>(static_cast<uint8_t>(is_builtin) << IS_BUILTIN_SHIFT) |
-                   static_cast<uint8_t>(static_cast<uint8_t>(is_silent_decl)
-                                        << IS_SILENT_DECL_SHIFT))},
+               AS_U8(AS_U8(AS_U8(scope) | AS_U8(AS_U8(is_builtin) << IS_BUILTIN_SHIFT)) |
+                     AS_U8(AS_U8(is_silent_decl) << IS_SILENT_DECL_SHIFT))},
           annot_type{annot_type},
           initializer{initializer} {}
+#undef AS_U8
 
     explicit VarDecl(SrcLocationId location, SymbolId identifier, TypeId annot_type,
                      ScopeType scope, NodeId initializer = NodeId::null_id(),
@@ -182,7 +182,7 @@ struct VarDecl : public Decl {
     }
 
     bool is_builtin() const {
-        return static_cast<bool>(0x01 & (node_storage() >> IS_BUILTIN_SHIFT));
+        return static_cast<bool>(1U & static_cast<uint8_t>(node_storage() >> IS_BUILTIN_SHIFT));
     }
 
     void set_is_builtin(bool value) {
@@ -193,7 +193,7 @@ struct VarDecl : public Decl {
     }
 
     bool is_silent_decl() const {
-        return static_cast<bool>(0x01 & (node_storage() >> IS_SILENT_DECL_SHIFT));
+        return static_cast<bool>(1U & static_cast<uint8_t>(node_storage() >> IS_SILENT_DECL_SHIFT));
     }
 
     void set_is_silent_decl(bool value) {

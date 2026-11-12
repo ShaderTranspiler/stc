@@ -16,14 +16,14 @@ public:
         : arena{arena} {}
 
     template <typename U>
-    BumpArenaAllocator(const BumpArenaAllocator<SizeTy, U>& other) noexcept
+    explicit BumpArenaAllocator(const BumpArenaAllocator<SizeTy, U>& other) noexcept
         : arena(other.arena) {}
 
     template <typename U>
     friend class ArenaAllocator;
 
     [[nodiscard]] T* allocate(size_t n) {
-        return static_cast<T*>((arena->template allocate_for<T>(n)).second);
+        return static_cast<T*>(arena->template allocate_for<T>(n).second);
     }
 
     // no-op because of arena design, memory is deallocated together

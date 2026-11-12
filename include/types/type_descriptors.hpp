@@ -285,10 +285,12 @@ struct std::hash<stc::types::StructData> {
 template <>
 struct std::hash<stc::types::StructTD> {
     size_t operator()(const stc::types::StructTD& x) const noexcept {
-        const stc::types::StructData& data =
-            x.data != nullptr ? *x.data : stc::types::StructData{stc::SymbolId::null_id(), {}};
+        // this is not really a valid case anyway
+        assert(x.data != nullptr);
+        if (x.data == nullptr)
+            return 0;
 
-        return std::hash<stc::types::StructData>{}(data);
+        return std::hash<stc::types::StructData>{}(*x.data);
     }
 };
 

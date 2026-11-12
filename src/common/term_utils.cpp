@@ -22,7 +22,7 @@ bool TerminalInfo::supports_color() {
     errno_t dupenv_result = _dupenv_s(&dupenv_buf, nullptr, "NO_COLOR");
 
     if (dupenv_result != 0 || dupenv_buf != nullptr) {
-        free(dupenv_buf);
+        free(dupenv_buf); // NOLINT(cppcoreguidelines-no-malloc)
         return false;
     }
 #else

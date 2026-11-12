@@ -407,7 +407,6 @@ STC_Status process_transpilation_result(TranspilationResult& result,
     result_handle = STC_NULL_RESULT;
 
     if (result.status == Status::Success) {
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         auto* code_ptr = new std::string(std::move(result.code));
         result_handle  = code_ptr;
     }
@@ -488,7 +487,6 @@ extern "C" {
         if (result_handle == STC_NULL_RESULT)
             return;
 
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         delete static_cast<std::string*>(result_handle);
     }
 }

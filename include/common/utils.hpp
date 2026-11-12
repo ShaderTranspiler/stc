@@ -50,10 +50,9 @@ bool has_duplicates(const std::vector<T>& vec, Projection proj = {}) {
     return false;
 }
 
-template <typename T>
-requires std::is_integral_v<T>
+template <std::unsigned_integral T>
 bool is_power_of_two(T x) {
-    return x != 0 && (x & (x - 1)) == 0;
+    return x != 0 && (x & (x - 1U)) == 0;
 }
 
 template <typename... Ts>
@@ -68,17 +67,17 @@ constexpr size_t hash_combine(size_t seed, const T& v) {
     size_t x = seed + 0x9e3779b9 + Hasher{}(v);
 
     if constexpr (sizeof(size_t) == 8U) {
-        x ^= x >> 32;
+        x ^= x >> 32U;
         x *= 0xe9846af9b1a615d;
-        x ^= x >> 32;
+        x ^= x >> 32U;
         x *= 0xe9846af9b1a615d;
-        x ^= x >> 28;
+        x ^= x >> 28U;
     } else if constexpr (sizeof(size_t) == 4U) {
-        x ^= x >> 16;
+        x ^= x >> 16U;
         x *= 0x21f0aaad;
-        x ^= x >> 15;
+        x ^= x >> 15U;
         x *= 0x735a2d97;
-        x ^= x >> 15;
+        x ^= x >> 15U;
     } else {
         static_assert(dependent_false_v<T>,
                       "no hash_combine implementation for current size_t width");
@@ -280,10 +279,8 @@ public:
         : file{fopen(path.c_str(), mode)} {}
 
     ~FileRAII() {
-        if (file != nullptr) {
-            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        if (file != nullptr)
             fclose(file);
-        }
     }
 
     FileRAII(const FileRAII&)            = delete;
@@ -297,10 +294,8 @@ public:
         if (this == &other)
             return *this;
 
-        if (file != nullptr) {
-            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        if (file != nullptr)
             fclose(file);
-        }
 
         this->file = other.file;
         other.file = nullptr;

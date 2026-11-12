@@ -37,7 +37,7 @@ enum class QualKind : uint8_t {
 #undef X_LAST
 #undef X_FIRST
 #undef X
-    LastLQ = LastLQVal
+    LastLQ = LastLQVal,
 
 };
 
