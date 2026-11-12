@@ -35,6 +35,7 @@ To what kind of shaders STC can transpile, take a look at the example Julia file
   - [Julia Pkg](#julia-pkg)
 - [Building the Project](#building-the-project)
   - [Build Output](#build-output)
+  - [Install Output](#install-output)
   - [Linking libjulia](#linking-libjulia)
   - [Compilation Flags](#compilation-flags)
   - [Note for Development Using Visual Studio](#note-for-development-using-visual-studio)
@@ -144,108 +145,106 @@ Building manually produces the CLI to `build/bin/stc`, as a native executable.
 Some noteworthy CLI options:
 - `-o <path>`: write the generated code into a file at `<path>` (only prints to `stdout` by default)
 - `--gl-version <ver>`: set the version number used in the `#version` directive (defaults to 460). Note that this only affects the `#version` directive, transpilation always happens according to the 460 language rules.
-- `--err-dump partial`: on error, dump the problematic AST subtree
+- `--error-dump partial`: on error, dump the problematic AST subtree
 - `--dump-parsed`, `--dump-sema`, `--dump-lowered`: prints the intermediate state of the AST, after the given pass
 - `--track-bindings`: prints step-by-step reasoning for how each symbol's scope binding was determined
 - `--it <n>`: runs the transpilation `n` times repeatedly (for benchmarking)
 - `--no-coerce-f32`, `--no-coerce-i32`: turn off forcing Float64 and Int64 literals to their 32-bit counterparts
+- `--no-timing`: skip measuring and printing per-phase timing statistics of the transpilation pipeline
+- `--quiet`: minimize logged output (implies `--no-timing`)
+- `--timing`: pass alongside `--quiet` to keep timing statistics even in quiet runs
+- `--track-memory`: track memory usage of arenas across the transpilation stages
 
 See the output of `stc --help` for an exhaustive list of transpiler options.
 
 ## Library
 
-The produced library (`libstc`) exposes both a C++ and a C API (the latter serving as the basis for the Julia bindings). Both live under `include/api/` and the `stc::api` namespace. The two APIs have proper documentation, available [here](https://shadertranspiler.github.io/stc/).
+The produced library (`libstc`) exposes both a C++ and a C API (the latter serving as the basis for the Julia bindings). Both live under `include/stc/` and the `stc::api` namespace. The two APIs have proper documentation, available [here](https://shadertranspiler.github.io/stc/).
 
-The two are not equivalent in terms of consumption. The C++ API is the one that can be included and called directly in C++ code.
-The C API currently serves as an **ABI-only** layer: functions prefixed with `stc_` have C linkage, so programs calling directly into the produced shared library can use them. This is how Julia bindings consume this API, through `ccall` which binds symbols by name and doesn't include headers.
-Including the headers directly in C will result in compiler errors, since they will transitively pull in C++-only headers.
-
-Proper C inclusion support is planned for v1.0, along with a cleaned up result interface (e.g. merged error paths).
+The two are not equivalent in terms of consumption. The C++ API is the one that can be included and called directly in C++ code, as long as the transpiler is being built alongside the program that wants to use it via the C++ interface (`stc/stc.hpp`). For the C API, a pre-built binary is needed, but a C-compatible header is provided (`stc/stc.h`) that can be included in C programs to interact with the transpiler. The C API functions are all prefixed with `stc_` and have C linkage, which results in an ABI-stable shared library that Julia can use via `ccall`.
 
 A simple illustration for the C++ API:
 ```cpp
-#include <external/julia.h> // guarded Julia include
-#include <api/transpiler.h> // transpiler API
-// ... (iostream, string_view, optional, cstdlib)
+#include <stc/stc.hpp>        // transpiler C++ API
+#include <external/julia.hpp> // guarded Julia include (automatic NOMINMAX, per-version external libjulia fixes and such land here)
+// ... (iostream, string_view, cstdlib)
 
-static constexpr std::string_view julia_code = "...";
+// has to represent a compound expression
+static constexpr std::string_view julia_code = "begin ... end";
 
 int main() {
     jl_init(); // init a Julia context for the transpiler
     jl_eval_string("using JuliaGLM"); // JuliaGLM is required for transpilation
 
     stc::TranspilerConfig cfg{};
-    cfg.use_tabs = true; // supports mostly the same options as the CLI
+    cfg.use_tabs = true; // supports mostly the same options as the CLI, see docs for specifics
+    cfg.fallback_file_path = "path/of/source/file"; // specifies the path to print in reports if it cannot be retrieved from Julia
+    // timings can be enabled through cfg.track_timing
 
-    // benchmarking is toggled with the template argument
     // the first argument is the code as a string, or as a jl_value_t* pointing to an Expr in Julia memory
-    // the second option controls the file path for logging
-    // last option is the config to use
-    std::optional<std::string> glsl = stc::api::transpile<false>(julia_code, "path/of/source/file", cfg);
+    // the second argument is the configuration to use
+    stc::api::TranspilationResult result = stc::api::transpile(julia_code, cfg);
 
-    if (!glsl) // transpilation failed
+    // result.status is one of Status::Success, Status::Failed or Status::InternalError
+    if (result.status != stc::api::Status::Success)
         return EXIT_FAILURE;
 
-    std::cout << *glsl;
+    std::cout << result.code;
 
     jl_atexit_hook(0); // clean up Julia safely
     return EXIT_SUCCESS;
 }
 ```
 
-The same thing using the C API looks something like this.
-The snippet defines the used symbols explicitly via `extern` because of the aforementioned limitations with C header inclusions. They're here to demonstrate the signatures and help understanding.
-The library is not meant to be used this way currently, this only serves to demonstrate the C ABI's usage, since its resource management is important to illustrate.
+The C API's header (`stc/stc.h`) defines the necessary `typedef`s and symbols for interacting with the C API. It can be included in C programs (tested with `C11`), to interact with a pre-built binary of the library. Since the library is written in C++, it is not possible to build the library itself in C.
+The same thing using the C API looks something like this:
 ```c
-#include <external/julia.h>
-// ... (stdio.h, stdlib.h, stdbool.h, stdint.h)
+#include <julia.h>   // our Julia include guard is C++ only
+#include <stc/stc.h> // transpiler C API, only header of stc that should be externally included from C
+// ... (stdio.h, stdlib.h, stdbool.h, stdint.h, assert.h)
 
-extern uint8_t     stc_abi_version(void);
-extern void*       stc_create_cfg(void);
-extern void        stc_free_cfg(void* cfg_handle);
-extern void        stc_set_use_tabs(void* cfg_handle, bool value);
-extern void*       stc_transpile_code(const char* code, bool run_benchmark, void* cfg_handle);
-extern const char* stc_get_result(void* result_handle);
-extern void        stc_free_result(void* result_handle);
-
-static const char* julia_code = "...";
-
-#define EXPECTED_STC_ABI_VERSION 0
+// same limitation as in C++: compound expression
+static const char* julia_code = "begin ... end";
 
 int main() {
-    if (stc_abi_version() != EXPECTED_STC_ABI_VERSION)
+    // header and linked library's ABI versions differ
+    if (stc_abi_version() != STC_ABI_VERSION)
         return EXIT_FAILURE;
 
     jl_init();
     jl_eval_string("using JuliaGLM");
 
-    void* cfg_handle = stc_create_cfg();
-    if (cfg_handle == NULL) // failed config creation (unlikely)
+    STC_ConfigHandle cfg_handle = stc_create_cfg();
+    if (cfg_handle == STC_NULL_CONFIG) // failed config creation (very unlikely)
         return EXIT_FAILURE;
 
     stc_set_use_tabs(cfg_handle, true);
 
-    void* result_handle = stc_transpile_code(julia_code, false, cfg_handle);
-    
-    // internal transpilation errors are reported as a NULL result
-    if (result_handle == NULL) {
-        stc_free_cfg(cfg_handle);
+    STC_ResultHandle result_handle = STC_NULL_RESULT;
+    STC_Status result_status = stc_transpile_code(julia_code, cfg_handle, &result_handle);
+
+    stc_free_cfg(cfg_handle); // if the config is not needed again, we can free the handle immediately
+
+    if (result_status == STC_FAILED) { // error in the Julia code or configuration
+        // ... (handle the error)
         return EXIT_FAILURE;
     }
+
+    if (result_status == STC_INTERNAL_ERROR) { // internal transpiler error in stc
+        // ... (handle the error)
+        return EXIT_FAILURE;
+    }
+
+    // these should hold after the above checks
+    assert(result_status == STC_SUCCESS);
+    assert(result_handle != STC_NULL_RESULT);
 
     const char* glsl_code = stc_get_result(result_handle);
-    
-    // user failures are reported as empty strings
-    // (detailed errors are printed to stderr during the transpilation)
-    if (glsl_code[0] == '\0') {
-        stc_free_cfg(cfg_handle);
-        return EXIT_FAILURE;
-    }
-    
+    assert(glsl_code != NULL);
+
     printf("%s\n", glsl_code);
 
-    stc_free_result(result_handle);
-    stc_free_cfg(cfg_handle);
+    stc_free_result(result_handle); // result handle has to be freed after last use
 
     return EXIT_SUCCESS;
 }
@@ -253,11 +252,11 @@ int main() {
 
 The C and C++ APIs follow roughly the same design, the main difference is their memory ownership model. The C API returns internal handles through which later queries and modifications can be made to the given resource, and requires the developer to free them explicitly at the end.
 
-The functions `stc::api::transpile` and `stc_transpile` accept either a string input for the raw code, or a `jl_value_t*` input for the Julia-parsed AST. The latter is faster if the AST is already accessible, since the transpiler can begin the pipeline immediately, while the former option needs to invoke the Julia parser first.
+The function `stc::api::transpile` accepts either a string input for the raw code, or a `jl_value_t*` input for the Julia-parsed AST. The latter is faster if the AST is already accessible, since the transpiler can begin the pipeline immediately, while the former option needs to invoke the Julia parser first. Similarly, the C API provides `stc_transpile` and `stc_transpile_code` where the second one takes in raw code and invokes Julia for parsing first.
 
 A few important notes:
 - Initializing the Julia runtime is the caller's responsibility. This is because in most use cases a Julia runtime should already be accessible to the host application.
-- It was stripped from the snippets for brevity, but if you're initializing the Julia runtime from C/C++, the `JULIA_DEFINE_FAST_TLS` macro should be defined (exactly once). It's also recommended to include `external/julia.h` instead of `julia.h` directly, since it acts as a wrapper safeguard for inclusion.
+- It was stripped from the snippets for brevity, but if you're initializing the Julia runtime from C/C++, the `JULIA_DEFINE_FAST_TLS` macro should be defined (exactly once). It's also recommended to include `external/julia.hpp` instead of `julia.h` directly in C++, since it acts as a wrapper safeguard for inclusion.
 - Linking requires both `libstc` and `libjulia`.
 - The C API is accessible in C++, but its functions remain encapsulated under the `stc::api` namespace. This means that `stc::api::transpile` is the recommended way to use the API from C++ code, but `stc::api::stc_transpile` is also available if the developer wants to deal with the C API directly.
 
@@ -309,6 +308,15 @@ A build produces the following in the build directory:
 - `docs/`: the docs in HTML (`docs/html/`), LaTeX (`docs/latex/`) and/or PDF (`docs/stc_{version}_docs.pdf`) formats, when the given docs format is enabled.
 
 The library is built in two steps: an object library (`stc_objs`) holds the compiled translation units, and the shared library is assembled from those objects. This exists so the test target can link the objects directly and reach internal symbols that are not part of the API, and are as such hidden in the final shared library.
+
+## Install Output
+
+The project supports installation via `cmake --install`. This produces the same kind of package that is shipped with transpiler releases on GitHub.
+
+- `lib/`: contains the `stc` library, or the import library on Windows
+- `bin/`: the CLI, `stc.sh`/`stc.bat` wrappers for automatic lookup of `libjulia` on runner systems, and `stc.dll` on Windows
+- `include/stc/`: the C API header, includable from a C program if needed (`stc.h`) and any other header that includes transitively
+- `README.txt`
 
 ## Linking libjulia
 
@@ -416,8 +424,8 @@ Not options as such, but respected:
 
 # Project Structure
 
-- `include/` and `src/` -- the transpiler core itself. The two mirror each other: src/x/y/z.cpp implements the header at include/x/y/z.h, and most directories correspond to a namespace. Most of the codebase is header-heavy thanks to extensive use of templates, so some directories may exist only under `include/`.
-  - `api/` (`stc::api`) -- the public API of the library. The C ABI used by the Julia wrapper and the C++ entry points that orchestrate the passes into a pipeline.
+- `include/` and `src/` -- the transpiler core itself. The two mirror each other: src/x/y/z.cpp implements the header at include/x/y/z.hpp, and most directories correspond to a namespace. Most of the codebase is header-heavy thanks to extensive use of templates, so some directories may exist only under `include/`.
+  - `stc/` (`stc::api`) -- the public API of the library. The C ABI used by the Julia wrapper and the C++ entry points that orchestrate the passes into a pipeline.
   - `frontend/jl/` (`stc::jl`) -- the Julia frontend. The AST, the parser, sema, symbol resolution and lowering passes.
     - `frontend/jl/rt/` (`stc::jl::rt`) -- abstractions over the libjulia runtime interface. Module, symbol and type caches, and safe query functions over the embedded-Julia environment.
   - `sir/` (`stc::sir`) -- the shader AST. Target-independent, and the middle layer any future backend attaches to.
@@ -494,7 +502,7 @@ It's important to note that my thesis focuses on Julia to GLSL transpilation spe
 
 # Software Architecture
 
-The project is written in C++20, directly depending on `libjulia` (see [Linking libjulia](#linking-libjulia)) and `fmt` alone (some compilers used by `BinaryBuilder` for distribution don't support `std::format` properly).
+The project is written in C++20, directly depending on `libjulia` (see [Linking libjulia](#linking-libjulia)) and `fmt` alone (some compilers used by `BinaryBuilder` for distribution don't support `std::format` properly). `fmt` is linked statically, so it's only a build-time dependency, whereas `libjulia` needs to be resolvable both during building and running.
 
 The transpiler often uses certain design patterns and language constructs for abstraction repeatedly. Some of these serve performance purposes, others improve DevX, while some do both. The following section aims to collect and summarize the most common and fundamental architectural decisions used throughout the codebase.
 
@@ -505,7 +513,7 @@ For classes and functions implementing certain non-trivial patterns, one can usu
 
 Most resources used during transpilation are allocated through a memory arena. This includes AST nodes, type descriptors and qualifiers, symbols and source location information. Each of these constructs has its own custom pool type that abstracts the arena usage behind high-level utilities specific to the given use case. For example, this is where type descriptors and symbols implement interning, which means uniqueness of these objects is guaranteed by the pools, so it doesn't leak into language processing logic.
 
-The arena backing all of the aforementioned pools is a custom, general-purpose bump pointer arena implementation. It manages memory in chunks (internally named slabs), and enables access, allocation and construction through regular, high-level functions. The initial arena sizes were chosen so that typical usage doesn't have to allocate more than one chunk (though this requires some further testing and tuning, as it probably can be reduced to ease memory usage).
+The arena backing all of the aforementioned pools is a custom, general-purpose bump pointer arena implementation. It manages memory in chunks (internally named slabs), and enables access, allocation and construction through regular, high-level functions. The initial arena sizes were chosen so that typical usage doesn't have to allocate more than one chunk. If needed, the `track_memory` configuration option can be set to display the memory usage of each arena during transpilation.
 
 As a result of using arena allocation, AST nodes end up sitting adjacent to their parents in memory, since the parsers (and other AST producers) generate the AST while performing traversal recursively. This turns recursive visitation of that AST into cache-friendly memory reads thanks to the CPU pre-fetcher.
 
@@ -557,7 +565,7 @@ Completely avoiding `virtual` in the codebase (except for `TargetInfo`) also mea
 
 ### X-Macro System
 
-To reduce structural duplications in the code, the `enum`s and handlers described above are generated using the X-Macro pattern, instead of appearing in the code explicitly. The AST structures are defined via `.def` files, from which the preprocessor generates the actual, lengthy `enum`s and `switch` statements needed for the aforementioned systems. Adding a new AST node kind only requires the modification of a single `.def` file, and defining its `struct` in the corresponding `ast.h`. All of the systems that use the kind values in any way will react automatically to the changes.
+To reduce structural duplications in the code, the `enum`s and handlers described above are generated using the X-Macro pattern, instead of appearing in the code explicitly. The AST structures are defined via `.def` files, from which the preprocessor generates the actual, lengthy `enum`s and `switch` statements needed for the aforementioned systems. Adding a new AST node kind only requires the modification of a single `.def` file, and defining its `struct` in the corresponding `ast.hpp`. All of the systems that use the kind values in any way will react automatically to the changes.
 
 As a large amount of code generation can easily lead to bugs or hard-to-parse compiler errors, the codebase handles these carefully. The macros check for accidental overlaps (missing `#undef`s) and `assert`s/`static_assert`s guard branches that should be unreachable if everything is set up properly.
 

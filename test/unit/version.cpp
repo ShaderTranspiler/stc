@@ -1,5 +1,5 @@
-#include "api/transpiler.h"
-#include "meta.h"
+#include "meta.hpp"
+#include "stc/stc.h"
 #include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("library version test", "[sanity]") {

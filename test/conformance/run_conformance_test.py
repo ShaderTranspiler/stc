@@ -20,7 +20,7 @@ from typing import override
 from pathlib import Path
 from enum import Enum
 
-REPORT_RE: re.Pattern[str] = re.compile(r"^\[(?P<file>.*):(?P<line>\d+):(?P<col>\d+)\] \[(?P<category>Error|Warning|Internal Error)\] (?P<message>.*)$")
+REPORT_RE: re.Pattern[str] = re.compile(r"^\[(?P<file>.*):(?P<line>\d+)\] \[(?P<category>Error|Warning|Internal Error)\] (?P<message>.*)$")
 
 SUMMARY_PREFIX: str = "==>"
 
@@ -674,8 +674,7 @@ def report_matches(expected: ExpectedReport, actual: Report, config: Config) -> 
 
     return message_check and report_type_check
 
-# format: [file:line:col] [category] message...
-# since Julia doesn't provide column information, it is simply dropped here
+# format: [file:line] [category] message...
 # file is dropped, because the script only ever deals with a single file
 def try_parse_report(line: str) -> Report | None:
     report_match = re.fullmatch(REPORT_RE, line)
@@ -741,7 +740,7 @@ def collect_reports(test_context: TestContext, config: Config) -> list[Report] |
     if config.julia_bin_dir is not None:
         stc_proc_env["PATH"] = config.julia_bin_dir + os.pathsep + stc_proc_env.get("PATH", "")
 
-    cli_args = ["--no-benchmark", "--quiet", "--cg-indent", "0"]
+    cli_args = ["--no-timing", "--quiet", "--cg-indent", "0"]
     if should_be_valid:
         assert test_context.out_path != ""
         cli_args.extend(["-o", test_context.out_path])

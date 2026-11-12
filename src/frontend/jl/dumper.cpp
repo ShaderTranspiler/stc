@@ -1,8 +1,8 @@
-#include "frontend/jl/dumper.h"
-#include "common/report.h"
-#include "frontend/jl/ast_utils.h"
-#include "frontend/jl/utils.h"
-#include "types/type_to_string.h"
+#include "frontend/jl/dumper.hpp"
+#include "common/report.hpp"
+#include "frontend/jl/ast_utils.hpp"
+#include "frontend/jl/utils.hpp"
+#include "types/type_to_string.hpp"
 
 namespace {
 

@@ -116,19 +116,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.h.in")
-set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.h")
+set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.hpp.in")
+set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.hpp")
 
 # generate config-time metadata
 configure_file("${STC_CONFIG_META_TEMPLATE}" "${STC_CONFIG_META_OUT}" @ONLY)
 
 set(STC_BUILD_META_SCRIPT "${STC_SRC_DIR}/cmake/gen_build_meta.cmake")
-set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.h.in")
-set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.h")
+set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.hpp.in")
+set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.hpp")
 set(STC_BUILD_META_BASE_ARGS
     "-DSTC_SRC_DIR=${STC_SRC_DIR}"
     "-DSTC_GIT_EXECUTABLE=${STC_GIT_EXECUTABLE}"
     "-DSTC_COMMIT_HASH=${STC_COMMIT_HASH}"
+    "-DSTC_VERSION=${STC_VERSION}"
     "-DSTC_BUILD_TIMESTAMP=${STC_BUILD_TIMESTAMP}"
     "-DSTC_BUILD_META_TEMPLATE=${STC_BUILD_META_TEMPLATE}"
     "-DSTC_BUILD_META_OUT=${STC_BUILD_META_OUT}"
@@ -156,7 +157,16 @@ add_custom_target(${BUILD_META_TARGET}
     VERBATIM
 )
 
-file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
+# currently, C++ headers are named .hpp and C headers are named .h
+# this is mostly because the C API of the library needs to produce a C-includable header
+# some internal headers may also be C-compatible (to help usage of the C API)
+# we just simply combine hpp/h in here so that C++ has access to the C headers too
+file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS
+    "include/*.hpp" "include/*.h"
+    "src/*.cpp"
+    "cli/*.hpp"     "cli/*.h"     "cli/*.cpp"
+    "sandbox/*.hpp" "sandbox/*.h" "sandbox/*.cpp"
+    "test/*.hpp"    "test/*.h"    "test/*.cpp")
 
 # dev tooling (ccache, clang-format, clang-tidy)
 # needed before dependencies, since compiler caching should propagate to those
@@ -175,6 +185,8 @@ if(NOT fmt_FOUND)
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
         GIT_TAG        11.1.1
     )
+    # we link fmt statically, so we don't wanna ship their headers and such
+    set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(fmt)
     
     get_target_property(FMT_INCLUDES fmt INTERFACE_INCLUDE_DIRECTORIES)
@@ -238,6 +250,7 @@ else()
     target_link_options(CommonConfig INTERFACE
         $<$<CONFIG:Release>:-Wl,-s>
         $<$<CONFIG:MinSizeRel>:-Wl,-s>
+        -Wl,--exclude-libs,ALL # avoid fmt's (or other dependency's) symbols getting exported from our binaries (Linux-only issue)
     )
 
     if (MINGW)
@@ -508,6 +521,27 @@ if (STC_BUILD_TESTS)
         message(WARNING "Tests are enabled, but CLI building is not. Running conformance tests relies on the CLI as an stc API, so conformance tests will not be enabled")
     endif()
 
+    # compile-only check that the stc.h header is a valid C header that can be included in C11 without problem
+    # we only compile, since that should already catch if the header is invalid, without having to link the actual library
+    set(C_HEADER_CHECK_TARGET stc_c_header_check)
+    add_library(${C_HEADER_CHECK_TARGET} OBJECT test/header_check.c)
+    target_include_directories(${C_HEADER_CHECK_TARGET} PRIVATE "${STC_SRC_DIR}/include")
+    set_target_properties(${C_HEADER_CHECK_TARGET} PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+
+    if (MSVC)
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
+    if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE -Wstrict-prototypes)
+    endif()
+
     message(STATUS "Catch2 found, test targets enabled")
 else()
     message(STATUS "Skipping Catch2 build and test targets")
@@ -551,9 +585,7 @@ if(STC_BUILD_CLI)
     install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-# there's no point in shipping includes currently, since they'll be broken
-# planned include redesign in v1.0
-# install(DIRECTORY ${STC_SRC_DIR}/include/api/
-#     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
-#     FILES_MATCHING PATTERN "*.h"
-# )
+install(DIRECTORY ${STC_SRC_DIR}/include/stc/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
+    FILES_MATCHING PATTERN "*.h"
+)

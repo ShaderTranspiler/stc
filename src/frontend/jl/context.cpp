@@ -1,6 +1,6 @@
-#include "frontend/jl/context.h"
+#include "frontend/jl/context.hpp"
 
-#include "frontend/jl/dumper.h"
+#include "frontend/jl/dumper.hpp"
 
 namespace stc::jl {
 

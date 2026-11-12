@@ -1,7 +1,7 @@
-#include "frontend/jl/scope.h"
-#include "common/report.h"
-#include "frontend/jl/ast_utils.h"
-#include "frontend/jl/dumper.h"
+#include "frontend/jl/scope.hpp"
+#include "common/report.hpp"
+#include "frontend/jl/ast_utils.hpp"
+#include "frontend/jl/dumper.hpp"
 
 namespace {
 

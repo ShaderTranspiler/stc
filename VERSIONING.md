@@ -22,7 +22,7 @@ The suffix is validated at CMake configure-time and in CI, rejecting anything no
 
 Releases follow [semantic versioning](https://semver.org): `MAJOR.MINOR.PATCH`.
 
-- **MAJOR** — incompatible changes in the C/C++ API or ABI.
+- **MAJOR** — incompatible changes in the C/C++ APIs or the C ABI. Note that since the C++ API is mostly internal, this promise is only source-level as we don't provide an ABI-stable C++ interface the same way we do with C.
 - **MINOR** — functionality added in a backwards-compatible way.
 - **PATCH** — backwards-compatible fixes.
 
@@ -42,20 +42,21 @@ See [BRANCHING.md](BRANCHING.md) for a more detailed breakdown of where these su
 
 ### ABI Version
 
-The C ABI carries its own version, returned by `stc_abi_version()`. It is not currently an independent number: it is the semantic major version, so today it returns `0`.
+The C ABI carries its own version, defined by `STC_ABI_VERSION` or `stc_abi_version()`. The macro contains the ABI version the included C API header was written for, while the function returns the version of the library being linked. When using the transpiler through the C header (`stc.h`), the header's and linked library's ABI versions can be checked the following way:
 
 ```c
-#define EXPECTED_STC_ABI_VERSION 0
+#include <stc/stc.h>
 
-if (stc_abi_version() != EXPECTED_STC_ABI_VERSION)
+if (stc_abi_version() != STC_ABI_VERSION) {
     /* refuse to continue */
+}
 ```
 
-A value of `0` is similarly an explicit statement that **no forwards or backwards compatibility is guaranteed**. Consumers acknowledge that they're responsible for keeping their usage of the library up-to-date when updating between 0.x versions. It will become `1` when 1.0 is released, and from then on a change to it means a genuine break.
+The ABI version is currently not an independent number, it's the semantic version's major component. A value of `0` is similarly an explicit statement that **no forwards or backwards compatibility is guaranteed for now**. Consumers acknowledge that they're responsible for keeping their usage of the library up-to-date when updating between 0.x versions. It will become `1` when 1.0 is released, and from then on a change to it means a genuine ABI break.
 
 The shared library's `SOVERSION` is set from the same number, so linkers enforce the same boundary.
 
-Note that `-dev` suffixed versions provide no guarantee for ABI version. They indicate the ABI version being worked towards for the next release, even if the build itself is breaking the contract.
+Note that `-dev` suffixed versions provide no guarantee for ABI version. They indicate the ABI version being worked towards for the next release, even if the current build itself is breaking the contract.
 
 ### Julia Compatibility
 
@@ -151,5 +152,9 @@ Every build records how it was produced, readable through `stc --version` and th
 | `compiler_id` / `compiler_ver` | the compiler used |
 | `system_name` / `system_arch` | the target platform |
 | `julia_ver` | the Julia version this build was compiled against |
+| `build_date` | the starting time of the build that produced the given binary |
+| `build_commit` | the short hash of the git commit that the build originates from |
 
 `build_origin` is controlled by `-DSTC_OFFICIAL_BUILD=ON`, which only the release workflow and the JLL recipe pass. A build made locally reports `development build` even if its version number matches a real release, so a binary can always be traced back to whether it came from the project's own pipeline. This is a convenience indicator, not a validation or verification source. Anyone can pass `-DSTC_OFFICIAL_BUILD=ON` before building and have a binary whose `build_origin` will suggest it came from the pipeline.
+
+Version information can additionally be accessed via the C API's `stc_version_string(bool)`, `stc_abi_version()`, `stc_version_major()`, `stc_version_minor()` and `stc_version_patch()`.

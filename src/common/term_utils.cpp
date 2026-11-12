@@ -1,8 +1,8 @@
-#include "common/term_utils.h"
+#include "common/term_utils.hpp"
 
 #ifdef _WIN32
     #include <cstdlib>
-    #include <external/io_windows.h>
+    #include <external/io_windows.hpp>
 #else
     #include <unistd.h>
 #endif
@@ -22,7 +22,7 @@ bool TerminalInfo::supports_color() {
     errno_t dupenv_result = _dupenv_s(&dupenv_buf, nullptr, "NO_COLOR");
 
     if (dupenv_result != 0 || dupenv_buf != nullptr) {
-        free(dupenv_buf);
+        free(dupenv_buf); // NOLINT(cppcoreguidelines-no-malloc)
         return false;
     }
 #else

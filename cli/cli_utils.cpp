@@ -1,9 +1,9 @@
-#include "cli_utils.h"
+#include "cli_utils.hpp"
 
-#include <common/report.h>
-#include <common/term_utils.h>
-#include <common/utils.h>
-#include <meta.h>
+#include <common/report.hpp>
+#include <common/term_utils.hpp>
+#include <common/utils.hpp>
+#include <meta.hpp>
 
 #include <fmt/format.h>
 
@@ -28,7 +28,7 @@
 void stc::cli::print_version_info() {
     static constexpr auto val_col = ansi_codes::yellow;
 
-    print_header(std::cout, "Shader Transpiler Core (STC)", true, false);
+    print_header(std::cout, "Shader Transpiler Core (STC)", true, true, false);
 
     // clang-format off
     std::cout << "version:      " << stc::colored(stc::meta::version, val_col) << '\n';
@@ -62,10 +62,12 @@ constexpr std::array general_entries{
     HelpEntry{"--no-out",          "do not output the generated code to stdout or disk"},
     HelpEntry{"--gl-version <N>",  "set OpenGL version for #version directive (default: \"460\")"},
     HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
-    HelpEntry{"--no-benchmark",    "disable the measuring and printing of transpilation time benchmarks"},
-    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-benchmark)"),
+    HelpEntry{"--track-memory",    "print per-phase memory usage statistics for arenas"},
+    HelpEntry{"--no-timing",       "disable the measuring and printing of transpilation time breakdown stats"},
+    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-timing)"),
+    HelpEntry{"--timing",          "print transpilation time breakdown stats, even if --quiet is passed"},
     HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"},
-    HelpEntry{"--skip-no-commit", "avoids the CLI adding a no-commit tag to the generated output file"},
+    HelpEntry{"--skip-no-commit",  "avoids the CLI adding a no-commit tag to the generated output file"},
 };
 
 constexpr std::array transpilation_behavior_entries{
@@ -92,9 +94,9 @@ constexpr std::array formatting_entries{
 };
 
 constexpr std::array errors_and_warnings_entries{
-    HelpEntry{"--err-dump none",    "disable AST dumping on errors (default)"},
-    HelpEntry{"--err-dump partial", "dump the AST subtree that caused the given error"},
-    HelpEntry{"--err-dump verbose", "dump the full AST at every error reported"},
+    HelpEntry{"--error-dump none",    "disable AST dumping on errors (default)"},
+    HelpEntry{"--error-dump partial", "dump the AST subtree that caused the given error"},
+    HelpEntry{"--error-dump verbose", "dump the full AST at every error reported"},
     HelpEntry{"-Wjl-query",         "warn when the Julia runtime was queried for function call resolution"},
 };
 
@@ -115,7 +117,7 @@ void print_help() {
     static constexpr auto title_col = ansi_codes::cyan;
     static constexpr auto flag_col  = ansi_codes::yellow;
 
-    std::cout << stc::colored("Usage:", title_col) << " stc <input file> [OPTIONS]\n\n";
+    std::cout << stc::colored("Usage:", title_col) << " stc INPUT [OPTIONS]\n\n";
 
     for (size_t i = 0; i < help_categories.size(); i++) {
         const auto& category = help_categories[i];

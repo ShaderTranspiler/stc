@@ -1,5 +1,5 @@
-#include "frontend/jl/type_conversion.h"
-#include "frontend/jl/rt/utils.h"
+#include "frontend/jl/type_conversion.hpp"
+#include "frontend/jl/rt/utils.hpp"
 
 namespace stc::jl {
 

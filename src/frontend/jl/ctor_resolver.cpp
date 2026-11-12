@@ -1,4 +1,4 @@
-#include "frontend/jl/ctor_resolver.h"
+#include "frontend/jl/ctor_resolver.hpp"
 
 #include <algorithm>
 #include <array>

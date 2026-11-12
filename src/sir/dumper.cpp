@@ -1,10 +1,10 @@
 #include <fmt/format.h>
 
-#include "common/report.h"
-#include "sir/dumper.h"
-#include "types/qualifiers.h"
-#include "types/type_descriptors.h"
-#include "types/type_to_string.h"
+#include "common/report.hpp"
+#include "sir/dumper.hpp"
+#include "types/qualifiers.hpp"
+#include "types/type_descriptors.hpp"
+#include "types/type_to_string.hpp"
 
 namespace {
 

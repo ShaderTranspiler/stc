@@ -1,7 +1,7 @@
-#include "frontend/jl/parser.h"
-#include "external/tracy.h"
-#include "frontend/jl/type_conversion.h"
-#include "frontend/jl/utils.h"
+#include "frontend/jl/parser.hpp"
+#include "external/tracy.hpp"
+#include "frontend/jl/type_conversion.hpp"
+#include "frontend/jl/utils.hpp"
 #include <algorithm>
 #include <bit>
 #include <utility>
@@ -326,7 +326,7 @@ NodeId JLParser::parse(jl_value_t* node) {
         return parse_expr(safe_cast<jl_expr_t>(node));
 
     if (jl_is_bool(node)) {
-        // jl_unbox_bool returns an uint8_t
+        // jl_unbox_bool returns an int8_t
         bool value = static_cast<bool>(jl_unbox_bool(node));
 
         return emplace_node<BoolLiteral>(cur_loc, value);
@@ -413,33 +413,6 @@ NodeId JLParser::parse(jl_value_t* node) {
     SymbolId tname_sid = ctx.sym_pool.get_id(type_name);
 
     return emplace_node<OpaqueNode>(cur_loc, tname_sid, node);
-}
-
-// parses the code argument using Julia's Meta.parse and invokes the regular parsing pipeline on it
-NodeId JLParser::parse_code(std::string_view code) {
-    ZoneScoped;
-    ZoneText(code.data(), code.size());
-
-    jl_value_t* code_jl_str = nullptr;
-    jl_value_t* parsed_expr = nullptr;
-    JL_GC_PUSH2(&code_jl_str, &parsed_expr); // NOLINT
-
-    const ScopeGuard jl_gc_pop_guard{[]() { JL_GC_POP(); }};
-
-    jl_value_t* parse_fn = ctx.jl_env.module_cache.meta_mod.get_fn("parse", false);
-
-    if (parse_fn == nullptr)
-        return fail("failed to load parse function from the Meta module");
-
-    // implemented as a simple memcpy in libjulia, avoids strlen (==> null termination agnostic)
-    code_jl_str = jl_pchar_to_string(code.data(), code.size());
-
-    parsed_expr = jl_call1(parse_fn, code_jl_str);
-
-    if (check_exceptions())
-        return fail("Julia exception while trying to parse code string using Meta.parse");
-
-    return parse(parsed_expr);
 }
 
 NodeId JLParser::emplace_decl_ref(SrcLocationId loc, SymbolId sym) {
@@ -1533,10 +1506,16 @@ NodeId JLParser::fail(std::string_view msg, SrcLocationId loc_id) {
 }
 
 NodeId JLParser::internal_error(std::string_view msg, SrcLocationId loc_id) {
+    // avoid user errors from propagating into internal errors
+    if (!_success)
+        return NodeId::null_id();
+
     if (loc_id.is_null())
         loc_id = cur_loc;
 
-    _success = false;
+    _success            = false;
+    _had_internal_error = true;
+
     stc::internal_error(ctx.src_info_pool, loc_id, msg);
 
     return NodeId::null_id();
