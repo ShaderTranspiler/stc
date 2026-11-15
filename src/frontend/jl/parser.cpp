@@ -1117,7 +1117,7 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
     jl_value_t* target_fn_v = jl_exprarg(expr, 0);
     if (!is_broadcast && jl_is_symbol(target_fn_v)) {
         assert(expr->head == sym_cache.call);
-        jl_sym_t* fn_sym = safe_cast<jl_sym_t>(target_fn_v);
+        auto* fn_sym = safe_cast<jl_sym_t>(target_fn_v);
         std::string_view fn_name{jl_symbol_name(fn_sym)};
 
         // prefix broadcast calls, strip first symbol
@@ -1134,6 +1134,9 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
     } else {
         parsed_target_fn = parse(target_fn_v);
     }
+
+    if (parsed_target_fn.is_null())
+        return error_on_unexpected_null();
 
     jl_expr_t* params_expr = expr;
     size_t first_param_idx = 1;
@@ -1159,6 +1162,9 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
             return fail("Keyword arguments are currently not supported");
 
         NodeId parsed_arg = parse(arg);
+        if (parsed_arg.is_null())
+            return error_on_unexpected_null();
+
         params.push_back(parsed_arg);
     }
 
@@ -1296,8 +1302,12 @@ NodeId JLParser::parse_vect(jl_expr_t* expr, size_t nargs) {
     std::vector<NodeId> members{};
     members.reserve(nargs);
 
-    for (size_t i = 0; i < nargs; i++)
+    for (size_t i = 0; i < nargs; i++) {
         members.emplace_back(parse(jl_exprarg(expr, i)));
+
+        if (members.back().is_null())
+            return error_on_unexpected_null();
+    }
 
     return emplace_node<ArrayLiteral>(base_loc, std::move(members));
 }
@@ -1507,6 +1517,9 @@ NodeId JLParser::parse_log_op(jl_expr_t* expr, size_t nargs) {
     NodeId lhs = parse(jl_exprarg(expr, 0));
     NodeId rhs = parse(jl_exprarg(expr, 1));
 
+    if (lhs.is_null() || rhs.is_null())
+        return error_on_unexpected_null();
+
     return emplace_node<LogicalBinOp>(base_loc, lhs, rhs, expr->head == sym_cache.dbl_amper);
 }
 
@@ -1532,6 +1545,16 @@ NodeId JLParser::internal_error(std::string_view msg, SrcLocationId loc_id) {
     _had_internal_error = true;
 
     stc::internal_error(ctx.src_info_pool, loc_id, msg);
+
+    return NodeId::null_id();
+}
+
+NodeId JLParser::error_on_unexpected_null(SrcLocationId loc_id) {
+    if (loc_id.is_null())
+        loc_id = cur_loc;
+
+    if (_success)
+        return internal_error("a child node failed to parse without reporting an error", loc_id);
 
     return NodeId::null_id();
 }
