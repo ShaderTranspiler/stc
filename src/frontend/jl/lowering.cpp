@@ -387,41 +387,82 @@ SIRNodeId JLLoweringVisitor::visit_FieldDecl(FieldDecl& field) {
                                         field.qualifiers);
 }
 
+namespace {
+
+[[maybe_unused]] bool can_be_null_in_compound(NodeId node, const JLCtx& ctx) {
+    if (node.is_null())
+        return false;
+
+    if (ctx.isa<NothingLiteral>(node))
+        return true;
+
+    if (ctx.isa<MethodDecl>(node))
+        return true;
+
+    const auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(node);
+    if (vdecl != nullptr && vdecl->is_silent_decl())
+        return true;
+
+    return false;
+}
+
+void add_node_to_compound(std::vector<SIRNodeId>& body, SIRNodeId child, const sir::SIRCtx& ctx) {
+    // assumes everything that returns a null id should be omitted
+    // for failing cases, _success should already be set by this point, so this is safe
+    if (child.is_null())
+        return;
+
+    const auto* child_cmpd = ctx.get_and_dyn_cast<sir::CompoundStmt>(child);
+    if (child_cmpd != nullptr && child_cmpd->splice()) {
+        // inline spliced compounds
+        for (SIRNodeId child_elem : child_cmpd->body)
+            add_node_to_compound(body, child_elem, ctx);
+    } else {
+        // nest everything else
+        body.push_back(child);
+    }
+}
+
+} // namespace
+
 SIRNodeId JLLoweringVisitor::visit_CompoundExpr(CompoundExpr& cmpd) {
     // # of local fn defs that will be lifted into the global scope
     static constexpr size_t LOCAL_FN_COUNT_GUESS = 4;
 
-    std::vector<SIRNodeId> sir_nodes;
-    sir_nodes.reserve(cmpd.body.size() + (first_cmpd ? LOCAL_FN_COUNT_GUESS : 0));
+    std::vector<SIRNodeId> lowered_body;
+    lowered_body.reserve(cmpd.body.size() + (is_first_cmpd ? LOCAL_FN_COUNT_GUESS : 0));
 
-    if (first_cmpd) {
-        global_cmpd_body = &sir_nodes;
-        first_cmpd       = false;
+    bool is_global_cmpd = is_first_cmpd;
+    if (is_first_cmpd) {
+        global_cmpd_body = &lowered_body;
+        is_first_cmpd    = false;
     }
 
     for (NodeId expr : cmpd.body) {
         SIRNodeId lowered = visit_and_check(expr, true);
 
-        if (lowered.is_null()) {
-            auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(expr);
+        // catch unexpected null cases in debug
+        assert((!lowered.is_null() || !_success || can_be_null_in_compound(expr, ctx)) &&
+               "unexpected node kind lowered to null in a compound expression without failing");
 
-            // silent decls, nothing literals and local fns in compound expressions are the only
-            // exception to null-returning
-            if (_success && (vdecl == nullptr || !vdecl->is_silent_decl()) &&
-                !ctx.isa<MethodDecl>(expr) && !ctx.isa<NothingLiteral>(expr)) {
-                // visit_and_check should have failed if this is the case since we're targeting
-                // the source node, not the lowered one (so accept_null doesn't apply)
-                assert(ctx.get_node(expr) != nullptr);
-                return internal_error(
-                    "unexpected subnode type lowered to null id in a compound expression",
-                    *ctx.get_node(expr));
-            }
-        } else {
-            sir_nodes.push_back(lowered);
+        size_t first_new_elem = lowered_body.size();
+        add_node_to_compound(lowered_body, lowered, sir_ctx);
+
+        if (!is_global_cmpd)
+            continue;
+
+        // make sure spliced nodes are checked too
+        for (size_t i = first_new_elem; i < lowered_body.size(); i++) {
+            if (sir_ctx.isa<sir::Decl>(lowered_body[i]))
+                continue;
+
+            const auto* expr_node = ctx.get_node(expr);
+            assert(expr_node != nullptr);
+            return fail("only declarations are allowed at the top level", *expr_node);
         }
     }
 
-    return emplace_node<sir::CompoundStmt>(cmpd.location, std::move(sir_nodes));
+    return emplace_node<sir::CompoundStmt>(cmpd.location, std::move(lowered_body));
 }
 
 SIRNodeId JLLoweringVisitor::visit_BoolLiteral(BoolLiteral& bool_lit) {

@@ -40,8 +40,8 @@ private:
     // set by to lower()
     NodeId jl_ast_root{};
 
-    bool first_cmpd = true;
-    bool in_method  = false;
+    bool is_first_cmpd = true;
+    bool in_method     = false;
 
     bool _success            = true;
     bool _had_internal_error = false;

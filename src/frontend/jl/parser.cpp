@@ -1003,10 +1003,8 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
 
         if (lhs.is_null() || rhs.is_null()) {
             if (_success)
-                fail("couldn't parse member in tuple assignment");
-
-            // their place remains set to the default initialized null id
-            continue;
+                fail("couldn't parse a member in tuple assignment");
+            return NodeId::null_id();
         }
 
         SymbolId tmp_sym = ctx.get_tmp_sym();
@@ -1021,7 +1019,7 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
         assignments_block[lhs_n + i] = tmp_to_lhs;
     }
 
-    return emplace_node<CompoundExpr>(assign_loc, std::move(assignments_block));
+    return emplace_node<CompoundExpr>(assign_loc, std::move(assignments_block), true);
 }
 
 NodeId JLParser::parse_update_assignment(jl_expr_t* expr, size_t nargs) {
@@ -1052,6 +1050,26 @@ NodeId JLParser::parse_update_assignment(jl_expr_t* expr, size_t nargs) {
                                           is_broadcast);
 }
 
+namespace {
+
+void add_expr_to_compound(std::vector<NodeId>& cmpd_body, NodeId child, const JLCtx& ctx) {
+    if (child.is_null())
+        return;
+
+    const auto* child_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(child);
+    if (child_cmpd == nullptr || !child_cmpd->splice()) {
+        // non-compound and non-splicing compounds are nested
+        cmpd_body.push_back(child);
+        return;
+    }
+
+    // splicing compounds get their body inlined
+    for (NodeId child_of_child : child_cmpd->body)
+        add_expr_to_compound(cmpd_body, child_of_child, ctx);
+}
+
+} // namespace
+
 NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
     ZoneScoped;
     assert(expr->head == sym_cache.block);
@@ -1060,19 +1078,16 @@ NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
     std::vector<NodeId> inner_exprs{};
     inner_exprs.reserve(nargs);
 
-    for (size_t i = 0; i < nargs; i++) {
-        NodeId parsed_arg = parse(jl_exprarg(expr, i));
+    for (size_t i = 0; i < nargs; i++)
+        add_expr_to_compound(inner_exprs, parse(jl_exprarg(expr, i)), ctx);
 
-        if (parsed_arg.is_null())
-            continue;
-
-        inner_exprs.push_back(parsed_arg);
-
-        // if block is not empty, make its location point to the first inner line, rather than the
-        // last outer one
-        if (inner_exprs.size() == 1) {
-            cmpd_loc = cur_loc;
-        }
+    // if block is not empty, make its location point to the first inner line, rather than the
+    // last outer one
+    if (!inner_exprs.empty()) {
+        assert(!inner_exprs[0].is_null());
+        const Expr* first_arg = ctx.get_node(inner_exprs[0]);
+        if (first_arg != nullptr)
+            cmpd_loc = first_arg->location;
     }
 
     return emplace_node<CompoundExpr>(cmpd_loc, std::move(inner_exprs));

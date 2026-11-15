@@ -347,14 +347,21 @@ struct InterfaceBlockDecl : public Decl {
 struct CompoundExpr : public Expr {
     std::vector<NodeId> body;
 
-    explicit CompoundExpr(SrcLocationId location, std::vector<NodeId> body)
-        : Expr{location, NodeKind::Compound}, body{std::move(body)} {
+    explicit CompoundExpr(SrcLocationId location, std::vector<NodeId> body, bool splice = false)
+        : Expr{location, NodeKind::Compound, static_cast<uint8_t>(splice)}, body{std::move(body)} {
 
         ASSERT_CONTAINS_NO_NULL(this->body);
     }
 
     explicit CompoundExpr(SrcLocationId location, std::initializer_list<NodeId> nodes)
         : CompoundExpr{location, std::vector<NodeId>{nodes}} {}
+
+    // compound expressions marked 'splice' will be inlined into their parent node if that is also
+    // a compound expression, instead of getting nested. this can be used for code rewriting, where
+    // a single node gets expanded into multiple ones
+    // this only applies in the parser step and does not do anything afterwards
+    bool splice() const { return static_cast<bool>(_node_storage); }
+    void set_splice(bool value) { _node_storage = static_cast<uint8_t>(value); }
 
     SAME_NODE_KIND_DEF(NodeKind::Compound)
 };
