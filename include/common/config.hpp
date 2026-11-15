@@ -128,8 +128,11 @@ struct TranspilerConfig {
     /// If true, prints step-by-step resolution logic for how each symbol bindig was determined
     bool track_bindings = false;
 
-    bool coerce_to_f32 = true; ///< If true, treats f64 literals as f32
-    bool coerce_to_i32 = true; ///< If true, treats i64 literals as i32
+    bool coerce_to_f32     = true; ///< If true, treats f64 literals as f32
+    /// Whether to allow or reject cases where coercing an f64 literal to an f32 value would yield a
+    /// non-finite result (e.g. nan, inf). Only has an effect if @a coerce_to_f32 is set to true.
+    bool coerce_non_finite = false;
+    bool coerce_to_i32     = true; ///< If true, treats i64 literals as i32
 
     /// If true, globals that can be queried from Julia, but are defined outside the source code
     /// will be added as uniform globals in the generated code

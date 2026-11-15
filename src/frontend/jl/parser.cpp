@@ -2,8 +2,10 @@
 #include "external/tracy.hpp"
 #include "frontend/jl/type_conversion.hpp"
 #include "frontend/jl/utils.hpp"
+
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <utility>
 
 // struct layouts were taken from:
@@ -385,8 +387,18 @@ NodeId JLParser::parse(jl_value_t* node) {
     if (jl_typeis(node, jl_float64_type)) {
         double value = jl_unbox_float64(node);
 
-        if (ctx.config.coerce_to_f32)
-            return emplace_node<Float32Literal>(cur_loc, static_cast<float>(value));
+        if (ctx.config.coerce_to_f32) {
+            float coerced = static_cast<float>(value);
+            if (!ctx.config.coerce_non_finite && std::isfinite(value) && !std::isfinite(coerced)) {
+                return fail(
+                    fmt::format("Float64 literal cannot be coerced to a Float32 value without "
+                                "changing finiteness: {} -> {}.\nUse the --coerce-non-finite flag"
+                                "to enable such conversions.",
+                                value, coerced));
+            }
+
+            return emplace_node<Float32Literal>(cur_loc, coerced);
+        }
 
         return emplace_node<Float64Literal>(cur_loc, value);
     }

@@ -493,15 +493,12 @@ SIRNodeId JLLoweringVisitor::visit_UInt128Literal(UInt128Literal& lit) {
 }
 
 SIRNodeId JLLoweringVisitor::visit_Float32Literal(Float32Literal& lit) {
-    return emplace_node<sir::FloatLiteral>(
-        lit.location, sir_ctx.type_pool.float_td(32),
-        fmt::format("{:.{}f}", lit.value, std::numeric_limits<float>::max_digits10));
+    return emplace_node<sir::FloatLiteral>(lit.location, sir_ctx.type_pool.float_td(32), lit.value);
 }
 
 SIRNodeId JLLoweringVisitor::visit_Float64Literal(Float64Literal& lit) {
-    return emplace_node<sir::FloatLiteral>(
-        lit.location, sir_ctx.type_pool.float_td(64),
-        fmt::format("{:.{}f}", lit.value, std::numeric_limits<double>::max_digits10));
+    return emplace_node<sir::DoubleLiteral>(lit.location, sir_ctx.type_pool.float_td(64),
+                                            lit.value);
 }
 
 SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {

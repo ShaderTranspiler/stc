@@ -75,6 +75,7 @@ constexpr std::array transpilation_behavior_entries{
     HelpEntry{"--no-coerce-i32",            "disable automatic Int64 -> Int32 literal type coercion"},
     HelpEntry{"--no-coerce-f32",            "disable automatic Float64 -> Float32 literal type coercion"},
     HelpEntry{"--no-coercion",              "disable all literal type coercion"},
+    HelpEntry{"--coerce-non-finite",        "if Float32 coercion is enabled, enable coercing non-Float32-representable Float64 values to +/- inf"},
     HelpEntry{"--fwd-fns",                  "enable blind forwarding for non-backend-resolvable function calls (may lead to invalid code)"},
     HelpEntry{"--no-uniform-capture",       "don't capture Julia-resolvable globals as uniforms in the output"},
 };

@@ -3,6 +3,7 @@
 STC_X_FIRST(BoolLiteral, BoolLit)
 STC_X(IntLiteral, IntLit)
 STC_X(FloatLiteral, FloatLit)
+STC_X(DoubleLiteral, DoubleLit)
 STC_X(VectorLiteral, VecLit)
 STC_X(MatrixLiteral, MatLit)
 STC_X(ArrayLiteral, ArrayLit)

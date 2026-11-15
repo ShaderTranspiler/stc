@@ -225,10 +225,11 @@ extern "C" {
     STC_API void stc_set_error_dump_verbosity(STC_ConfigHandle cfg_handle, STC_DumpVerbosity value) STC_NOEXCEPT;
 
     // Transpilation behaviour
-    STC_API void stc_set_forward_fns     (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
-    STC_API void stc_set_coerce_to_f32   (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
-    STC_API void stc_set_coerce_to_i32   (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
-    STC_API void stc_set_capture_uniforms(STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_forward_fns      (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_coerce_to_f32    (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_coerce_to_i32    (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_coerce_non_finite(STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_capture_uniforms (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
 
     // GLSL
     STC_API void stc_set_target_version(STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;

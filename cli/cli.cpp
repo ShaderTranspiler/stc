@@ -147,6 +147,8 @@ int run(int argc, char* argv[]) {
             config.coerce_to_i32 = false;
         else if (arg == "--no-coerce-f32")
             config.coerce_to_f32 = false;
+        else if (arg == "--coerce-non-finite")
+            config.coerce_non_finite = true;
         else if (arg == "--no-coercion") {
             config.coerce_to_i32 = false;
             config.coerce_to_f32 = false;
@@ -262,6 +264,12 @@ int run(int argc, char* argv[]) {
         std::cerr << "A no"
                      "commit tag is only added to output written to disk, so it has no effect if "
                   << stc::colored("-o", ansi_codes::cyan) << " is not provided along with it.\n";
+    }
+
+    if (config.coerce_non_finite && !config.coerce_to_f32) {
+        print_conflicting_flags_warning(
+            "--no-coerce-f32", "--coerce-non-finite",
+            "--coerce-non-finite will have no effect if f32 coercion is not enabled.");
     }
 
     if (quiet && !explicitly_asked_for_timing)

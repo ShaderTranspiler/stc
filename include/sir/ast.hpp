@@ -259,12 +259,21 @@ struct IntLiteral : public Expr {
 };
 
 struct FloatLiteral : public Expr {
-    std::string value;
+    float value;
 
-    explicit FloatLiteral(SrcLocationId location, TypeId type, std::string data)
-        : Expr{location, NodeKind::FloatLit, type}, value{std::move(data)} {}
+    explicit FloatLiteral(SrcLocationId location, TypeId type, float value)
+        : Expr{location, NodeKind::FloatLit, type}, value{value} {}
 
     SAME_NODE_KIND_DEF(NodeKind::FloatLit)
+};
+
+struct DoubleLiteral : public Expr {
+    double value;
+
+    explicit DoubleLiteral(SrcLocationId location, TypeId type, double value)
+        : Expr{location, NodeKind::DoubleLit, type}, value{value} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::DoubleLit)
 };
 
 struct VectorLiteral : public Expr {
