@@ -66,7 +66,8 @@ A more high level Julia abstraction is available in the [ShaderTranspiler.jl](ht
 Building the transpiler requires:
 - **CMake 3.21** or newer (this is what BinaryBuilder pins so it's tested at every release)
 - a **C++20** compiler (GCC is recommended, clang and MSVC are also supported)
-- a **v1.12** or newer **Julia** installation (for specifics, see [julia_targets.toml](julia_targets.toml))
+- **Julia v1.12** or newer (for specifics, see [julia_targets.toml](julia_targets.toml))
+- **GLUtils v0.0.3** (exact version, see [julia_targets.toml](julia_targets.toml))
 
 Everything else is optional and automatically fetched by CMake when needed, or only enabled if available (see [Building the Project](#building-the-project)).
 

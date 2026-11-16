@@ -34,8 +34,11 @@ jobs:
       - name: Check README.md
         run: |
           MIN=$(python3 scripts/julia_build_matrix.py min)
-          grep -q "v$MIN\b" README.md || {
+          grep -q "Julia.*v$MIN\b" README.md || {
             echo "::error::README.md does not document v$MIN as the minimum Julia version"; exit 1; }
+          GL_UTILS_VERSION=$(python3 scripts/julia_build_matrix.py gl-utils-version)
+          grep -q "GLUtils.*v$GL_UTILS_VERSION\b" README.md || {
+            echo "::error::README.md does not document v$GL_UTILS_VERSION as the supported GLUtils version"; exit 1; }
 
   build-and-test:
     name: Build & Test (${{ matrix.config.os }}, ${{ matrix.config.compiler }}, Julia v${{ matrix.julia }})
@@ -74,8 +77,12 @@ jobs:
           version: ${{ matrix.julia }}
 
       - name: Install GLUtils
-        run: julia -e 'using Pkg; Pkg.add(url="https://github.com/ELTE-IK-CG/GLUtils.jl", rev="lib_rename")'
-        # TODO: make rev point to the new tag once the PR is merged
+        run: |
+          julia -e 'using Pkg; Pkg.add(url="${{ needs.setup.outputs.gl_utils_url }}", rev="${{ needs.setup.outputs.gl_utils_rev }}")'
+          
+          # verify that rev really points to a correct version of the library
+          julia -e 'import GLUtils; pkg_v = pkgversion(GLUtils); expected_v = VersionNumber(ARGS[1]);
+                    pkg_v == expected_v || error("GLUtils version mismatch!\n" * "rev: $(pkg_v), expected: $(expected_v)")' "${{ needs.setup.outputs.gl_utils_version }}"
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
