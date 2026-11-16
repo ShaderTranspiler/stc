@@ -27,11 +27,11 @@ int main() {
     // sandboxes are free to use libstc internals (like the ScopeGuard util)
     const stc::ScopeGuard jl_guard{[] { jl_atexit_hook(0); }};
 
-    jl_eval_string("using JuliaGLM"); // JuliaGLM is required for transpilation
+    jl_eval_string("using GLUtils"); // GLUtils is required for transpilation
 
     // always check for Julia-side errors
     if (stc::jl::check_exceptions()) {
-        std::cerr << "couldn't initialize Julia runtime (JuliaGLM might not be available in "
+        std::cerr << "couldn't initialize Julia runtime (GLUtils might not be available in "
                      "current environment)\n";
         return EXIT_FAILURE;
     }

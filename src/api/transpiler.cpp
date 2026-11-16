@@ -96,7 +96,7 @@ template STC_API MaybeString transpile_parsed<false>(jl::NodeId, jl::JLCtx&,
 
 template <bool RunBenchmark>
 MaybeString transpile(std::string_view code, std::optional<std::string_view> file_path,
-                      stc::TranspilerConfig config, std::string_view juliaglm_path) {
+                      stc::TranspilerConfig config, std::string_view gl_utils_path) {
     using namespace stc::jl;
 
     detail::BenchmarkTracker<RunBenchmark> benchmark_tracker{};
@@ -104,7 +104,7 @@ MaybeString transpile(std::string_view code, std::optional<std::string_view> fil
     benchmark_tracker.start();
     benchmark_tracker.init_start();
 
-    JLCtx jl_ctx{juliaglm_path};
+    JLCtx jl_ctx{gl_utils_path};
     jl_ctx.config = std::move(config);
 
     glsl::GLSLTargetInfo target_info{jl_ctx.type_pool};
@@ -142,7 +142,7 @@ template STC_API MaybeString transpile<false>(std::string_view, std::optional<st
 
 template <bool RunBenchmark>
 MaybeString transpile(jl_value_t* expr_v, stc::TranspilerConfig config,
-                      std::string_view juliaglm_path) {
+                      std::string_view gl_utils_path) {
     using namespace stc::jl;
 
     detail::BenchmarkTracker<RunBenchmark> benchmark_tracker{};
@@ -150,7 +150,7 @@ MaybeString transpile(jl_value_t* expr_v, stc::TranspilerConfig config,
     benchmark_tracker.start();
     benchmark_tracker.init_start();
 
-    JLCtx jl_ctx{juliaglm_path};
+    JLCtx jl_ctx{gl_utils_path};
     jl_ctx.config = std::move(config);
 
     glsl::GLSLTargetInfo target_info{jl_ctx.type_pool};

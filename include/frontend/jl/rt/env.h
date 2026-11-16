@@ -20,8 +20,8 @@ struct JuliaRTEnv {
     explicit JuliaRTEnv()
         : module_cache{}, symbol_cache{}, type_cache{module_cache} {}
 
-    explicit JuliaRTEnv(std::string_view juliaglm_path)
-        : module_cache{juliaglm_path}, symbol_cache{}, type_cache{module_cache} {}
+    explicit JuliaRTEnv(std::string_view gl_utils_path)
+        : module_cache{gl_utils_path}, symbol_cache{}, type_cache{module_cache} {}
 };
 
 } // namespace stc::jl::rt

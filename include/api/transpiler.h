@@ -43,20 +43,20 @@ STC_API MaybeString transpile_parsed(jl::NodeId jl_ast, jl::JLCtx& jl_ctx,
 /// @param file_path The optional file path that will be used for source location information
 /// @param config The stc::TranspilerConfig that describes the configuration options to use during
 /// transpilation
-/// @param juliaglm_path Julia-side path to the JuliaGLM module
+/// @param gl_utils_path Julia-side path to the GLUtils module
 /// @return The generated GLSL code as a std::string on success, std::nullopt on transpilation
 /// failure (both for invalid code, and internal error)
 /// @see stc::TranspilerConfig
 template <bool RunBenchmark>
 STC_API MaybeString transpile(std::string_view code, std::optional<std::string_view> file_path,
                               stc::TranspilerConfig config,
-                              std::string_view juliaglm_path = "Main.JuliaGLM");
+                              std::string_view gl_utils_path = "Main.GLUtils");
 
 /// @overload
 /// @param expr_v The Julia-parsed Expr representation of the source code to transpile
 template <bool RunBenchmark>
 STC_API MaybeString transpile(jl_value_t* expr_v, stc::TranspilerConfig config,
-                              std::string_view juliaglm_path = "Main.JuliaGLM");
+                              std::string_view gl_utils_path = "Main.GLUtils");
 
 // CLEANUP: improve the C API (no NULL vs "" results, no API as ABI only)
 extern "C" {

@@ -1892,8 +1892,8 @@ NodeId JLSema::resolve_sym_with_binding(SymbolId sym, BindingType bt, const Expr
         sym     = ctor_resolver.try_apply_rewrite(sym);
         sym_str = ctx.get_sym(sym);
 
-        // try to resolve in JuliaGLM before any other module
-        jl_value_t* jl_fn = ctx.jl_env.module_cache.glm_mod.get_fn(sym_str, false);
+        // try to resolve in GLUtils before any other module
+        jl_value_t* jl_fn = ctx.jl_env.module_cache.gl_utils_mod.get_fn(sym_str, false);
 
         if (jl_fn == nullptr)
             jl_fn = find_jl_function(sym_str, ctx.jl_env, false);
@@ -2105,14 +2105,14 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
                 // (this is a temporary QoL error, see CLEANUP on FieldAccess visitor)
                 if (target_td.is_vector()) {
                     return fail(
-                        "swizzle expression on assigment lhs is not allowed, to follow JuliaGLM "
+                        "swizzle expression on assigment lhs is not allowed, to follow GLUtils "
                         "semantics, e.g. my_vec.xz = Vec2(0)",
                         assign);
                 }
 
                 // "single component swizzle", i.e. vector field assignment on Julia side
                 if (target_td.is_scalar()) {
-                    return fail("assignment to vector field is not allowed, to follow JuliaGLM "
+                    return fail("assignment to vector field is not allowed, to follow GLUtils "
                                 "semantics (vectors types are immutable), i.e. my_vec.x = 0",
                                 assign);
                 }

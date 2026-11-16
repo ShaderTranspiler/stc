@@ -73,8 +73,9 @@ jobs:
         with:
           version: ${{ matrix.julia }}
 
-      - name: Install JuliaGLM
-        run: julia -e 'using Pkg; Pkg.add(url="https://github.com/Csabix/JuliaGLM", rev="v0.0.2+0")'
+      - name: Install GLUtils
+        run: julia -e 'using Pkg; Pkg.add(url="https://github.com/ELTE-IK-CG/GLUtils.jl", rev="lib_rename")'
+        # TODO: make rev point to the new tag once the PR is merged
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
