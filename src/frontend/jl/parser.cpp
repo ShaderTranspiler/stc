@@ -1,7 +1,8 @@
 #include "frontend/jl/parser.hpp"
-#include "external/tracy.hpp"
 #include "frontend/jl/type_conversion.hpp"
 #include "frontend/jl/utils.hpp"
+
+#include "external/tracy.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -795,6 +796,10 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
     ZoneScoped;
     assert(expr->head == sym_cache.function || expr->head == sym_cache.eq);
 
+    if (nargs == 1)
+        return fail("empty function declarations are currently not supported; the first method of "
+                    "a function declares the function itself.");
+
     if (nargs != 2)
         return internal_error("unexpected function definition layout, expected two argument for "
                               "both longdef and shortdef formats");
@@ -949,7 +954,7 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
     assert(expr->head == sym_cache.eq);
 
     if (nargs != 2)
-        return internal_error("unexpected assignment layut (expected two args)");
+        return internal_error("unexpected assignment layout (expected two args)");
 
     jl_value_t* lhs = jl_exprarg(expr, 0);
 
@@ -960,13 +965,27 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
 
     // x::Int = 0
     if (is_expr(lhs, sym_cache.dbl_col)) {
-        return fail("declarations of the form 'name::Type = value' are currently not supported "
-                    "(explicitly declare the variable local or global, or simply use the form "
-                    "'name = value' without the type constraint if it's not necessary)");
+        if (jl_expr_nargs(lhs) == 0) {
+            return internal_error(
+                "unexpected layout in '::'-based assignment lhs (expected at least one arg)");
+        }
+
+        // f()::Int = 0
+        jl_value_t* lhs_base = jl_exprarg(lhs, 0);
+        if (is_expr(lhs_base, sym_cache.call)) {
+            return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
+                                        &JLParser::parse_method_decl);
+        }
 
         // TODO: add proper support for independent :: exprs
         // ? tedious, since a :: expression could be a typeassert, type conversion or regular decl
         // ? requiring global/local markers resolves this confusion for now at parse time
+
+        return fail(
+            "declarations of the form 'name::Type = value' are currently not supported to "
+            "avoid confusion between type assertions and declarations at the parser level."
+            "\nFor now, explicitly declare the variable local or global, or simply use the form "
+            "'name = value' without the type constraint if it's not necessary.");
 
         // return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
         // &JLParser::parse_var_decl);
