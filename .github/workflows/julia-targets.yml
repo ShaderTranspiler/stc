@@ -13,6 +13,14 @@ on:
     outputs:
       julia:
         value: ${{ jobs.resolve.outputs.julia }}
+      # these are always fetched for now (for simplicity), since they're singleton values anyways
+      gl_utils_url:
+        value: ${{ jobs.resolve.outputs.gl_utils_url }}
+      gl_utils_rev:
+        value: ${{ jobs.resolve.outputs.gl_utils_rev }}
+      gl_utils_version:
+        value: ${{ jobs.resolve.outputs.gl_utils_version }}
+
 
 jobs:
   resolve:
@@ -20,9 +28,20 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       julia: ${{ steps.versions.outputs.julia }}
+      gl_utils_url: ${{ steps.versions.outputs.gl_utils_url }}
+      gl_utils_rev: ${{ steps.versions.outputs.gl_utils_rev }}
+      gl_utils_version: ${{ steps.versions.outputs.gl_utils_version }}
+
     steps:
       - uses: actions/checkout@v4
       - id: versions
         env:
           MODE: ${{ inputs.mode }}
-        run: echo "julia=$(python3 scripts/julia_build_matrix.py "$MODE")" >> "$GITHUB_OUTPUT"
+        run: |
+          JULIA=$(python3 scripts/julia_build_matrix.py "$MODE")
+          GL_UTILS_URL=$(python3 scripts/julia_build_matrix.py gl-utils-url)
+          GL_UTILS_REV=$(python3 scripts/julia_build_matrix.py gl-utils-rev)
+          GL_UTILS_VERSION=$(python3 scripts/julia_build_matrix.py gl-utils-version)
+
+          { echo "julia=$JULIA"; echo "gl_utils_url=$GL_UTILS_URL"; echo "gl_utils_rev=$GL_UTILS_REV";
+            echo "gl_utils_version=$GL_UTILS_VERSION"; } >> "$GITHUB_OUTPUT"

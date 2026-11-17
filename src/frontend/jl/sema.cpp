@@ -1683,11 +1683,11 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
         }
 
         // we reject these only after all that checking so that the original multi-set logic remains
-        // here for potential future use (if it's ever reintroduced into JuliaGLM)
+        // here for potential future use (if it's ever reintroduced into GLUtils)
         // it also lets us print some more specific errors, that are incorrect usage regardless of
         // whether specific swizzle sets are supported or not
         if (set != SwizzleSet::XYZW) {
-            return fail("only the xyzw swizzle set is supported (to follow JuliaGLM semantics)",
+            return fail("only the xyzw swizzle set is supported (to follow GLUtils semantics)",
                         acc);
         }
 
@@ -1905,8 +1905,8 @@ NodeId JLSema::resolve_sym_with_binding(SymbolId sym, BindingType bt, const Expr
         sym     = ctor_resolver.try_apply_rewrite(sym);
         sym_str = ctx.get_sym(sym);
 
-        // try to resolve in JuliaGLM before any other module
-        jl_value_t* jl_fn = ctx.jl_env.module_cache.glm_mod.get_fn(sym_str, false);
+        // try to resolve in GLUtils before any other module
+        jl_value_t* jl_fn = ctx.jl_env.module_cache.gl_utils_mod.get_fn(sym_str, false);
 
         if (jl_fn == nullptr)
             jl_fn = find_jl_function(sym_str, ctx.jl_env, false);
@@ -2118,13 +2118,13 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
                 // (this is a temporary QoL error, see CLEANUP on FieldAccess visitor)
                 if (target_type.is_vector()) {
                     return fail("swizzle expression cannot be used as an l-value, to follow "
-                                "JuliaGLM semantics, e.g. my_vec.xz = Vec2(0)",
+                                "GLUtils semantics, e.g. my_vec.xz = Vec2(0)",
                                 assign);
                 }
 
                 // "single component swizzle", i.e. vector field assignment on Julia side
                 if (target_type.is_scalar()) {
-                    return fail("assignment to vector field is not allowed, to follow JuliaGLM "
+                    return fail("assignment to vector field is not allowed, to follow GLUtils "
                                 "semantics (vectors types are immutable), i.e. my_vec.x = 0",
                                 assign);
                 }
@@ -2774,9 +2774,9 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
                    "call to null type identified as a ctor call by target info");
             const auto& target_td = tpool.get_td(target_type);
 
-            // oversized vector construction, JuliaGLM requires matching component count or single
+            // oversized vector construction, GLUtils requires matching component count or single
             // scalar construction
-            // valid_ctor_call accepts it so that TargetInfo remains JuliaGLM-agnostic
+            // valid_ctor_call accepts it so that TargetInfo remains GLUtils-agnostic
             if (is_targeting_glsl() && target_td.is_vector()) {
                 uint32_t component_accum = 0;
                 for (TypeId arg_type : arg_types) {
@@ -2786,7 +2786,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
                     else if (arg_td.is_vector())
                         component_accum += arg_td.as<VectorTD>().component_count;
                     else
-                        return fail("construction of vector is not JuliaGLM-compatible", fn_call);
+                        return fail("construction of vector is not GLUtils-compatible", fn_call);
                 }
 
                 if (target_td.as<VectorTD>().component_count != component_accum &&
@@ -2795,7 +2795,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
                     // rejected in valid_ctor_call
                     return fail(fmt::format("oversized construction of vector type {}: expected {} "
                                             "components, got {} (this restriction is applied to "
-                                            "follow JuliaGLM semantics)",
+                                            "follow GLUtils semantics)",
                                             type_str(target_type),
                                             target_td.as<VectorTD>().component_count,
                                             component_accum),

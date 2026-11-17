@@ -90,7 +90,7 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
                 return ctx.jl_UInt64_t();
         }
 
-        jl_value_t* type_val = jl_get_global(ctx.jl_env.module_cache.glm_mod, tsym);
+        jl_value_t* type_val = jl_get_global(ctx.jl_env.module_cache.gl_utils_mod, tsym);
 
         if (type_val == nullptr)
             type_val = jl_get_global(ctx.jl_env.module_cache.main_mod, tsym);

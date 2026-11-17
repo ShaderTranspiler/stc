@@ -1,6 +1,6 @@
 # COMMENT: written by Claude, reviewed by szgerii
 
-# COMMENT: Base gives these a different meaning than the GLSL builtins of the same name, so they're rejected (JuliaGLM.length, JuliaGLM.max, ... or the dotted forms give the GLSL meaning)
+# COMMENT: Base gives these a different meaning than the GLSL builtins of the same name, so they're rejected (GLUtils.length, GLUtils.max, ... or the dotted forms give the GLSL meaning)
 
 function main()
     local v::Vec3F = Vec3F(1)

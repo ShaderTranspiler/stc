@@ -1,6 +1,6 @@
 # COMMENT: written by Claude, reviewed by szgerii
 
-# COMMENT: these aren't defined in Julia without qualification (step is, but only for ranges), JuliaGLM's GLSL-style versions have to be called as JuliaGLM.dot, JuliaGLM.mix, ...
+# COMMENT: these aren't defined in Julia without qualification (step is, but only for ranges), GLUtils's GLSL-style versions have to be called as GLUtils.dot, GLUtils.mix, ...
 
 function main()
     local x::Float32 = 1.5f0

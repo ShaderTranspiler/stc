@@ -193,8 +193,8 @@ TranspilationResult transpile_impl(jl_value_t* expr_v, const stc::TranspilerConf
     timer.start("Resource init");
 
     const auto& init_sizes = config.initial_pool_sizes;
-    JLCtx jl_ctx{config.julia_glm_path, init_sizes.julia_node_pool, init_sizes.source_info_pool,
-                 init_sizes.type_pool,  init_sizes.symbol_pool,     init_sizes.qualifier_pool};
+    JLCtx jl_ctx{config.gl_utils_path, init_sizes.julia_node_pool, init_sizes.source_info_pool,
+                 init_sizes.type_pool, init_sizes.symbol_pool,     init_sizes.qualifier_pool};
 
     // CLEANUP: check if we can avoid this copy freely by making a context's config non-owning
     jl_ctx.config = config;
@@ -256,7 +256,7 @@ TranspilationResult transpile_impl(std::string_view code, const stc::TranspilerC
     // OPTIMIZE: we currently only have utils for function lookup via the whole runtime env
     // interface and its subcomponents (like the module cache), so we're being a bit wasteful
     // here and initializing a temporary module cache to run the lookup logic
-    rt::JuliaModuleCache temp_module_cache{config.julia_glm_path};
+    rt::JuliaModuleCache temp_module_cache{config.gl_utils_path};
 
     jl_value_t* expr_v = nullptr;
     JL_GC_PUSH1(&expr_v);
