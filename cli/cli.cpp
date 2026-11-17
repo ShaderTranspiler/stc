@@ -211,7 +211,7 @@ int run(int argc, char* argv[]) {
 
     const ScopeGuard jl_guard{[]() { jl_atexit_hook(0); }};
 
-    STC_EVAL_AND_CHECK("using JuliaGLM");
+    STC_EVAL_AND_CHECK("using GLUtils");
 
     std::cout << "Starting transpilation...\n";
 

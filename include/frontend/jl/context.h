@@ -25,7 +25,7 @@ public:
     #undef X
     // clang-format on
 
-    explicit JLCtx(std::string_view juliaglm_path = "Main.JuliaGLM",
+    explicit JLCtx(std::string_view gl_utils_path = "Main.GLUtils",
                    const TargetInfo* target_info = nullptr, NodeId::id_type node_arena_kb = 128U,
                    SrcLocationId::id_type src_info_arena_kb = 128U,
                    TypeId::id_type type_arena_kb = 32U, SymbolId::id_type sym_arena_kb = 64U,
@@ -37,7 +37,7 @@ public:
                  type_arena_kb,
                  sym_arena_kb,
                  qual_arena_kb},
-          jl_env{juliaglm_path} {
+          jl_env{gl_utils_path} {
 
         init_jl_types();
     }

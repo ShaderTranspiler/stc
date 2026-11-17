@@ -52,6 +52,8 @@ It (or equivalently `main`) should be merged back into `develop` after every pub
 
 Not merging back release work per commit, only per release is meant to reduce the frequency of having to integrate target version changes into next-release ones, while maintaining a consistent routine.
 
+NOTE: A `release` branch may exceptionally open from `main`, if `develop` is far from reaching a release-ready state, but a dependency or some other external factor dictates that we roll out a new major or minor version ASAP.
+
 ## Short-lived Branches
 
 ### `feature/*`

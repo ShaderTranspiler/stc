@@ -66,12 +66,13 @@ A more high level Julia abstraction is available in the [ShaderTranspiler.jl](ht
 Building the transpiler requires:
 - **CMake 3.21** or newer (this is what BinaryBuilder pins so it's tested at every release)
 - a **C++20** compiler (GCC is recommended, clang and MSVC are also supported)
-- a **v1.12** or newer **Julia** installation (for specifics, see [julia_targets.toml](julia_targets.toml))
+- **Julia v1.12** or newer (for specifics, see [julia_targets.toml](julia_targets.toml))
+- **GLUtils v0.0.3** (exact version, see [julia_targets.toml](julia_targets.toml))
 
 Everything else is optional and automatically fetched by CMake when needed, or only enabled if available (see [Building the Project](#building-the-project)).
 
-Note that transpilation currently requires [JuliaGLM](https://github.com/Csabix/JuliaGLM) v0.0.2 to be available in the Julia environment, since the shader types and builtins the transpiler refers to are all defined there.
-This requirement is completely independent from building, JuliaGLM is needed during the runtime of the transpiler.
+Note that transpilation currently requires [GLUtils](https://github.com/ELTE-IK-CG/GLUtils.jl) v0.0.3 to be available in the Julia environment, since the shader types and builtins the transpiler refers to are all defined there.
+This requirement is completely independent from building, GLUtils is needed during the runtime of the transpiler.
 
 # Getting Started
 
@@ -169,7 +170,7 @@ static constexpr std::string_view julia_code = "...";
 
 int main() {
     jl_init(); // init a Julia context for the transpiler
-    jl_eval_string("using JuliaGLM"); // JuliaGLM is required for transpilation
+    jl_eval_string("using GLUtils"); // GLUtils is required for transpilation
 
     stc::TranspilerConfig cfg{};
     cfg.use_tabs = true; // supports mostly the same options as the CLI
@@ -214,7 +215,7 @@ int main() {
         return EXIT_FAILURE;
 
     jl_init();
-    jl_eval_string("using JuliaGLM");
+    jl_eval_string("using GLUtils");
 
     void* cfg_handle = stc_create_cfg();
     if (cfg_handle == NULL) // failed config creation (unlikely)
@@ -264,11 +265,11 @@ Take a look at `sandbox/sb_example_sandbox.cpp` for a slightly more robust and d
 
 For Julia users, the [ShaderTranspiler.jl](https://github.com/ShaderTranspiler/ShaderTranspiler.jl) package is the recommended inclusion method. It handles pulling in the correct version of the library and abstracts away C's lower level memory model and type system behind high-level Julia types. It also provides access directly to the C API without manual `ccall`s, so it's recommended even for C-style usage.
 
-Since none of [JuliaGLM](https://github.com/Csabix/JuliaGLM), [stc_jll](https://github.com/ShaderTranspiler/stc_jll.jl) (hosting the prebuilt binaries for Julia access) and [ShaderTranspiler.jl](https://github.com/ShaderTranspiler/ShaderTranspiler.jl) are available in the general registry, they have to be manually added through their GitHub repositories:
+Since none of [GLUtils](https://github.com/ELTE-IK-CG/GLUtils.jl), [stc_jll](https://github.com/ShaderTranspiler/stc_jll.jl) (hosting the prebuilt binaries for Julia access) and [ShaderTranspiler.jl](https://github.com/ShaderTranspiler/ShaderTranspiler.jl) are available in the general registry, they have to be manually added through their GitHub repositories:
 ```bash
 $ julia
 julia> ]
-pkg> add https://github.com/Csabix/JuliaGLM
+pkg> add https://github.com/ELTE-IK-CG/GLUtils.jl
 pkg> add https://github.com/ShaderTranspiler/stc_jll.jl
 pkg> add https://github.com/ShaderTranspiler/ShaderTranspiler.jl
 ```

@@ -49,7 +49,7 @@ TEST_CASE("Transpile Example Julia Shaders", "[Transpiler]") {
     jl_init();
     REQUIRE_FALSE(jl::check_exceptions());
 
-    jl_eval_string("using JuliaGLM");
+    jl_eval_string("using GLUtils");
     REQUIRE_FALSE(jl::check_exceptions());
 
     SECTION("sdf_disk.jl") {
