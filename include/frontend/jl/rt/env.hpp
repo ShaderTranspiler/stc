@@ -17,8 +17,8 @@ struct JuliaRTEnv {
     JuliaSymbolCache symbol_cache{};
     JuliaTypeCache type_cache;
 
-    explicit JuliaRTEnv(std::string_view julia_glm_path)
-        : module_cache{julia_glm_path}, type_cache{module_cache} {}
+    explicit JuliaRTEnv(std::string_view gl_utils_path)
+        : module_cache{gl_utils_path}, symbol_cache{}, type_cache{module_cache} {}
 };
 
 } // namespace stc::jl::rt

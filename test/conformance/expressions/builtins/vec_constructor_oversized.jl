@@ -1,4 +1,4 @@
-# COMMENT: this would be valid GLSL, but JuliaGLM explicitly rejects it
+# COMMENT: this would be valid GLSL, but GLUtils explicitly rejects it
 
 function main()
     f = 1.0f0

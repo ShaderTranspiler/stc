@@ -239,7 +239,7 @@ extern "C" {
     STC_API void stc_set_local_size    (STC_ConfigHandle cfg_handle, uint32_t x, uint32_t y, uint32_t z) STC_NOEXCEPT;
 
     // Julia
-    STC_API void stc_set_julia_glm_path    (STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
+    STC_API void stc_set_gl_utils_path     (STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
     STC_API void stc_set_fallback_file_path(STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
 
     // Tracking and debug dumping

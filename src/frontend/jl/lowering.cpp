@@ -786,12 +786,13 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
         const auto& mod = maybe_mod->get();
 
         bool valid_mod = mod.mod_ptr() == mod_cache.base_mod.mod_ptr() ||
-                         mod.mod_ptr() == mod_cache.glm_mod.mod_ptr() ||
+                         mod.mod_ptr() == mod_cache.gl_utils_mod.mod_ptr() ||
                          mod.mod_ptr() == mod_cache.main_mod.mod_ptr();
-        if (!valid_mod)
+        if (!valid_mod) {
             return fail("cannot lower call to module-resolved function not available from Main, "
-                        "Base or JuliaGLM",
+                        "Base or GLUtils",
                         fn_call);
+        }
     }
 
     auto* decl_expr = ctx.get_node(dre != nullptr ? dre->decl : dc->resolved_expr);

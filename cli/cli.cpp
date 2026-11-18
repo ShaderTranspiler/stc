@@ -295,9 +295,9 @@ int run(int argc, char* argv[]) {
     const ScopeGuard jl_guard{[] { jl_atexit_hook(0); }};
 
     if (!quiet)
-        std::cout << "Importing JuliaGLM...\n";
+        std::cout << "Importing GLUtils...\n";
 
-    STC_EVAL_AND_CHECK("using JuliaGLM");
+    STC_EVAL_AND_CHECK("using GLUtils");
 
     if (!pre_eval_path.empty()) {
         if (!std::filesystem::exists(pre_eval_path)) {

@@ -73,15 +73,15 @@ STC_STATIC_ASSERT_SAME_SIZE(qualifier_pool,   types::QualId);
 /// @important We try to validate config values, but some of it is simply not possible before
 /// transpilation actually tries to use it, as an invalid value is indistinguishable from a valid
 /// one. For that reason, an invalid configuration may raise an internal error instead of a code
-/// error. For example, if we fail to resolve the JuliaGLM module, it's difficult to tell if it's
-/// because the user provided an invalid julia_glm_path in the config, or if our module lookup logic
+/// error. For example, if we fail to resolve the GLUtils module, it's difficult to tell if it's
+/// because the user provided an invalid gl_utils_path in the config, or if our module lookup logic
 /// is wrong (or the libjulia logic for this changed between Julia versions). To err on the side of
 /// caution, we treat this strictly and report an internal error instead of assuming the user messed
 /// up, so that we don't send them on a long goose chase, looking for an issue on their side that
 /// doesn't exist. However, if a config-related internal error is raised, users should check the
 /// affected config options to see if it's their mistake or the transpiler's.
 struct TranspilerConfig {
-    static constexpr std::string_view default_julia_glm_path = "Main.JuliaGLM";
+    static constexpr std::string_view default_gl_utils_path  = "Main.GLUtils";
     static constexpr std::string_view default_target_version = "460";
 
     // General
@@ -95,8 +95,8 @@ struct TranspilerConfig {
     /// reports, for input code that does not carry the information on its own
     std::optional<std::string> fallback_file_path{};
 
-    /// Specifies the lookup path of the JuliaGLM module in the current Julia instance
-    std::string julia_glm_path{default_julia_glm_path};
+    /// Specifies the lookup path of the GLUtils module in the current Julia instance
+    std::string gl_utils_path{default_gl_utils_path};
 
     // GLSL
     /// The GLSL target version emitted into the generated code

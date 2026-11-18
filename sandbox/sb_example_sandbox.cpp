@@ -26,11 +26,11 @@ int main() {
         // sandboxes are free to use libstc internals (like the ScopeGuard util)
         const stc::ScopeGuard jl_guard{[] { jl_atexit_hook(0); }};
 
-        jl_eval_string("using JuliaGLM"); // JuliaGLM is required for transpilation
+        jl_eval_string("using GLUtils"); // GLUtils is required for transpilation
 
         // always check for Julia-side errors
         if (stc::jl::check_exceptions()) {
-            std::cerr << "couldn't initialize Julia runtime (JuliaGLM might not be available in "
+            std::cerr << "couldn't initialize Julia runtime (GLUtils might not be available in "
                          "current environment)\n";
             return EXIT_FAILURE;
         }
@@ -39,15 +39,15 @@ int main() {
         // error check omitted for brevity
 
         // clang-format off
-    // julia_code must represent a compound expression
-    static constexpr std::string_view julia_code =
-        "begin\n"
-            "@gl_out global frag_col::Vec4\n"
-            "function main()\n"
-            "    global frag_col::Vec4\n"
-            "    frag_col = Vec4(0, 1, 0, 1)\n"
-            "end\n"
-        "end\n";
+        // julia_code must represent a compound expression
+        static constexpr std::string_view julia_code =
+            "begin\n"
+                "@gl_out global frag_col::Vec4\n"
+                "function main()\n"
+                "    global frag_col::Vec4\n"
+                "    frag_col = Vec4(0, 1, 0, 1)\n"
+                "end\n"
+            "end\n";
         // clang-format on
 
         // see docs for using the transpiler's public C++ API

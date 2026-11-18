@@ -27,7 +27,7 @@ public:
     #undef X
     // clang-format on
 
-    explicit JLCtx(std::string_view julia_glm_path, NodeId::id_type initial_node_arena_size,
+    explicit JLCtx(std::string_view gl_utils_path, NodeId::id_type initial_node_arena_size,
                    SrcLocationId::id_type initial_src_info_arena_size,
                    TypeId::id_type initial_type_arena_size,
                    SymbolId::id_type initial_symbol_arena_size,
@@ -41,7 +41,7 @@ public:
                  {{BuiltinTypeKind::Nothing}, {BuiltinTypeKind::String}, {BuiltinTypeKind::Symbol}},
                  target_info,
                  "Julia Node Pool"},
-          jl_env{julia_glm_path} {
+          jl_env{gl_utils_path} {
         init_jl_types();
     }
 

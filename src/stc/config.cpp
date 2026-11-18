@@ -130,16 +130,16 @@ extern "C" {
         conf.local_size_z = z;
     }
 
-    STC_API void stc_set_julia_glm_path(STC_ConfigHandle cfg_handle, const char* value) noexcept {
+    STC_API void stc_set_gl_utils_path(STC_ConfigHandle cfg_handle, const char* value) noexcept {
         if (cfg_handle == STC_NULL_CONFIG)
             return;
 
         auto& config = *static_cast<TranspilerConfig*>(cfg_handle);
         try {
             if (value != nullptr)
-                config.julia_glm_path = std::string{value};
+                config.gl_utils_path = std::string{value};
             else
-                config.julia_glm_path = TranspilerConfig::default_julia_glm_path;
+                config.gl_utils_path = TranspilerConfig::default_gl_utils_path;
         } catch (...) {}
     }
 

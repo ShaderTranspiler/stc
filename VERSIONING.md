@@ -64,6 +64,11 @@ The stc version says nothing about which Julia versions a build works with. Thos
 
 A given stc release is built once per supported Julia series. Users on any patch within a supported series resolve the same artifact for that series. The supported series are listed in `julia_targets.toml`. They may change between stc minor versions, but patch versions never break or change Julia compatibility.
 
+### GLUtils Compatibility
+
+The currently supported version is determined similarly to the Julia version and can be found in `julia_targets.toml`, under `[[gl_utils]]`.
+For now, a single build only supports a single GLUtils version, since GLUtils is still in its `0.0.x` phase, meaning even patch releases might break backwards compatibility.
+
 ## Publishing a Release
 
 Pushing to `main` runs the release workflow, which reads the version block and branches on whether a suffix is present:
