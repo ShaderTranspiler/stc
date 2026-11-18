@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace {
 
@@ -286,32 +287,79 @@ void GLSLCodeGenVisitor::visit_IntLiteral(IntLiteral& int_lit) {
         out << 'u';
 }
 
-void GLSLCodeGenVisitor::visit_FloatLiteral(FloatLiteral& float_lit) {
-    assert(!float_lit.type().is_null());
-    const auto& lit_td = ctx.type_pool.get_td(float_lit.type());
-    assert(lit_td.is<FloatTD>());
+namespace {
 
-    FloatTD float_td = lit_td.as<FloatTD>();
+template <typename T>
+requires (CIsAnyOf<T, float, double>)
+void print_float_value(T value, std::ostream& out) {
+    // there are no constants in GLSL, so we go do some uint tricks
+    // these relies on behavior taken from the 4.60 version of the GLSL spec
+    // also this doesn't take into account quiet vs signalling, min vs max (since NaN semantics are
+    // different on the GPU anyways)
+    if (!std::isfinite(value)) {
+        if constexpr (std::same_as<T, float>) {
+            std::string_view bits_as_uint =
+                std::isnan(value) ? "0x7FC00000u"
+                                  : (std::signbit(value) ? "0xFF800000u" : "0x7F800000u");
 
-    if (float_td.enc != FloatTD::Encoding::ieee754) {
-        fail("The GLSL backend does not support non-IEEE754 floating point types", float_lit);
+            out << "uintBitsToFloat(" << bits_as_uint << ")";
+        } else { // double
+            std::string_view bits_as_uint_hi =
+                std::isnan(value) ? "0x7FF80000u"
+                                  : (std::signbit(value) ? "0xFFF00000u" : "0x7FF00000u");
+
+            out << "packDouble2x32(uvec2(0u," << bits_as_uint_hi << "))";
+        }
+
         return;
     }
 
-    if (float_td.width != 32 && float_td.width != 64) {
-        fail(fmt::format("The GLSL backend does not support floating point types with width {} "
-                         "(allowed: 32 or 64)",
-                         float_td.width),
-             float_lit);
-        return;
-    }
+    // keep the string buffer on the stack since we know it's max size
+    // fmt does shortest roundtrip for default float formatting
+    // for a double the max number of digits is 24, so 32 here should be enough
+    std::array<char, 32> buffer{};
 
-    out << float_lit.value;
+    // we also do a debug-only bounds check to validate the above reasoning
+    auto fmt_result = fmt::format_to_n(buffer.data(), buffer.size(), "{}", value);
+    assert(fmt_result.size <= buffer.size()); // total output size, pre-truncation to n
 
-    if (float_td.width == 32)
+    // fmt does NOT append a null-terminator
+    std::string_view value_sv{buffer.data(), static_cast<size_t>(fmt_result.out - buffer.data())};
+
+    out << value_sv;
+    if (value_sv.find_first_of(".e") == std::string::npos)
+        out << ".0";
+
+    if constexpr (std::same_as<T, float>)
         out << 'f';
     else
         out << "lf";
+}
+
+} // namespace
+
+void GLSLCodeGenVisitor::visit_FloatLiteral(FloatLiteral& float_lit) {
+    assert(!float_lit.type().is_null());
+#ifndef NDEBUG
+    const auto& lit_td = ctx.type_pool.get_td(float_lit.type());
+    assert(lit_td.is<FloatTD>());
+    assert(lit_td.as<FloatTD>().enc == FloatTD::Encoding::ieee754);
+    assert(lit_td.as<FloatTD>().width == 32);
+#endif
+
+    print_float_value(float_lit.value, out);
+}
+
+void GLSLCodeGenVisitor::visit_DoubleLiteral(DoubleLiteral& double_lit) {
+    assert(!double_lit.type().is_null());
+#ifndef NDEBUG
+    const auto& lit_td = ctx.type_pool.get_td(double_lit.type());
+    assert(lit_td.is<FloatTD>());
+    assert(lit_td.as<FloatTD>().enc == FloatTD::Encoding::ieee754);
+    assert(lit_td.as<FloatTD>().width == 64);
+#endif
+
+    print_float_value(double_lit.value, out);
 }
 
 void GLSLCodeGenVisitor::visit_VectorLiteral(VectorLiteral& vec_lit) {

@@ -75,6 +75,10 @@ extern "C" {
         STC_SET_CFG_VALUE(cfg_handle, coerce_to_i32, value);
     }
 
+    STC_API void stc_set_coerce_non_finite(STC_ConfigHandle cfg_handle, bool value) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, coerce_non_finite, value);
+    }
+
     STC_API void stc_set_capture_uniforms(STC_ConfigHandle cfg_handle, bool value) noexcept {
         STC_SET_CFG_VALUE(cfg_handle, capture_uniforms, value);
     }
