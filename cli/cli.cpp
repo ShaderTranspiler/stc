@@ -156,6 +156,8 @@ int run(int argc, char* argv[]) {
             config.capture_uniforms = false;
         else if (arg == "-Wjl-query")
             config.warn_on_jl_sema_query = true;
+        else if (arg == "-Wstrict-conformance")
+            config.warn_strict_conformance = true;
         else if (arg == "--skip-no-commit")
             add_no_commit = false;
         else if (arg == "--error-dump") {

@@ -398,7 +398,7 @@ struct BinaryOp : public Expr {
         leq,    gt,    geq,
         land,   lor,   lxor,
         band,   bor,   bxor,
-        lshift, rshift
+        lshift, rshift,
     };
     // clang-format on
 

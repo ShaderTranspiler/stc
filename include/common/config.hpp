@@ -148,6 +148,14 @@ struct TranspilerConfig {
     /// If true, per-phase arena memory usage will be recorded and printed to stdout during
     /// transpilation
     bool track_memory = false;
+
+    /// If true, the transpiler emits warnings when encountering code which lowers with slightly
+    /// different semantics to GLSL. This includes domain differences of builtin functions,
+    /// conditions Julia will throw an error for at runtime, while GLSL treats it undefined, etc.
+    /// @important This feature is experimental! It is only partially implemented for now, with more
+    /// cases to be reported soon. Using it does not guarantee that every semantic difference will
+    /// be reported by the transpiler.
+    bool warn_strict_conformance = false;
 };
 
 /// @}

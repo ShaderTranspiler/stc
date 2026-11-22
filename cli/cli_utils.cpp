@@ -98,7 +98,8 @@ constexpr std::array errors_and_warnings_entries{
     HelpEntry{"--error-dump none",    "disable AST dumping on errors (default)"},
     HelpEntry{"--error-dump partial", "dump the AST subtree that caused the given error"},
     HelpEntry{"--error-dump verbose", "dump the full AST at every error reported"},
-    HelpEntry{"-Wjl-query",         "warn when the Julia runtime was queried for function call resolution"},
+    HelpEntry{"-Wjl-query",           "warn when the Julia runtime was queried for function call resolution"},
+    HelpEntry{"-Wstrict-conformance", "warn when the lowered code has minor semantic differences, like a function's treatment of an out-of-domain argument (EXPERIMENTAL!)"},
 };
 
 constexpr std::array help_categories{

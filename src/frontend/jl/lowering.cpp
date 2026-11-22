@@ -747,6 +747,17 @@ SIRNodeId JLLoweringVisitor::visit_UpdateAssignment(UpdateAssignment& up_assign)
                 sir_ctx.get_sym(op_sym)),
             up_assign);
 
+    if ((op == BinOpKind::lshift || op == BinOpKind::rshift) &&
+        sir_ctx.config.warn_strict_conformance) {
+        std::string_view op_str = op == BinOpKind::lshift ? "<<=" : ">>=";
+        const auto& [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(up_assign.location);
+        warning(file, loc,
+                fmt::format("STRICT CONFORMANCE: Julia allows update assignment via '{}' to take "
+                            "negative values, as well as counts greater or equal to the bit width. "
+                            "GLSL leaves these cases undefined.",
+                            op_str));
+    }
+
     SIRNodeId lo_target = visit_and_check(up_assign.target);
     SIRNodeId lo_value  = visit_and_check(up_assign.value);
 
@@ -839,6 +850,19 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
         // in glsl, all binary operations are left to right assoc, so this is fine for now
         if (maybe_op.has_value()) {
             BinOpKind op = *maybe_op;
+
+            if ((op == BinOpKind::lshift || op == BinOpKind::rshift) &&
+                sir_ctx.config.warn_strict_conformance) {
+                std::string_view op_str = op == BinOpKind::lshift ? "<<" : ">>";
+                const auto& [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(fn_call.location);
+                warning(
+                    file, loc,
+                    fmt::format(
+                        "STRICT CONFORMANCE: Julia allows operator '{}' to take negative counts, "
+                        "as well as counts greater or equal to the bit width. GLSL leaves these "
+                        "cases undefined.",
+                        op_str));
+            }
 
             size_t args_n     = fn_call.args.size();
             SIRNodeId lhs_ite = visit_and_check(fn_call.args[0]);
@@ -978,11 +1002,14 @@ std::optional<sir::BinaryOp::OpKind> JLLoweringVisitor::sym_to_bin_op(SymbolId s
         return BinOpKind::band;
     if (sym == sym_pipe)
         return BinOpKind::bor;
+    if (sym == sym_dbl_langle) // <<
+        return BinOpKind::lshift;
+    if (sym == sym_dbl_rangle) // >>
+        return BinOpKind::rshift;
 
     if (sym == sym_xor) {
         if (in_logical_ctx)
             return BinOpKind::lxor;
-
         return BinOpKind::bxor;
     }
 

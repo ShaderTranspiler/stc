@@ -218,6 +218,7 @@ extern "C" {
 
     // errors, warnings
     STC_API void stc_set_warn_on_jl_sema_query    (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_warn_strict_conformance  (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
     STC_API void stc_set_dump_scopes              (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
     STC_API void stc_set_print_convert_fail_reason(STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
 
