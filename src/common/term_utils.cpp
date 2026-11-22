@@ -17,7 +17,8 @@ bool TerminalInfo::supports_color() {
         return supported;
     inited = true;
 
-#ifdef _WIN32
+#ifdef _MSC_VER
+    // MSVC marks getenv as deprecated
     char* dupenv_buf{};
     errno_t dupenv_result = _dupenv_s(&dupenv_buf, nullptr, "NO_COLOR");
 
