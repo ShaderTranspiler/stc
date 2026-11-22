@@ -164,8 +164,10 @@ void setup_process() {
     // until user interaction happens
     // this would also prevent debuggers from breaking on a failing assert, so we only do this if no
     // debugger is attached (only abort behavior affects this, not the general error mode)
+    #ifdef _MSC_VER // _set_abort_behavior doesn't work on BinaryBuilder's MinGW
     if (IsDebuggerPresent() == FALSE)
         _set_abort_behavior(0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
+    #endif
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
 }
