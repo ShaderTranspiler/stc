@@ -11,11 +11,12 @@
 
 #include "stc/export.h"
 
-// this is what libjulia typedefs to jl_value_t
-// since this is the only libjulia symbol the transpiler API needs, we just forward declare it
-// instead of pulling in the entirety of julia.h
-// has a static_assert tying it to jl_value_t in c_api.cpp to catch libjulia drift
+// these are what libjulia typedefs to jl_value_t and jl_module_t respectively
+// since these are the only two libjulia symbols the transpiler API needs, we just forward declare
+// them instead of pulling in the entirety of julia.h
+// they have a static_assert tying them to their typedef in c_api.cpp to catch libjulia drift
 struct _jl_value_t;
+struct _jl_module_t;
 
 #ifdef __cplusplus
 
@@ -241,6 +242,7 @@ extern "C" {
 
     // Julia
     STC_API void stc_set_gl_utils_path     (STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
+    STC_API void stc_set_gl_utils_mod      (STC_ConfigHandle cfg_handle, struct _jl_module_t* value) STC_NOEXCEPT;
     STC_API void stc_set_fallback_file_path(STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
 
     // Tracking and debug dumping

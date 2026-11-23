@@ -193,8 +193,27 @@ TranspilationResult transpile_impl(jl_value_t* expr_v, const stc::TranspilerConf
     timer.start("Resource init");
 
     const auto& init_sizes = config.initial_pool_sizes;
-    JLCtx jl_ctx{config.gl_utils_path, init_sizes.julia_node_pool, init_sizes.source_info_pool,
-                 init_sizes.type_pool, init_sizes.symbol_pool,     init_sizes.qualifier_pool};
+
+    // kinda hack, but works across gcc/clang/msvc
+    // on gcc and clang the make_jl_ctx would be enough with a ternary, but msvc materializes the
+    // two branches as temporaries, requiring JLCtx to be move constructible instead of performing
+    // copy elision. we do an extra callback to enforce guaranteed copy elision on msvc too.
+    // at the end of the day these should (hopefully) compile away in Release.
+    auto make_jl_ctx = [&init_sizes](const auto& gl_utils) {
+        return JLCtx{
+            gl_utils,
+            init_sizes.julia_node_pool,
+            init_sizes.source_info_pool,
+            init_sizes.type_pool,
+            init_sizes.symbol_pool,
+            init_sizes.qualifier_pool,
+        };
+    };
+    JLCtx jl_ctx = [&]() -> JLCtx {
+        if (config.gl_utils_mod != nullptr)
+            return make_jl_ctx(config.gl_utils_mod);
+        return make_jl_ctx(config.gl_utils_path);
+    }();
 
     // CLEANUP: check if we can avoid this copy freely by making a context's config non-owning
     jl_ctx.config = config;
@@ -256,7 +275,15 @@ TranspilationResult transpile_impl(std::string_view code, const stc::TranspilerC
     // OPTIMIZE: we currently only have utils for function lookup via the whole runtime env
     // interface and its subcomponents (like the module cache), so we're being a bit wasteful
     // here and initializing a temporary module cache to run the lookup logic
-    rt::JuliaModuleCache temp_module_cache{config.gl_utils_path};
+    // also, see JLCtx construction in jl_value_t* overload for reasoning about the whole callback
+    // wrapper instead of a simple ternary (it's an msvc thing)
+    timer.start("Temp module cache init", false);
+    rt::JuliaModuleCache temp_module_cache = [&]() -> rt::JuliaModuleCache {
+        if (config.gl_utils_mod != nullptr)
+            return rt::JuliaModuleCache{config.gl_utils_mod};
+        return rt::JuliaModuleCache{config.gl_utils_path};
+    }();
+    timer.end();
 
     jl_value_t* expr_v = nullptr;
     JL_GC_PUSH1(&expr_v);

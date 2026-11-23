@@ -4,7 +4,9 @@
 #include "frontend/jl/ast.hpp"
 #include "frontend/jl/rt/env.hpp"
 
+#include <concepts>
 #include <ostream>
+#include <utility>
 
 namespace stc::jl {
 
@@ -33,18 +35,61 @@ public:
                    SymbolId::id_type initial_symbol_arena_size,
                    QualId::id_type initial_qualifier_arena_size,
                    const TargetInfo* target_info = nullptr)
-        : ASTCtx{initial_node_arena_size,
-                 initial_src_info_arena_size,
-                 initial_type_arena_size,
-                 initial_symbol_arena_size,
-                 initial_qualifier_arena_size,
-                 {{BuiltinTypeKind::Nothing}, {BuiltinTypeKind::String}, {BuiltinTypeKind::Symbol}},
-                 target_info,
-                 "Julia Node Pool"},
-          jl_env{gl_utils_path} {
+        : JLCtx{std::in_place,
+                gl_utils_path,
+                initial_node_arena_size,
+                initial_src_info_arena_size,
+                initial_type_arena_size,
+                initial_symbol_arena_size,
+                initial_qualifier_arena_size,
+                target_info} {}
+
+    explicit JLCtx(jl_module_t* gl_utils_mod, NodeId::id_type initial_node_arena_size,
+                   SrcLocationId::id_type initial_src_info_arena_size,
+                   TypeId::id_type initial_type_arena_size,
+                   SymbolId::id_type initial_symbol_arena_size,
+                   QualId::id_type initial_qualifier_arena_size,
+                   const TargetInfo* target_info = nullptr)
+        : JLCtx{std::in_place,
+                gl_utils_mod,
+                initial_node_arena_size,
+                initial_src_info_arena_size,
+                initial_type_arena_size,
+                initial_symbol_arena_size,
+                initial_qualifier_arena_size,
+                target_info} {}
+
+private:
+    // templated like this to avoid ASTCtx ctor logic duplication
+    // kept private because I don't wanna unnecessarily expose this implementation detail
+    // it does currently assume that jl_env is constructed from a single arg, which is taken by
+    // value, since the two current arg types (jl_module_t* and std::string_view) are both something
+    // we wanna take by value anyways
+    // in_place_t (or some other tag) is required to separate from public ctors
+    template <typename JLEnvCtorArgTy>
+    requires std::constructible_from<rt::JuliaRTEnv, JLEnvCtorArgTy>
+    explicit JLCtx(std::in_place_t, JLEnvCtorArgTy jl_env_ctor_arg,
+                   NodeId::id_type initial_node_arena_size,
+                   SrcLocationId::id_type initial_src_info_arena_size,
+                   TypeId::id_type initial_type_arena_size,
+                   SymbolId::id_type initial_symbol_arena_size,
+                   QualId::id_type initial_qualifier_arena_size,
+                   const TargetInfo* target_info = nullptr)
+        : ASTCtx{
+              initial_node_arena_size,
+              initial_src_info_arena_size,
+              initial_type_arena_size,
+              initial_symbol_arena_size,
+              initial_qualifier_arena_size,
+              {{BuiltinTypeKind::Nothing}, {BuiltinTypeKind::String}, {BuiltinTypeKind::Symbol}},
+              target_info,
+              "Julia Node Pool",
+          },
+          jl_env{jl_env_ctor_arg} {
         init_jl_types();
     }
 
+public:
     JLCtx(const JLCtx&)            = delete;
     JLCtx& operator=(const JLCtx&) = delete;
 

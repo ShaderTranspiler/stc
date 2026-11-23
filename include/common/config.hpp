@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "common/id_types.hpp"
+#include "external/julia.hpp"
 
 namespace stc {
 
@@ -96,7 +97,12 @@ struct TranspilerConfig {
     std::optional<std::string> fallback_file_path{};
 
     /// Specifies the lookup path of the GLUtils module in the current Julia instance
+    /// @note If @a gl_utils_path is not @c nullptr, this value will be ignored.
     std::string gl_utils_path{default_gl_utils_path};
+    /// Specifies the concrete Julia module storing GLUtils. This should be preferred whenever it's
+    /// available over gl_utils_path.
+    /// @note If this value is not @c nullptr (default value), @a gl_utils_path is ignored.
+    jl_module_t* gl_utils_mod{};
 
     // GLSL
     /// The GLSL target version emitted into the generated code

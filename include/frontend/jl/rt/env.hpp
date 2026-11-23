@@ -4,6 +4,8 @@
 #include "frontend/jl/rt/sym_cache.hpp"
 #include "frontend/jl/rt/type_cache.hpp"
 
+#include "external/julia.hpp"
+
 namespace stc::jl::rt {
 
 // ! IMPORTANT !
@@ -16,6 +18,9 @@ struct JuliaRTEnv {
     JuliaModuleCache module_cache;
     JuliaSymbolCache symbol_cache{};
     JuliaTypeCache type_cache;
+
+    explicit JuliaRTEnv(jl_module_t* gl_utils_mod)
+        : module_cache{gl_utils_mod}, symbol_cache{}, type_cache{module_cache} {}
 
     explicit JuliaRTEnv(std::string_view gl_utils_path)
         : module_cache{gl_utils_path}, symbol_cache{}, type_cache{module_cache} {}

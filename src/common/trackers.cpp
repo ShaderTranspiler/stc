@@ -188,17 +188,18 @@ void TimingTracker::print(std::ostream& out) const {
         out << '\n';
     }
 
-    out << "\nEntire transpilation finished in "
+    out << '\n'
+        << colored("First to last time", ansi_codes::yellow) << " is "
         << colored(format_duration(timings.back().end - timings.front().start), ansi_codes::yellow)
-        << ", sum of all timings is "
-        << colored(format_duration(all_timings_sum), ansi_codes::yellow);
+        << '\n';
+    out << colored("Sum of all timings", ansi_codes::yellow) << " is "
+        << colored(format_duration(all_timings_sum), ansi_codes::yellow) << '\n';
 
     if (has_not_included) {
-        out << ", sum of " << colored("(*)", ansi_codes::yellow) << " is "
-            << colored(format_duration(incl_timings_sum), ansi_codes::yellow);
+        out << colored("Sum of (*) timings", ansi_codes::yellow) << " is "
+            << colored(format_duration(incl_timings_sum), ansi_codes::yellow) << '\n';
     }
 
-    out << '\n';
     out.flush();
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 
 #include "common/utils.hpp"
@@ -40,9 +41,23 @@ class JuliaModuleCache {
 
     ModuleTable module_cache{};
 
+    // provides storage for GLUtils mods provided explicitly without a path
+    // should NOT be modified post-init unless gl_utils_mod is also updated, since it might be
+    // storing a reference to this
+    std::optional<JuliaModule> gl_utils_mod_storage{};
+
     using MaybeModRef = std::optional<std::reference_wrapper<JuliaModule>>;
 
 public:
+    explicit JuliaModuleCache(jl_module_t* gl_utils_mod)
+        : gl_utils_mod_storage{gl_utils_mod},
+          main_mod{register_mod("Main", jl_main_module)},
+          base_mod{register_mod("Base", jl_base_module)},
+          core_mod{register_mod("Core", jl_core_module)},
+          meta_mod{get_mod_or_throw("Base.Meta")},
+          comp_mod{get_mod_or_throw("Core.Compiler")},
+          gl_utils_mod{*gl_utils_mod_storage} {}
+
     explicit JuliaModuleCache(std::string_view gl_utils_path)
         : main_mod{register_mod("Main", jl_main_module)},
           base_mod{register_mod("Base", jl_base_module)},
@@ -82,7 +97,7 @@ public:
     JuliaModule& core_mod;     // Core
     JuliaModule& meta_mod;     // Base.Meta
     JuliaModule& comp_mod;     // Core.Compiler
-    JuliaModule& gl_utils_mod; // determined by gl_utils_path
+    JuliaModule& gl_utils_mod; // determined by gl_utils_mod or gl_utils_path
 
 private:
     [[nodiscard]] JuliaModule& register_mod(std::string_view mod_path, jl_module_t* mod);

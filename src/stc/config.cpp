@@ -147,6 +147,10 @@ extern "C" {
         } catch (...) {}
     }
 
+    STC_API void stc_set_gl_utils_mod(STC_ConfigHandle cfg_handle, _jl_module_t* value) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, gl_utils_mod, value);
+    }
+
     STC_API void stc_set_fallback_file_path(STC_ConfigHandle cfg_handle,
                                             const char* value) noexcept {
         if (cfg_handle == STC_NULL_CONFIG)

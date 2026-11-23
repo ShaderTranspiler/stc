@@ -15,7 +15,9 @@
 
 // catch libjulia drift
 static_assert(std::same_as<_jl_value_t, jl_value_t>,
-              "forward declaration in stc.h is no longer valid");
+              "forward declaration of _jl_value_t in stc.h is no longer valid");
+static_assert(std::same_as<_jl_module_t, jl_module_t>,
+              "forward declaration of _jl_module_t in stc.h is no longer valid");
 
 namespace stc::api {
 
