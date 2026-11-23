@@ -38,6 +38,11 @@ foreach (SBOX_FILE ${SANDBOX_SOURCES})
     target_include_directories(${FNAME} PRIVATE ${STC_SRC_DIR}/include)
     target_include_directories(${FNAME} PRIVATE ${STC_BUILD_DIR}/generated)
 
+    if (NOT WIN32)
+        # see base CMakeLists's CLI target for reasoning
+        target_compile_options(${FNAME} PRIVATE -fPIC)
+    endif()
+
     if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
         set_target_properties(${FNAME} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
     endif()

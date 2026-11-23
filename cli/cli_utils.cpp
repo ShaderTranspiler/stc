@@ -1,0 +1,175 @@
+#include "cli_utils.hpp"
+
+#include <common/report.hpp>
+#include <common/term_utils.hpp>
+#include <common/utils.hpp>
+#include <meta.hpp>
+
+#include <fmt/format.h>
+
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cstdlib>
+#include <iostream>
+#include <span>
+#include <string_view>
+
+#ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+
+    #include <errhandlingapi.h>
+#endif
+
+void stc::cli::print_version_info() {
+    static constexpr auto val_col = ansi_codes::yellow;
+
+    print_header(std::cout, "Shader Transpiler Core (STC)", true, true, false);
+
+    // clang-format off
+    std::cout << "version:      " << stc::colored(stc::meta::version, val_col) << '\n';
+    std::cout << "target:       " << stc::colored(fmt::format("{}-{}", stc::meta::system_arch, stc::meta::system_name), val_col) << '\n';
+    std::cout << "compiler:     " << stc::colored(fmt::format("{} {}", stc::meta::compiler_id, stc::meta::compiler_ver), val_col) << '\n';
+    std::cout << "libjulia ver: " << stc::colored(stc::meta::julia_ver, val_col) << '\n';
+    std::cout << "build origin: " << stc::colored(stc::meta::build_origin, val_col) << '\n';
+    std::cout << "build type:   " << stc::colored(stc::meta::build_type, val_col) << '\n';
+    std::cout << "build commit: " << stc::colored(stc::meta::build_commit, val_col) << '\n';
+    std::cout << "build time:   " << stc::colored(stc::meta::build_date, val_col) << '\n';
+    // clang-format on
+}
+
+namespace {
+
+struct HelpEntry {
+    std::string_view name;
+    std::string_view description;
+};
+
+struct HelpCategory {
+    std::string_view name;
+    std::span<const HelpEntry> entries;
+};
+
+// clang-format off
+constexpr std::array general_entries{
+    HelpEntry{"-h, --help",        "show this help message and exit"},
+    HelpEntry{"-v, --version",     "show version information and exit"},
+    HelpEntry{"-o <path>",         "set output file path (default: only print to stdout)"},
+    HelpEntry{"--no-out",          "do not output the generated code to stdout or disk"},
+    HelpEntry{"--gl-version <N>",  "set OpenGL version for #version directive (default: \"460\")"},
+    HelpEntry{"--it <N>",          "run transpilation N times (for benchmarking)"},
+    HelpEntry{"--track-memory",    "print per-phase memory usage statistics for arenas"},
+    HelpEntry{"--no-timing",       "disable the measuring and printing of transpilation time breakdown stats"},
+    HelpEntry("--quiet",           "only print errors, warnings and potentially the transpiled code (implies --no-timing)"),
+    HelpEntry{"--timing",          "print transpilation time breakdown stats, even if --quiet is passed"},
+    HelpEntry{"--pre-eval <path>", "evaluate the contents of <path> in the Julia context before transpilation"},
+    HelpEntry{"--skip-no-commit",  "avoids the CLI adding a no-commit tag to the generated output file"},
+};
+
+constexpr std::array transpilation_behavior_entries{
+    HelpEntry{"--conv-fail-reason",         "print reason for conversion/casting failures"},
+    HelpEntry{"--no-coerce-i32",            "disable automatic Int64 -> Int32 literal type coercion"},
+    HelpEntry{"--no-coerce-f32",            "disable automatic Float64 -> Float32 literal type coercion"},
+    HelpEntry{"--no-coercion",              "disable all literal type coercion"},
+    HelpEntry{"--coerce-non-finite",        "if Float32 coercion is enabled, enable coercing non-Float32-representable Float64 values to +/- inf"},
+    HelpEntry{"--fwd-fns",                  "enable blind forwarding for non-backend-resolvable function calls (may lead to invalid code)"},
+    HelpEntry{"--no-uniform-capture",       "don't capture Julia-resolvable globals as uniforms in the output"},
+};
+
+constexpr std::array debugging_entries{
+    HelpEntry{"--dump-parsed",    "print the parsed version of the Julia AST"},
+    HelpEntry{"--dump-sema",      "print the AST after semantic analysis"},
+    HelpEntry{"--dump-lowered",   "print the lowered (SIR) representation"},
+    HelpEntry{"--dump-scopes",    "dump scope tree info during semantic analysis"},
+    HelpEntry{"--track-bindings", "step-by-step reasoning for symbol binding resolution"},
+};
+
+constexpr std::array formatting_entries{
+    HelpEntry{"--tabs",           "use tabs for indentation"},
+    HelpEntry{"--spaces",         "use spaces for indentation (default)"},
+    HelpEntry{"--cg-indent <n>",  "set indentation width (default: 4)"},
+};
+
+constexpr std::array errors_and_warnings_entries{
+    HelpEntry{"--error-dump none",    "disable AST dumping on errors (default)"},
+    HelpEntry{"--error-dump partial", "dump the AST subtree that caused the given error"},
+    HelpEntry{"--error-dump verbose", "dump the full AST at every error reported"},
+    HelpEntry{"-Wjl-query",           "warn when the Julia runtime was queried for function call resolution"},
+    HelpEntry{"-Wstrict-conformance", "warn when the lowered code has minor semantic differences, like a function's treatment of an out-of-domain argument (EXPERIMENTAL!)"},
+};
+
+constexpr std::array help_categories{
+    HelpCategory{"General", general_entries},
+    HelpCategory{"Transpilation Behavior", transpilation_behavior_entries},
+    HelpCategory{"Debugging", debugging_entries},
+    HelpCategory{"Formatting", formatting_entries},
+    HelpCategory{"Errors and Warnings", errors_and_warnings_entries},
+};
+// clang-format on
+
+} // namespace
+
+namespace stc::cli {
+
+void print_help() {
+    static constexpr auto title_col = ansi_codes::cyan;
+    static constexpr auto flag_col  = ansi_codes::yellow;
+
+    std::cout << stc::colored("Usage:", title_col) << " stc INPUT [OPTIONS]\n\n";
+
+    for (size_t i = 0; i < help_categories.size(); i++) {
+        const auto& category = help_categories[i];
+
+        assert(!category.entries.empty() && "help category without entries");
+        size_t max_width = category.entries[0].name.size();
+        for (size_t j = 1; j < category.entries.size(); j++)
+            max_width = std::max(category.entries[j].name.size(), max_width);
+
+        std::cout << stc::colored(fmt::format("{}:\n", category.name), title_col);
+
+        for (const auto& entry : category.entries) {
+            std::cout << "  " << stc::colored(entry.name, flag_col)
+                      << std::string(max_width + 2 - entry.name.size(), ' ') << entry.description
+                      << '\n';
+        }
+
+        if (i != help_categories.size() - 1)
+            std::cout << '\n';
+    }
+}
+
+std::filesystem::path tail_from_cwd(const std::filesystem::path& p) {
+    namespace fs = std::filesystem;
+
+    fs::path abs = fs::absolute(p);
+    fs::path cwd = fs::current_path();
+
+    fs::path rel = abs.lexically_relative(cwd);
+
+    if (!rel.empty())
+        return rel;
+
+    return abs;
+}
+
+void setup_process() {
+#ifdef _WIN32
+    // turn off Windows error message box and reporting for abort (most often invoked by asserts)
+    // failure should propagate through the exit code, not Windows-related fluff
+    // it's also better for automated tools if an assert on Windows doesn't hang the process itself
+    // until user interaction happens
+    // this would also prevent debuggers from breaking on a failing assert, so we only do this if no
+    // debugger is attached (only abort behavior affects this, not the general error mode)
+    #ifdef _MSC_VER // _set_abort_behavior doesn't work on BinaryBuilder's MinGW
+    if (IsDebuggerPresent() == FALSE)
+        _set_abort_behavior(0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
+    #endif
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+#endif
+}
+
+} // namespace stc::cli

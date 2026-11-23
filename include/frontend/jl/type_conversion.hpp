@@ -1,0 +1,33 @@
+#pragma once
+
+#include "frontend/jl/context.hpp"
+#include "types/type_visitor.hpp"
+
+#include "external/julia.hpp"
+
+namespace stc::jl {
+
+using namespace stc::types;
+
+class TypeToJLVisitor : public TypeVisitor<TypeToJLVisitor, jl_datatype_t*> {
+    friend class TypeVisitor<TypeToJLVisitor, jl_datatype_t*>;
+
+    const JLCtx& ctx;
+    const rt::JuliaTypeCache& type_cache;
+
+public:
+    explicit TypeToJLVisitor(const JLCtx& ctx)
+        : TypeVisitor{ctx.type_pool}, ctx{ctx}, type_cache{ctx.jl_env.type_cache} {}
+
+    jl_datatype_t* visit_null_id();
+
+private:
+    STC_TYPE_VISITOR_DECLS(jl_datatype_t*)
+};
+
+TypeId parse_jl_type(jl_datatype_t* dt, JLCtx& ctx);
+
+static_assert(CHasNullIdTypeVisitor<TypeToJLVisitor, jl_datatype_t*>,
+              "no null case visitor defined for TypeToJLVisitor");
+
+} // namespace stc::jl

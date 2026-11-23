@@ -1,4 +1,4 @@
-#include "frontend/jl/ast.h"
+#include "frontend/jl/ast.hpp"
 
 namespace stc::jl {
 

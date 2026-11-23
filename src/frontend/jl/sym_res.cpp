@@ -1,5 +1,6 @@
-#include "frontend/jl/sym_res.h"
-#include "frontend/jl/ast_utils.h"
+#include "frontend/jl/sym_res.hpp"
+#include "common/report.hpp"
+#include "frontend/jl/ast_utils.hpp"
 
 #include <algorithm>
 #include <ranges>
@@ -220,7 +221,7 @@ void SymbolRes::visit_ParamDecl(ParamDecl& pdecl) {
     Decl* prev_decl = get_prev_decl(pdecl.identifier);
 
     if (prev_decl != nullptr) {
-        std::string_view prev_str = ""sv;
+        std::string_view prev_str{};
 
         if (isa<VarDecl>(prev_decl))
             prev_str = "variable";

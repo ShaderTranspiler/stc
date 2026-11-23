@@ -1,4 +1,11 @@
-#include "common/term_utils.h"
+#include "common/term_utils.hpp"
+
+#ifdef _WIN32
+    #include <cstdlib>
+    #include <external/io_windows.hpp>
+#else
+    #include <unistd.h>
+#endif
 
 namespace stc {
 
@@ -10,8 +17,19 @@ bool TerminalInfo::supports_color() {
         return supported;
     inited = true;
 
+#ifdef _MSC_VER
+    // MSVC marks getenv as deprecated
+    char* dupenv_buf{};
+    errno_t dupenv_result = _dupenv_s(&dupenv_buf, nullptr, "NO_COLOR");
+
+    if (dupenv_result != 0 || dupenv_buf != nullptr) {
+        free(dupenv_buf); // NOLINT(cppcoreguidelines-no-malloc)
+        return false;
+    }
+#else
     if (std::getenv("NO_COLOR") != nullptr)
         return false;
+#endif
 
 #ifdef _WIN32
     if (_isatty(_fileno(stdout)) == 0 || _isatty(_fileno(stderr)) == 0)

@@ -1,6 +1,4 @@
-#include "common/target_info.h"
-
-#include <algorithm>
+#include "common/target_info.hpp"
 
 namespace stc {
 

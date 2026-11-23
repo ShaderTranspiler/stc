@@ -1,7 +1,5 @@
 #include "common/x_macros/begin_def.inc"
 
-// clang-format off
-
 // requires stc::glsl::detail::BuiltinType to be using enum-d in including scope
 
 // format:
@@ -245,7 +243,5 @@ STC_X(groupMemoryBarrier, {Void})
 STC_X(anyInvocation, {Bool, Bool})
 STC_X(allInvocations, {Bool, Bool})
 STC_X_LAST(allInvocationsEqual, {Bool, Bool})
-
-// clang-format on
 
 #include "common/x_macros/end_def.inc"

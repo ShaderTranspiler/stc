@@ -1,7 +1,8 @@
-#include "frontend/jl/lowering.h"
-#include "frontend/jl/ast_utils.h"
-#include "sir/ast.h"
-#include "types/type_to_string.h"
+#include "frontend/jl/lowering.hpp"
+#include "common/report.hpp"
+#include "frontend/jl/ast_utils.hpp"
+#include "sir/ast.hpp"
+#include "types/type_to_string.hpp"
 
 #include <array>
 
@@ -20,36 +21,62 @@ using namespace stc::jl;
 
 namespace stc::jl {
 
+void JLLoweringVisitor::dump(const Expr& expr, std::ostream& out) {
+    NodeId subtree_root = ctx.calculate_node_id(expr);
+    ctx.dump(subtree_root, jl_ast_root, sir_ctx.config.error_dump_verbosity, out, sir_ctx.type_pool,
+             sir_ctx.sym_pool, sir_ctx.config);
+}
+
+SIRNodeId JLLoweringVisitor::fail(std::string_view msg, const Expr& expr) {
+    _success = false;
+
+    auto [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(expr.location);
+    stc::error(file, loc, msg, sir_ctx.config, [&](std::ostream& out) { dump(expr, out); });
+
+    return SIRNodeId::null_id();
+}
+
+SIRNodeId JLLoweringVisitor::internal_error(std::string_view msg, const Expr& expr) {
+    // stop user-side failures from propagating into internal errors
+    if (!_success)
+        return SIRNodeId::null_id();
+
+    _success            = false;
+    _had_internal_error = true;
+
+    auto [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(expr.location);
+    stc::internal_error(file, loc, msg, sir_ctx.config,
+                        [&](std::ostream& out) { dump(expr, out); });
+
+    return SIRNodeId::null_id();
+}
+
 bool JLLoweringVisitor::pre_visit_ptr(Expr* expr) {
     swap_lower_type(expr->type);
     return true;
 }
 
 SIRNodeId JLLoweringVisitor::visit_default_case() {
-    internal_error("nullptr found in the Julia AST during lowering to SIR");
+    stc::internal_error("null node found in the Julia AST during lowering to SIR");
     this->_success = false;
 
     return SIRNodeId::null_id();
 }
 
-SIRNodeId JLLoweringVisitor::fail(std::string_view msg) {
-    stc::error(msg);
-    _success = false;
-    return SIRNodeId::null_id();
-}
-
-SIRNodeId JLLoweringVisitor::internal_error(std::string_view msg) {
-    stc::internal_error(msg);
-    _success = false;
-    return SIRNodeId::null_id();
-}
-
 SIRNodeId JLLoweringVisitor::visit_and_check(NodeId id, bool accept_null) {
-    SIRNodeId result = visit(id);
+    Expr* node = ctx.get_node(id);
+
+    SIRNodeId result = visit(id); // use id instead of node to defer nullptr checking
 
     if (result.is_null()) {
-        if (!accept_null && _success)
-            internal_error("null_id returned by a node in the Julia -> SIR lowering visitor.");
+        if (!accept_null && _success) {
+            constexpr std::string_view error_msg =
+                "null_id returned by a node in the Julia -> SIR lowering visitor.";
+            if (node != nullptr)
+                internal_error(error_msg, *node);
+            else
+                stc::internal_error(error_msg);
+        }
 
         return SIRNodeId::null_id();
     }
@@ -62,10 +89,14 @@ SIRNodeId JLLoweringVisitor::visit_ptr(Expr* node) {
 }
 
 SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
+    jl_ast_root = global_cmpd_id;
+
     auto* global_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(global_cmpd_id);
-    if (global_cmpd == nullptr)
-        return internal_error(
+    if (global_cmpd == nullptr) {
+        stc::internal_error(
             "null id passed to Julia -> SIR lowering pass as the global scope body");
+        return SIRNodeId::null_id();
+    }
 
     auto& body = global_cmpd->body;
 
@@ -82,7 +113,8 @@ SIRNodeId JLLoweringVisitor::lower(NodeId global_cmpd_id) {
             if (sir_ctx.get_sym(ctx.get_and_dyn_cast<MethodDecl>(expr)->identifier) == "main") {
                 if (i + 1 != body.size())
                     return fail("if an explicit main function is provided, it has to be the last "
-                                "node in the top-level compound expression");
+                                "node in the top-level compound expression",
+                                *ctx.get_node(expr));
 
                 explicit_main = expr;
             } else {
@@ -200,11 +232,18 @@ SIRNodeId JLLoweringVisitor::visit_VarDecl(VarDecl& var) {
 }
 
 SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
+    if (method_decls_being_lowered.contains(&method))
+        return internal_error("method reached its own declaration during lowering", method);
+
+    method_decls_being_lowered.emplace(&method);
+    ScopeGuard guard{[this, &method]() { method_decls_being_lowered.erase(&method); }};
+
     if (in_method) {
         if (method.has_captured_syms()) {
             return fail(fmt::format("local functions with captured symbols are currently not "
                                     "supported (in definition of function '{}')",
-                                    sir_ctx.get_sym(method.identifier)));
+                                    sir_ctx.get_sym(method.identifier)),
+                        method);
         }
     }
 
@@ -213,9 +252,9 @@ SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
 
     if (method.ret_type.is_null() ||
         !is_ret_type_allowed(sir_ctx.type_pool.get_td(method.ret_type))) {
-
         return fail(fmt::format("cannot lower function with return type '{}'",
-                                type_to_string(method.ret_type, sir_ctx, sir_ctx)));
+                                type_to_string(method.ret_type, sir_ctx, sir_ctx)),
+                    method);
     }
 
     std::vector<SIRNodeId> params;
@@ -242,7 +281,8 @@ SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
             return internal_error(
                 fmt::format("local function found, but global compound's body has not been "
                             "initialized yet (in definition of function '{})",
-                            sir_ctx.get_sym(method.identifier)));
+                            sir_ctx.get_sym(method.identifier)),
+                method);
         }
 
         auto it = global_cmpd_body->begin();
@@ -253,12 +293,8 @@ SIRNodeId JLLoweringVisitor::visit_MethodDecl(MethodDecl& method) {
                         sir_ctx.isa<sir::InterfaceBlockDecl>(id))
                         return false;
 
-                    sir::FunctionDecl* fn_decl = sir_ctx.get_and_dyn_cast<sir::FunctionDecl>(id);
-
-                    if (fn_decl != nullptr && fn_decl->identifier != sym_main)
-                        return false;
-
-                    return true;
+                    auto* fn_decl = sir_ctx.get_and_dyn_cast<sir::FunctionDecl>(id);
+                    return fn_decl == nullptr || fn_decl->identifier == sym_main;
                 });
         }
 
@@ -282,7 +318,7 @@ SIRNodeId JLLoweringVisitor::visit_FunctionDecl(FunctionDecl& fn) {
 
 SIRNodeId JLLoweringVisitor::visit_ParamDecl(ParamDecl& param) {
     if (!param.default_initializer.is_null())
-        return fail("default initialized parameters are currently not supported");
+        return fail("default initialized parameters are currently not supported", param);
 
     swap_lower_type(param.annot_type);
 
@@ -292,25 +328,32 @@ SIRNodeId JLLoweringVisitor::visit_ParamDecl(ParamDecl& param) {
 
 SIRNodeId JLLoweringVisitor::visit_OpaqueFunction(OpaqueFunction& opaq_fn) {
     return fail(fmt::format("cannot transpile unknown Julia function '{}'",
-                            sir_ctx.get_sym(opaq_fn.fn_name())));
+                            sir_ctx.get_sym(opaq_fn.fn_name())),
+                opaq_fn);
 }
 
 SIRNodeId JLLoweringVisitor::visit_BuiltinFunction(BuiltinFunction& builtin_fn) {
     return internal_error(
         fmt::format("lowering reached a BuiltinFunction leaf node for '{}'. BuiltinFns should only "
                     "appear as targets to function calls, and should not be separately visited.",
-                    sir_ctx.get_sym(builtin_fn.fn_name())));
+                    sir_ctx.get_sym(builtin_fn.fn_name())),
+        builtin_fn);
 }
 
 SIRNodeId JLLoweringVisitor::visit_StructDecl(StructDecl& struct_) {
-    if (struct_.field_decls.empty())
+    if (struct_.field_decls.empty()) {
         return fail(fmt::format("empty structs are not allowed (in definition of struct '{}')",
-                                sir_ctx.get_sym(struct_.identifier)));
+                                sir_ctx.get_sym(struct_.identifier)),
+                    struct_);
+    }
 
-    if (!struct_.qualifiers.is_null())
-        return fail(fmt::format(
-            "qualifiers on struct definitions are not allowed (in definition of struct '{}')",
-            sir_ctx.get_sym(struct_.identifier)));
+    if (!struct_.qualifiers.is_null()) {
+        return fail(
+            fmt::format(
+                "qualifiers on struct definitions are not allowed (in definition of struct '{}')",
+                sir_ctx.get_sym(struct_.identifier)),
+            struct_);
+    }
 
     std::vector<SIRNodeId> fields{};
     fields.reserve(struct_.field_decls.size());
@@ -325,7 +368,8 @@ SIRNodeId JLLoweringVisitor::visit_StructDecl(StructDecl& struct_) {
 SIRNodeId JLLoweringVisitor::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
     if (iface_blk.field_decls.empty())
         return fail(fmt::format("empty interface blocks are not allowed (in definition of '{}')",
-                                sir_ctx.get_sym(iface_blk.block_name())));
+                                sir_ctx.get_sym(iface_blk.block_name())),
+                    iface_blk);
 
     std::vector<SIRNodeId> fields{};
     fields.reserve(iface_blk.field_decls.size());
@@ -343,37 +387,82 @@ SIRNodeId JLLoweringVisitor::visit_FieldDecl(FieldDecl& field) {
                                         field.qualifiers);
 }
 
+namespace {
+
+[[maybe_unused]] bool can_be_null_in_compound(NodeId node, const JLCtx& ctx) {
+    if (node.is_null())
+        return false;
+
+    if (ctx.isa<NothingLiteral>(node))
+        return true;
+
+    if (ctx.isa<MethodDecl>(node))
+        return true;
+
+    const auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(node);
+    if (vdecl != nullptr && vdecl->is_silent_decl())
+        return true;
+
+    return false;
+}
+
+void add_node_to_compound(std::vector<SIRNodeId>& body, SIRNodeId child, const sir::SIRCtx& ctx) {
+    // assumes everything that returns a null id should be omitted
+    // for failing cases, _success should already be set by this point, so this is safe
+    if (child.is_null())
+        return;
+
+    const auto* child_cmpd = ctx.get_and_dyn_cast<sir::CompoundStmt>(child);
+    if (child_cmpd != nullptr && child_cmpd->splice()) {
+        // inline spliced compounds
+        for (SIRNodeId child_elem : child_cmpd->body)
+            add_node_to_compound(body, child_elem, ctx);
+    } else {
+        // nest everything else
+        body.push_back(child);
+    }
+}
+
+} // namespace
+
 SIRNodeId JLLoweringVisitor::visit_CompoundExpr(CompoundExpr& cmpd) {
     // # of local fn defs that will be lifted into the global scope
     static constexpr size_t LOCAL_FN_COUNT_GUESS = 4;
 
-    std::vector<SIRNodeId> sir_nodes;
-    sir_nodes.reserve(cmpd.body.size() + (first_cmpd ? LOCAL_FN_COUNT_GUESS : 0));
+    std::vector<SIRNodeId> lowered_body;
+    lowered_body.reserve(cmpd.body.size() + (is_first_cmpd ? LOCAL_FN_COUNT_GUESS : 0));
 
-    if (first_cmpd) {
-        global_cmpd_body = &sir_nodes;
-        first_cmpd       = false;
+    bool is_global_cmpd = is_first_cmpd;
+    if (is_first_cmpd) {
+        global_cmpd_body = &lowered_body;
+        is_first_cmpd    = false;
     }
 
     for (NodeId expr : cmpd.body) {
         SIRNodeId lowered = visit_and_check(expr, true);
 
-        // silent decls and local fns in compound expressions are the only exception to
-        // null-returning
-        if (lowered.is_null()) {
-            auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(expr);
+        // catch unexpected null cases in debug
+        assert((!lowered.is_null() || !_success || can_be_null_in_compound(expr, ctx)) &&
+               "unexpected node kind lowered to null in a compound expression without failing");
 
-            if ((vdecl == nullptr || !vdecl->is_silent_decl()) && !ctx.isa<MethodDecl>(expr)) {
-                internal_error(
-                    "unexpected null id returned by a compound expression's subnode in the "
-                    "Julia -> SIR lowering visitor.");
-            }
-        } else {
-            sir_nodes.push_back(lowered);
+        size_t first_new_elem = lowered_body.size();
+        add_node_to_compound(lowered_body, lowered, sir_ctx);
+
+        if (!is_global_cmpd)
+            continue;
+
+        // make sure spliced nodes are checked too
+        for (size_t i = first_new_elem; i < lowered_body.size(); i++) {
+            if (sir_ctx.isa<sir::Decl>(lowered_body[i]))
+                continue;
+
+            const auto* expr_node = ctx.get_node(expr);
+            assert(expr_node != nullptr);
+            return fail("only declarations are allowed at the top level", *expr_node);
         }
     }
 
-    return emplace_node<sir::CompoundStmt>(cmpd.location, std::move(sir_nodes));
+    return emplace_node<sir::CompoundStmt>(cmpd.location, std::move(lowered_body));
 }
 
 SIRNodeId JLLoweringVisitor::visit_BoolLiteral(BoolLiteral& bool_lit) {
@@ -399,20 +488,17 @@ GEN_INT_LITERAL_VISITOR(UInt16Literal, 16, false)
 GEN_INT_LITERAL_VISITOR(UInt32Literal, 32, false)
 GEN_INT_LITERAL_VISITOR(UInt64Literal, 64, false)
 
-SIRNodeId JLLoweringVisitor::visit_UInt128Literal([[maybe_unused]] UInt128Literal& lit) {
-    return internal_error("unsupported UInt128 literal node not caught by sema");
+SIRNodeId JLLoweringVisitor::visit_UInt128Literal(UInt128Literal& lit) {
+    return internal_error("unsupported UInt128 literal node not caught by sema", lit);
 }
 
 SIRNodeId JLLoweringVisitor::visit_Float32Literal(Float32Literal& lit) {
-    return emplace_node<sir::FloatLiteral>(
-        lit.location, sir_ctx.type_pool.float_td(32),
-        fmt::format("{:.{}f}", lit.value, std::numeric_limits<float>::max_digits10));
+    return emplace_node<sir::FloatLiteral>(lit.location, sir_ctx.type_pool.float_td(32), lit.value);
 }
 
 SIRNodeId JLLoweringVisitor::visit_Float64Literal(Float64Literal& lit) {
-    return emplace_node<sir::FloatLiteral>(
-        lit.location, sir_ctx.type_pool.float_td(64),
-        fmt::format("{:.{}f}", lit.value, std::numeric_limits<double>::max_digits10));
+    return emplace_node<sir::DoubleLiteral>(lit.location, sir_ctx.type_pool.float_td(64),
+                                            lit.value);
 }
 
 SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
@@ -423,7 +509,7 @@ SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
         SIRNodeId lowered_member = visit(member);
         if (lowered_member.is_null()) {
             if (_success)
-                return fail("failed to lower member node in ArrayLiteral");
+                return fail("failed to lower member node in ArrayLiteral", arr_lit);
 
             return SIRNodeId::null_id();
         }
@@ -435,43 +521,45 @@ SIRNodeId JLLoweringVisitor::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
 
     if (!td.is_array()) {
         return internal_error(fmt::format("non-array type inferred for array literal node by sema",
-                                          type_to_string(arr_lit.type, sir_ctx, sir_ctx)));
+                                          type_to_string(arr_lit.type, sir_ctx, sir_ctx)),
+                              arr_lit);
     }
 
     ArrayTD arr_td    = td.as<ArrayTD>();
     const auto& el_td = sir_ctx.type_pool.get_td(arr_td.element_type_id);
 
     if (el_td.is_array())
-        return fail("multidimensional arrays are currently not supported");
+        return fail("multidimensional arrays are currently not supported", arr_lit);
 
     if (!el_td.is_scalar())
-        return fail("arrays with non-scalar element types are currently not supported");
+        return fail("arrays with non-scalar element types are currently not supported", arr_lit);
 
     if (arr_td.length != lowered_members.size())
-        return internal_error("inferred array length mismatch in type of array literal node");
+        return internal_error("inferred array length mismatch in type of array literal node",
+                              arr_lit);
 
     return emplace_node<sir::ArrayLiteral>(arr_lit.location, arr_lit.type,
                                            std::move(lowered_members));
 }
 
-SIRNodeId JLLoweringVisitor::visit_StringLiteral([[maybe_unused]] StringLiteral& lit) {
-    return internal_error("unsupported String literal node not caught by sema");
+SIRNodeId JLLoweringVisitor::visit_StringLiteral(StringLiteral& lit) {
+    return internal_error("unsupported String literal node not caught by sema", lit);
 }
 
-SIRNodeId JLLoweringVisitor::visit_SymbolLiteral([[maybe_unused]] SymbolLiteral& lit) {
-    return internal_error("symbol literal in AST should have been resolved by sema");
+SIRNodeId JLLoweringVisitor::visit_SymbolLiteral(SymbolLiteral& lit) {
+    return internal_error("symbol literal in AST should have been resolved by sema", lit);
 }
 
 SIRNodeId JLLoweringVisitor::visit_NothingLiteral([[maybe_unused]] NothingLiteral& lit) {
-    throw std::logic_error{"using nothing literal outside of a return stmt"};
+    return SIRNodeId::null_id();
 }
 
-SIRNodeId JLLoweringVisitor::visit_OpaqueNode([[maybe_unused]] OpaqueNode& opaq) {
-    return internal_error("OpaqueNode node not caught by sema");
+SIRNodeId JLLoweringVisitor::visit_OpaqueNode(OpaqueNode& opaq) {
+    return internal_error("OpaqueNode node not caught by sema", opaq);
 }
 
-SIRNodeId JLLoweringVisitor::visit_GlobalRef([[maybe_unused]] GlobalRef& gref) {
-    throw std::logic_error{"using unimplemented feature: global refs"};
+SIRNodeId JLLoweringVisitor::visit_GlobalRef(GlobalRef& gref) {
+    return fail("GlobalRefs are currently not supported", gref);
 }
 
 SIRNodeId JLLoweringVisitor::visit_ImplicitCast(ImplicitCast& impl_cast) {
@@ -531,7 +619,7 @@ SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
     if (is_arr || is_vec) {
         if (idx_n != 1)
-            return fail("arrays and vectors only support single component indexers");
+            return fail("arrays and vectors only support single component indexers", idx_expr);
 
         NodeId idx     = idx_expr.indexers[0];
         Expr* idx_node = ctx.get_node(idx);
@@ -539,7 +627,7 @@ SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
         if (is_arr) {
             if (!sir_ctx.type_pool.is_type_of<IntTD>(idx_t))
-                return fail("non-integer indexer on array is not allowed");
+                return fail("non-integer indexer on array is not allowed", idx_expr);
 
             return visit_and_wrap_minus_one(idx, idx_node);
         }
@@ -548,12 +636,13 @@ SIRNodeId JLLoweringVisitor::visit_IndexerExpr(IndexerExpr& idx_expr) {
             if (sir_ctx.type_pool.is_type_of<IntTD>(idx_t))
                 return visit_and_wrap_minus_one(idx, idx_node);
 
-            return fail("non-integer indexer on vector is not allowed");
+            return fail("non-integer indexer on vector is not allowed", idx_expr);
         }
     }
 
     return fail(fmt::format("indexers on type '{}' are not allowed",
-                            type_to_string(target_td, sir_ctx, sir_ctx)));
+                            type_to_string(target_td, sir_ctx, sir_ctx)),
+                idx_expr);
 }
 
 SIRNodeId JLLoweringVisitor::visit_FieldAccess(FieldAccess& acc) {
@@ -574,19 +663,19 @@ SIRNodeId JLLoweringVisitor::visit_FieldAccess(FieldAccess& acc) {
         size_t swizzle_n         = swizzle.length();
 
         if (swizzle_n == 0 || swizzle_n > 4)
-            return internal_error("invalid swizzle component count not caught by sema");
+            return internal_error("invalid swizzle component count not caught by sema", acc);
 
         std::array<uint8_t, 4> comps = {0, 0, 0, 0};
         for (size_t i = 0; i < swizzle_n; i++) {
             comps[i] = parse_swizzle_component(swizzle[i]).first;
 
             if (comps[i] == INVALID_SWIZZLE)
-                return internal_error("invalid swizzle component not caught by sema");
+                return internal_error("invalid swizzle component not caught by sema", acc);
         }
 
-        SIRNodeId lowered_swizzle =
-            emplace_node<sir::SwizzleLiteral>(field_node->location, static_cast<uint8_t>(swizzle_n),
-                                              comps[0], comps[1], comps[2], comps[3]);
+        SIRNodeId lowered_swizzle = emplace_node<sir::SwizzleLiteral>(
+            field_node->location, sir_ctx.type_pool.void_td(), static_cast<uint8_t>(swizzle_n),
+            comps[0], comps[1], comps[2], comps[3]);
 
         return emplace_node<sir::IndexerExpr>(acc.location, visit_and_check(acc.target),
                                               lowered_swizzle);
@@ -598,7 +687,7 @@ SIRNodeId JLLoweringVisitor::visit_FieldAccess(FieldAccess& acc) {
 
 SIRNodeId JLLoweringVisitor::visit_DotChain(DotChain& dc) {
     if (!dc.is_resolved())
-        return internal_error("dot chain expression not resolved by sema");
+        return internal_error("dot chain expression not resolved by sema", dc);
 
     return visit_and_check(dc.resolved_expr);
 }
@@ -633,7 +722,8 @@ SIRNodeId JLLoweringVisitor::visit_UpdateAssignment(UpdateAssignment& up_assign)
         fn_dre != nullptr ? ctx.get_and_dyn_cast<OpaqueFunction>(fn_dre->decl) : nullptr;
 
     if (fn_decl == nullptr)
-        return internal_error("update assignment's operator resolved to a non-opaque function");
+        return internal_error("update assignment's operator resolved to a non-opaque function",
+                              up_assign);
 
     SymbolId op_sym = fn_decl->fn_name();
 
@@ -651,8 +741,22 @@ SIRNodeId JLLoweringVisitor::visit_UpdateAssignment(UpdateAssignment& up_assign)
     else if (op_sym == sym_xor)        op = BinOpKind::bxor;
     // clang-format on
     else
-        return fail(fmt::format("update assignment's underlying operator cannot be lowered ({})",
-                                sir_ctx.get_sym(op_sym)));
+        return fail(
+            fmt::format(
+                "update assignment's underlying operator cannot be lowered (for operator '{}')",
+                sir_ctx.get_sym(op_sym)),
+            up_assign);
+
+    if ((op == BinOpKind::lshift || op == BinOpKind::rshift) &&
+        sir_ctx.config.warn_strict_conformance) {
+        std::string_view op_str = op == BinOpKind::lshift ? "<<=" : ">>=";
+        const auto& [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(up_assign.location);
+        warning(file, loc,
+                fmt::format("STRICT CONFORMANCE: Julia allows update assignment via '{}' to take "
+                            "negative values, as well as counts greater or equal to the bit width. "
+                            "GLSL leaves these cases undefined.",
+                            op_str));
+    }
 
     SIRNodeId lo_target = visit_and_check(up_assign.target);
     SIRNodeId lo_value  = visit_and_check(up_assign.value);
@@ -671,11 +775,13 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
 
     if (dre == nullptr && dc == nullptr)
         return internal_error(
-            "non-decl-ref, non-dot-chain node in FunctionCall's target_fn not caught by sema");
+            "non-decl-ref, non-dot-chain node in FunctionCall's target_fn not caught by sema",
+            fn_call);
 
     if (dre != nullptr) {
         if (ctx.isa<SymbolLiteral>(dre->decl))
-            return internal_error("unresolved declaration reference expression found post-sema");
+            return internal_error("unresolved declaration reference expression found post-sema",
+                                  *dre);
     }
 
     if (dc != nullptr) {
@@ -686,16 +792,18 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
 
         auto maybe_mod = mod_cache.get_mod(mod_path);
         if (!maybe_mod.has_value())
-            return internal_error("dot chain with invalid method path not caught by sema");
+            return internal_error("dot chain with invalid method path not caught by sema", *dc);
 
         const auto& mod = maybe_mod->get();
 
         bool valid_mod = mod.mod_ptr() == mod_cache.base_mod.mod_ptr() ||
                          mod.mod_ptr() == mod_cache.gl_utils_mod.mod_ptr() ||
                          mod.mod_ptr() == mod_cache.main_mod.mod_ptr();
-        if (!valid_mod)
+        if (!valid_mod) {
             return fail("cannot lower call to module-resolved function not available from Main, "
-                        "Base or GLUtils");
+                        "Base or GLUtils",
+                        fn_call);
+        }
     }
 
     auto* decl_expr = ctx.get_node(dre != nullptr ? dre->decl : dc->resolved_expr);
@@ -714,12 +822,13 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
         fn_identifier = opaq->fn_name();
         is_ctor       = opaq->is_ctor();
     } else {
-        return internal_error(
-            "unexpected declaration kind referenced in target of a function call");
+        return internal_error("unexpected declaration kind referenced in target of a function call",
+                              fn_call);
     }
 
     if (fn_identifier.is_null())
-        return internal_error("couldn't determine identifier for the target of a function call");
+        return internal_error("couldn't determine identifier for the target of a function call",
+                              fn_call);
 
     auto make_unop = [this, &fn_call](UnOpKind kind) {
         return emplace_node<sir::UnaryOp>(fn_call.location, kind, visit_and_check(fn_call.args[0]));
@@ -741,6 +850,19 @@ SIRNodeId JLLoweringVisitor::visit_FunctionCall(FunctionCall& fn_call) {
         // in glsl, all binary operations are left to right assoc, so this is fine for now
         if (maybe_op.has_value()) {
             BinOpKind op = *maybe_op;
+
+            if ((op == BinOpKind::lshift || op == BinOpKind::rshift) &&
+                sir_ctx.config.warn_strict_conformance) {
+                std::string_view op_str = op == BinOpKind::lshift ? "<<" : ">>";
+                const auto& [loc, file] = sir_ctx.src_info_pool.get_loc_and_file(fn_call.location);
+                warning(
+                    file, loc,
+                    fmt::format(
+                        "STRICT CONFORMANCE: Julia allows operator '{}' to take negative counts, "
+                        "as well as counts greater or equal to the bit width. GLSL leaves these "
+                        "cases undefined.",
+                        op_str));
+            }
 
             size_t args_n     = fn_call.args.size();
             SIRNodeId lhs_ite = visit_and_check(fn_call.args[0]);
@@ -781,14 +903,43 @@ SIRNodeId JLLoweringVisitor::visit_LogicalBinOp(LogicalBinOp& lbo) {
 SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
     SIRNodeId lo_cond = visit_and_check(if_.condition);
 
-    SIRNodeId lo_true =
-        emplace_node<sir::ScopedStmt>(if_.location, visit_and_check(if_.true_branch));
+    // force branches to be compound statements in all cases
+    // (unless it doesn't have a false branch in which case we keep that unset)
+
+    auto lower_into_compound = [this](NodeId branch_src) -> std::optional<SIRNodeId> {
+        SIRNodeId lo_branch_base = visit_and_check(branch_src, true);
+
+        if (sir_ctx.isa<sir::CompoundStmt>(lo_branch_base))
+            return lo_branch_base;
+
+        const Expr* src_branch = ctx.get_node(branch_src);
+        if (src_branch == nullptr)
+            return std::nullopt;
+
+        std::vector<SIRNodeId> cmpd_body{};
+
+        // if it lowered to null (like a nothing statement), we just insert an empty compound
+        if (!lo_branch_base.is_null())
+            cmpd_body.emplace_back(lo_branch_base);
+
+        return emplace_node<sir::CompoundStmt>(src_branch->location, std::move(cmpd_body));
+    };
+
+    auto lo_true = lower_into_compound(if_.true_branch);
+    if (!lo_true.has_value())
+        return internal_error("invalid true branch node in if expression", if_);
+    lo_true = emplace_node<sir::ScopedStmt>(if_.location, *lo_true);
 
     SIRNodeId lo_false = SIRNodeId::null_id();
-    if (!if_.false_branch.is_null())
-        lo_false = emplace_node<sir::ScopedStmt>(if_.location, visit_and_check(if_.false_branch));
+    if (!if_.false_branch.is_null()) {
+        auto lo_false_cmpd = lower_into_compound(if_.false_branch);
+        if (!lo_false_cmpd.has_value())
+            return internal_error("invalid false branch node in if expression", if_);
 
-    return emplace_node<sir::IfStmt>(if_.location, lo_cond, lo_true, lo_false);
+        lo_false = emplace_node<sir::ScopedStmt>(if_.location, *lo_false_cmpd);
+    }
+
+    return emplace_node<sir::IfStmt>(if_.location, lo_cond, *lo_true, lo_false);
 }
 
 SIRNodeId JLLoweringVisitor::visit_WhileExpr(WhileExpr& while_) {
@@ -851,11 +1002,14 @@ std::optional<sir::BinaryOp::OpKind> JLLoweringVisitor::sym_to_bin_op(SymbolId s
         return BinOpKind::band;
     if (sym == sym_pipe)
         return BinOpKind::bor;
+    if (sym == sym_dbl_langle) // <<
+        return BinOpKind::lshift;
+    if (sym == sym_dbl_rangle) // >>
+        return BinOpKind::rshift;
 
     if (sym == sym_xor) {
         if (in_logical_ctx)
             return BinOpKind::lxor;
-
         return BinOpKind::bxor;
     }
 

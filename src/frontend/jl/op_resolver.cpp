@@ -1,11 +1,11 @@
-#include "frontend/jl/op_resolver.h"
+#include "frontend/jl/op_resolver.hpp"
 
 #include <algorithm>
 
 namespace stc::jl {
 
 OpResolver::OpResolver(SymbolPool& sym_pool) {
-    static constexpr size_t OP_COUNT = 26;
+    static constexpr size_t OP_COUNT = 25;
 
     auto add = [&](std::string_view op_str, TargetOpKind unop, TargetOpKind binop) {
         assert(unop == OpMapping::INVALID_OP ||
@@ -61,7 +61,6 @@ OpResolver::OpResolver(SymbolPool& sym_pool) {
 
     add_binop("<<", TargetOpKind::BinopLShift);
     add_binop(">>", TargetOpKind::BinopRShift);
-    add_binop(">>>", TargetOpKind::BinopRShift);
 
     assert(op_map.size() == OP_COUNT && "OP_COUNT doesn't match actual operator count");
 

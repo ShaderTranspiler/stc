@@ -1,81 +1,48 @@
-#include "frontend/jl/sema.h"
-#include "external/julia.h"
-#include "frontend/jl/ast_utils.h"
-#include "frontend/jl/dumper.h"
-#include "frontend/jl/rt/utils.h"
-#include "types/type_to_string.h"
+#include "frontend/jl/sema.hpp"
 
 #include <sstream>
 
+#include "frontend/jl/ast_utils.hpp"
+#include "frontend/jl/dumper.hpp"
+#include "frontend/jl/rt/utils.hpp"
+#include "types/type_to_string.hpp"
+
+#include "external/julia.hpp"
+
 namespace stc::jl {
 
-void JLSema::dump(const Expr& expr) const {
-    NodeId root = NodeId::null_id();
-
-    switch (ctx.config.err_dump_verbosity) {
-        case DumpVerbosity::None:
-            return;
-
-        case DumpVerbosity::Partial:
-            root = ctx.calculate_node_id(expr);
-            break;
-
-        case DumpVerbosity::Verbose:
-            root = ctx.calculate_node_id(global_scope().body);
-            break;
-
-        default:
-            throw std::logic_error{"Unaccounted DumpVerbosity case in sema dump"};
-    }
-
-    JLDumper dumper{ctx, std::cerr};
-    dumper.visit(root);
+void JLSema::dump(const Expr& expr, std::ostream& out) const {
+    NodeId subtree_root = ctx.calculate_node_id(expr);
+    NodeId ast_root     = ctx.calculate_node_id(global_scope().body);
+    ctx.dump(subtree_root, ast_root, ctx.config.error_dump_verbosity, out);
 }
 
 TypeId JLSema::fail(std::string_view msg, const Expr& expr) {
-    std::cerr << '\n';
-
-    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
-    error(file, loc, msg);
     _success = false;
 
-    if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        report("\nThe above error was emitted while processing the following node:");
-        dump(expr);
-    }
+    auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
+    stc::error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
 
     return TypeId::null_id();
 }
 
 TypeId JLSema::warn(std::string_view msg, const Expr& expr) const {
-    std::cerr << '\n';
-
     auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
-    warning(file, loc, msg);
-
-    if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        std::cerr << "The above warning was emitted while processing the following node:\n";
-        dump(expr);
-    }
+    stc::warning(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
 
     return TypeId::null_id();
 }
 
 TypeId JLSema::internal_error(std::string_view msg, const Expr& expr) {
-    // stop user errors from propagating into internal assumption errors
+    // stop user errors from propagating into internal errors
     if (!_success)
         return TypeId::null_id();
 
-    std::cerr << '\n';
+    _success            = false;
+    _had_internal_error = true;
 
     auto [loc, file] = ctx.src_info_pool.get_loc_and_file(expr.location);
-    stc::internal_error(file, loc, msg);
-    _success = false;
-
-    if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
-        std::cerr << "The above error occured while processing the following node:\n";
-        dump(expr);
-    }
+    stc::internal_error(file, loc, msg, ctx.config, [&](std::ostream& out) { dump(expr, out); });
 
     return TypeId::null_id();
 }
@@ -202,7 +169,7 @@ bool JLSema::mangle_scope(JLScope& scope) {
         if (!rewrite)
             continue;
 
-        SymbolId usym = get_usym_for(decl->identifier, ctx.sym_pool);
+        SymbolId usym = ctx.get_usym_for(decl->identifier);
         if (usym.is_null()) {
             internal_error("couldn't generate unique symbol for declaration", *decl);
             return false;
@@ -875,7 +842,11 @@ bool JLSema::is_method_sig_redecl(const MethodDecl& method_decl, const FunctionD
                 return false;
             }
 
-            assert(!pdecl->type.is_null());
+            if (pdecl->type.is_null()) {
+                assert(!_success);
+                return false;
+            }
+
             current_sig.emplace_back(pdecl->type);
 
             // assumes that initializable params are grouped at the end (verified earlier)
@@ -1054,11 +1025,11 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
     }
 
     // NOTE:
-    // reasoning for param initializer handling would be too complicated to describe here
-    // see my thesis for an in-depth explanation with examples.
-    // short version: because Julia generates a separate wrapper method for each possible arity, and
+    // because Julia generates a separate wrapper method for each possible arity, and because
     // default initializers can be arbitrary expressions (with their own assignments/declarations),
     // how symbol visibility is handled across them can get tricky
+    // ! currently, default initializers are half-implemented, in that sema mostly understands them,
+    // but users are blocked from using it, and lowering cannot generate proper code for it either
 
     std::vector<std::reference_wrapper<ParamDecl>> param_decls{};
     param_decls.reserve(method.param_decls.size());
@@ -1068,6 +1039,9 @@ TypeId JLSema::visit_MethodDecl(MethodDecl& method) {
 
         if (pdecl == nullptr)
             return internal_error("invalid node kind in param decl list of a method decl", method);
+
+        if (!pdecl->default_initializer.is_null())
+            return fail("default initialized parameters are currently not supported", *pdecl);
 
         param_decls.emplace_back(*pdecl);
     }
@@ -1236,6 +1210,15 @@ void JLSema::visit_method_body(MethodDecl& method) {
     auto* prev_method = current_method;
     current_method    = &method;
 
+    uint32_t prev_loop_depth = loop_depth;
+    loop_depth               = 0;
+
+    ScopeGuard guard{[this, prev_ret, prev_method, prev_loop_depth]() {
+        current_fn_ret = prev_ret;
+        current_method = prev_method;
+        loop_depth     = prev_loop_depth;
+    }};
+
     assert(!visiting_method_body);
     if (!current_fn_ret.is_null()) {
         visiting_method_body = true;
@@ -1279,16 +1262,15 @@ void JLSema::visit_method_body(MethodDecl& method) {
         if (bt == BindingType::Captured)
             method.set_has_captured_syms(true);
     }
-
-    current_method = prev_method;
-    current_fn_ret = prev_ret;
 }
 
 TypeId JLSema::visit_FieldDecl(FieldDecl& fdecl) {
     if (fdecl.type.is_null())
         return fail("field declarations must have explicit type annotation", fdecl);
 
-    if (!is_materializable_type(fdecl.type)) {
+    // unsized arrays are allowed as the last field in interface blocks
+    if (!is_materializable_type(fdecl.type) &&
+        !(in_interface_block && tpool.is_array_any_size(fdecl.type))) {
         return fail(fmt::format("cannot use non-materializable type '{}' in a field declaration",
                                 type_str(fdecl.type)),
                     fdecl);
@@ -1340,12 +1322,26 @@ TypeId JLSema::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
     if (!iface_blk.instance_name().is_null())
         return fail("interface block with instance name is currently not supported", iface_blk);
 
-    for (NodeId field_id : iface_blk.field_decls) {
-        const auto* field = ctx.get_and_dyn_cast<FieldDecl>(field_id);
+    for (size_t i = 0; i < iface_blk.field_decls.size(); i++) {
+        NodeId field_id = iface_blk.field_decls[i];
+        if (field_id.is_null())
+            return fail("invalid field declaration in interface block", iface_blk);
 
+        assert(!in_interface_block && "nested interface block not rejected earlier");
+        in_interface_block = true;
+        visit(field_id);
+        in_interface_block = false;
+
+        const auto* field = ctx.get_and_dyn_cast<FieldDecl>(field_id);
         if (field == nullptr)
             return internal_error("non-field-declaration node in field list of interface block",
                                   iface_blk);
+
+        if (i != iface_blk.field_decls.size() - 1 && tpool.is_array_any_size(field->type)) {
+            return fail("an implicitly sized array is only allowed as the last field of an "
+                        "interface block",
+                        *field);
+        }
 
         bool added = st_register(field->identifier, ctx.calculate_node_id(*field));
         if (!added) {
@@ -1491,6 +1487,10 @@ TypeId JLSema::visit_StringLiteral(StringLiteral& str_lit) {
 }
 
 TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
+    if (arr_lit.members.empty())
+        return fail("empty array literals are not allowed (arrays cannot have a size of zero)",
+                    arr_lit);
+
     if (arr_lit.members.size() >= std::numeric_limits<uint32_t>::max()) {
         return fail("array length exceeds upper limit (largest index needs to be storable in a "
                     "u32, excluding its maximum)",
@@ -1515,9 +1515,6 @@ TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
 
         return tpool.array_td(checked_el_type, len);
     }
-
-    if (arr_lit.members.empty())
-        return fail("cannot infer element type for empty array literal", arr_lit);
 
     TypeId inferred_el_type = infer(arr_lit.members[0]);
 
@@ -1609,7 +1606,7 @@ TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
 
     if (coll_td.is_array()) {
         if (idx_expr.indexers.size() != 1)
-            return fail("vector types only support one indexer value", idx_expr);
+            return fail("array types only support one indexer value", idx_expr);
     }
 
     return el_type;
@@ -1639,8 +1636,7 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (target_sym_lit == nullptr)
         return internal_error("unexpected node kind in rhs of a FieldAccess expression", acc);
 
-    // CLEANUP: this is GLSL-specific rn (x/y/z/w field access on vec-s)
-    if (target_td.is_vector()) {
+    if (target_td.is_vector() && is_targeting_glsl()) {
         // SWIZZLE
 
         std::string_view swizzle = ctx.get_sym(target_sym_lit->value);
@@ -1677,12 +1673,22 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
             }
 
             assert(vec_n != 0);
-            if (comp > vec_n - 1)
+            if (comp > vec_n - 1) {
                 return fail(
                     fmt::format("swizzle component '{}' points outside "
                                 "vector bounds in swizzle '{}' (vector component count is {})",
                                 swizzle[i], swizzle, vec_n),
                     acc);
+            }
+        }
+
+        // we reject these only after all that checking so that the original multi-set logic remains
+        // here for potential future use (if it's ever reintroduced into GLUtils)
+        // it also lets us print some more specific errors, that are incorrect usage regardless of
+        // whether specific swizzle sets are supported or not
+        if (set != SwizzleSet::XYZW) {
+            return fail("only the xyzw swizzle set is supported (to follow GLUtils semantics)",
+                        acc);
         }
 
         return swizzle_n == 1 ? vec_td.component_type_id
@@ -1882,7 +1888,14 @@ NodeId JLSema::resolve_sym_with_binding(SymbolId sym, BindingType bt, const Expr
 
         // try to resolve through builtins first
         if (ctx.target_info != nullptr && ctx.target_info->has_builtin_fn(sym_str)) {
-            auto builtin_fn = ctx.emplace_node<BuiltinFunction>(base_expr.location, sym).first;
+            SymbolId fn_name = sym;
+
+            // Julia uses roundEven by default, GLSL leaves it up to implementation
+            // so we transpile calls to round to roundEven to minimize drift in behavior
+            if (is_targeting_glsl() && sym_str == "round")
+                fn_name = ctx.sym_pool.get_id("roundEven");
+
+            auto builtin_fn = ctx.emplace_node<BuiltinFunction>(base_expr.location, fn_name).first;
             infer(builtin_fn);
 
             return builtin_fn;
@@ -2079,14 +2092,16 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
             return fail("assignment to target language's builtin function is not allowed", assign);
     }
 
-    TypeId target_type = infer(assign.target);
-    if (target_type.is_null()) {
+    TypeId target_type_id = infer(assign.target);
+    if (target_type_id.is_null()) {
         if (_success)
             return fail("couldn't infer type for assignment whose lhs is not a new binding",
                         assign);
 
         return TypeId::null_id();
     }
+
+    const TypeDescriptor& target_type = tpool.get_td(target_type_id);
 
     if (const auto* dc = ctx.get_and_dyn_cast<DotChain>(assign.target)) {
         if (!dc->is_resolved()) {
@@ -2099,19 +2114,16 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         auto* dc_res_node = ctx.get_node(dc->resolved_expr);
 
         if (const auto* acc = dyn_cast<FieldAccess>(dc_res_node)) {
-            const TypeDescriptor& target_td = tpool.get_td(target_type);
-
             if (ctx.isa<SymbolLiteral>(acc->field_decl)) {
                 // (this is a temporary QoL error, see CLEANUP on FieldAccess visitor)
-                if (target_td.is_vector()) {
-                    return fail(
-                        "swizzle expression on assigment lhs is not allowed, to follow GLUtils "
-                        "semantics, e.g. my_vec.xz = Vec2(0)",
-                        assign);
+                if (target_type.is_vector()) {
+                    return fail("swizzle expression cannot be used as an l-value, to follow "
+                                "GLUtils semantics, e.g. my_vec.xz = Vec2(0)",
+                                assign);
                 }
 
                 // "single component swizzle", i.e. vector field assignment on Julia side
-                if (target_td.is_scalar()) {
+                if (target_type.is_scalar()) {
                     return fail("assignment to vector field is not allowed, to follow GLUtils "
                                 "semantics (vectors types are immutable), i.e. my_vec.x = 0",
                                 assign);
@@ -2128,13 +2140,27 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
                 if (!sdecl->is_mutable()) {
                     return fail(
                         fmt::format(
-                            "assignment to field of immutable struct type '{}' is not allowed",
+                            "field of struct type '{}' cannot be assigned to, it is immutable",
                             ctx.get_sym(sdecl->identifier)),
                         assign);
                 }
             }
         } else {
             return fail("assignment to non-field-accessing dot chain is not allowed", assign);
+        }
+    } else if (const auto* indexer_expr = ctx.get_and_dyn_cast<IndexerExpr>(assign.target)) {
+        const Expr* indexer_target = ctx.get_node(indexer_expr->target);
+        if (indexer_target != nullptr && !indexer_target->type.is_null()) {
+            const TypeDescriptor& indexer_target_type = tpool.get_td(indexer_target->type);
+
+            if (indexer_target_type.is_vector() || indexer_target_type.is_matrix()) {
+                return fail(
+                    fmt::format("component of type {} cannot be assigned to, it is immutable",
+                                type_str(indexer_target->type)),
+                    assign);
+            }
+        } else if (_success) {
+            return internal_error("invalid indexer expression on assignment lhs", assign);
         }
     }
 
@@ -2147,16 +2173,16 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
     auto* val_expr = ctx.get_node(assign.value);
     assert(val_expr != nullptr);
 
-    TypeCheckResult tcr = check(*val_expr, target_type, false, true);
+    TypeCheckResult tcr = check(*val_expr, target_type_id, false, true);
 
     if (tcr == TypeCheckResult::Match || tcr == TypeCheckResult::ImplicitCast)
-        return target_type;
+        return target_type_id;
 
     if (tcr == TypeCheckResult::Incompatible)
         return TypeId::null_id();
 
     return fail(
-        fmt::format("reassignment of {} to {}", type_str(target_type), type_str(val_expr->type)),
+        fmt::format("cannot assign {} to {}", type_str(val_expr->type), type_str(target_type_id)),
         assign);
 }
 
@@ -2387,7 +2413,7 @@ TypeId JLSema::ret_type_of_jl_call(jl_value_t* fn, SymbolId fn_name, std::vector
     }
 
     auto print_infer_info = [&]() {
-        if (ctx.config.err_dump_verbosity != DumpVerbosity::None) {
+        if (ctx.config.error_dump_verbosity != DumpVerbosity::None) {
             std::cerr << "\nFunction symbol:      " << get_jl_fn_name(fn)
                       << (is_broadcast ? " (broadcast)" : "");
             std::cerr << "\nInferred signature:   ";
@@ -2744,6 +2770,39 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             if (fn_call.is_broadcast())
                 return fail("broadcast call to constructor is not allowed", fn_call);
 
+            assert(!target_type.is_null() &&
+                   "call to null type identified as a ctor call by target info");
+            const auto& target_td = tpool.get_td(target_type);
+
+            // oversized vector construction, GLUtils requires matching component count or single
+            // scalar construction
+            // valid_ctor_call accepts it so that TargetInfo remains GLUtils-agnostic
+            if (is_targeting_glsl() && target_td.is_vector()) {
+                uint32_t component_accum = 0;
+                for (TypeId arg_type : arg_types) {
+                    const auto& arg_td = tpool.get_td(arg_type);
+                    if (arg_td.is_scalar())
+                        component_accum++;
+                    else if (arg_td.is_vector())
+                        component_accum += arg_td.as<VectorTD>().component_count;
+                    else
+                        return fail("construction of vector is not GLUtils-compatible", fn_call);
+                }
+
+                if (target_td.as<VectorTD>().component_count != component_accum &&
+                    (arg_types.size() != 1 || !tpool.get_td(arg_types[0]).is_scalar())) {
+                    // this should only apply to oversized calls, since underspecifying should be
+                    // rejected in valid_ctor_call
+                    return fail(fmt::format("oversized construction of vector type {}: expected {} "
+                                            "components, got {} (this restriction is applied to "
+                                            "follow GLUtils semantics)",
+                                            type_str(target_type),
+                                            target_td.as<VectorTD>().component_count,
+                                            component_accum),
+                                fn_call);
+                }
+            }
+
             opaq_fn->set_is_ctor(true);
 
             return target_type;
@@ -2821,7 +2880,10 @@ TypeId JLSema::visit_WhileExpr(WhileExpr& while_) {
 
         check(while_.condition, ctx.jl_Bool_t());
 
+        loop_depth++;
         infer(while_.body);
+        assert(loop_depth >= 1 && "loop depth is zero after visiting while's body");
+        loop_depth--;
     }
 
     return ctx.jl_Nothing_t();
@@ -2858,11 +2920,17 @@ TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
     return tpool.void_td();
 }
 
-TypeId JLSema::visit_ContinueStmt([[maybe_unused]] ContinueStmt& cont) {
+TypeId JLSema::visit_ContinueStmt(ContinueStmt& cont) {
+    if (loop_depth == 0)
+        return fail("continue statement outside of loop", cont);
+
     return tpool.void_td();
 }
 
-TypeId JLSema::visit_BreakStmt([[maybe_unused]] BreakStmt& brk) {
+TypeId JLSema::visit_BreakStmt(BreakStmt& brk) {
+    if (loop_depth == 0)
+        return fail("break statement outside of loop", brk);
+
     return tpool.void_td();
 }
 

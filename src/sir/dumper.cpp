@@ -1,9 +1,10 @@
 #include <fmt/format.h>
 
-#include "sir/dumper.h"
-#include "types/qualifiers.h"
-#include "types/type_descriptors.h"
-#include "types/type_to_string.h"
+#include "common/report.hpp"
+#include "sir/dumper.hpp"
+#include "types/qualifiers.hpp"
+#include "types/type_descriptors.hpp"
+#include "types/type_to_string.hpp"
 
 namespace {
 
@@ -168,8 +169,13 @@ void SIRDumper::visit_IntLiteral(IntLiteral& int_lit) {
 }
 
 void SIRDumper::visit_FloatLiteral(FloatLiteral& float_lit) {
-    out << indent() << "FloatLiteral (" << type_str(float_lit.type()) << "): " << float_lit.value
-        << '\n';
+    out << indent() << "FloatLiteral (" << type_str(float_lit.type())
+        << "): " << fmt::format("{}", float_lit.value) << '\n';
+}
+
+void SIRDumper::visit_DoubleLiteral(DoubleLiteral& double_lit) {
+    out << indent() << "DoubleLiteral (" << type_str(double_lit.type())
+        << "): " << fmt::format("{}", double_lit.value) << '\n';
 }
 
 void SIRDumper::visit_VectorLiteral(VectorLiteral& vec_lit) {

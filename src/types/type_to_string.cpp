@@ -1,4 +1,4 @@
-#include "types/type_to_string.h"
+#include "types/type_to_string.hpp"
 
 #include <fmt/format.h>
 
@@ -30,7 +30,7 @@ namespace stc::types {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 std::string TypeToStringVisitor::visit_null_id() {
-    return "null type";
+    return "no type (null)";
 }
 
 // this has to be caught early, as it needs to be checked at the TypeDescriptor-level due to

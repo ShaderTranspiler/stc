@@ -1,9 +1,9 @@
 #include <cassert>
 #include <fmt/format.h>
 
-#include "ast/context.h"
-#include "types/type_descriptors.h"
-#include "types/type_pool.h"
+#include "ast/context.hpp"
+#include "types/type_descriptors.hpp"
+#include "types/type_pool.hpp"
 
 namespace stc::types {
 

@@ -1,6 +1,6 @@
-#include "backend/glsl/target_info.h"
-#include "backend/glsl/builtin_data.h"
-#include "types/type_to_string.h"
+#include "backend/glsl/target_info.hpp"
+#include "backend/glsl/builtin_data.hpp"
+#include "types/type_to_string.hpp"
 
 #include <algorithm>
 

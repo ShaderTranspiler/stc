@@ -80,6 +80,7 @@ option(STC_USE_FORMAT "Enable formatting targets, if clang-format is installed l
 option(STC_USE_TIDY "Enable static analysis through clang-tidy, if it's installed locally" OFF)
 option(STC_USE_SAN "Enable address and undefined behavior sanitizers (ASan and UBSan), if supported. Might be incompatible with some versions of Julia" OFF)
 option(STC_OFFICIAL_BUILD "Mark builds produced using this configuration as an official build in the metadata" OFF)
+option(STC_REQUIRE_GLSLANG_VALIDATOR "Require glslangValidator to be available, used for testing transpiler output (has no effect if STC_BUILD_TESTS is OFF)" OFF)
 
 set(STC_BUILD_ORIGIN "development build")
 if (STC_OFFICIAL_BUILD)
@@ -115,19 +116,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.h.in")
-set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.h")
+set(STC_CONFIG_META_TEMPLATE "${STC_SRC_DIR}/include/meta/configure.hpp.in")
+set(STC_CONFIG_META_OUT "${STC_BUILD_DIR}/generated/meta/configure.hpp")
 
 # generate config-time metadata
 configure_file("${STC_CONFIG_META_TEMPLATE}" "${STC_CONFIG_META_OUT}" @ONLY)
 
 set(STC_BUILD_META_SCRIPT "${STC_SRC_DIR}/cmake/gen_build_meta.cmake")
-set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.h.in")
-set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.h")
+set(STC_BUILD_META_TEMPLATE "${STC_SRC_DIR}/include/meta/build.hpp.in")
+set(STC_BUILD_META_OUT "${STC_BUILD_DIR}/generated/meta/build.hpp")
 set(STC_BUILD_META_BASE_ARGS
     "-DSTC_SRC_DIR=${STC_SRC_DIR}"
     "-DSTC_GIT_EXECUTABLE=${STC_GIT_EXECUTABLE}"
     "-DSTC_COMMIT_HASH=${STC_COMMIT_HASH}"
+    "-DSTC_VERSION=${STC_VERSION}"
     "-DSTC_BUILD_TIMESTAMP=${STC_BUILD_TIMESTAMP}"
     "-DSTC_BUILD_META_TEMPLATE=${STC_BUILD_META_TEMPLATE}"
     "-DSTC_BUILD_META_OUT=${STC_BUILD_META_OUT}"
@@ -155,7 +157,16 @@ add_custom_target(${BUILD_META_TARGET}
     VERBATIM
 )
 
-file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "include/*.h" "src/*.cpp" "cli/*.h" "cli/*.cpp" "sandbox/*.cpp" "sandbox/*.h" "test/*.cpp" "test/*.h")
+# currently, C++ headers are named .hpp and C headers are named .h
+# this is mostly because the C API of the library needs to produce a C-includable header
+# some internal headers may also be C-compatible (to help usage of the C API)
+# we just simply combine hpp/h in here so that C++ has access to the C headers too
+file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS
+    "include/*.hpp" "include/*.h"
+    "src/*.cpp"
+    "cli/*.hpp"     "cli/*.h"     "cli/*.cpp"
+    "sandbox/*.hpp" "sandbox/*.h" "sandbox/*.cpp"
+    "test/*.hpp"    "test/*.h"    "test/*.cpp")
 
 # dev tooling (ccache, clang-format, clang-tidy)
 # needed before dependencies, since compiler caching should propagate to those
@@ -164,7 +175,7 @@ include(${STC_SRC_DIR}/cmake/dev_tools.cmake)
 
 # fmt
 
-find_package(fmt QUIET)
+find_package(fmt 11.1 QUIET)
 
 if(NOT fmt_FOUND)
     message(STATUS "fmt not found locally, it will be fetched through git...")
@@ -174,6 +185,8 @@ if(NOT fmt_FOUND)
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
         GIT_TAG        11.1.1
     )
+    # we link fmt statically, so we don't wanna ship their headers and such
+    set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(fmt)
     
     get_target_property(FMT_INCLUDES fmt INTERFACE_INCLUDE_DIRECTORIES)
@@ -218,7 +231,8 @@ if (MSVC)
     # apparently MSVC preprocessor is not standard-confirming by default
     # /Zc:preprocessor needed for X-macro system (__VA_ARGS__ expansion)
     target_compile_options(CommonConfig INTERFACE
-        /W4 /Zc:preprocessor /GR-
+        /W4 /GR-
+        $<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>
         $<$<CONFIG:RelWithDebInfo>:/Oy->
     )
 
@@ -236,6 +250,7 @@ else()
     target_link_options(CommonConfig INTERFACE
         $<$<CONFIG:Release>:-Wl,-s>
         $<$<CONFIG:MinSizeRel>:-Wl,-s>
+        -Wl,--exclude-libs,ALL # avoid fmt's (or other dependency's) symbols getting exported from our binaries (Linux-only issue)
     )
 
     if (MINGW)
@@ -357,8 +372,9 @@ set(CLI_TARGET stc_cli)
 if (STC_BUILD_CLI)
     add_executable(${CLI_TARGET}
         "cli/cli.cpp"
+        "cli/cli_utils.cpp"
         "src/common/term_utils.cpp"
-        "src/common/utils.cpp"
+        "src/common/report.cpp"
     )
     add_dependencies(${CLI_TARGET} ${BUILD_META_TARGET})
 
@@ -379,6 +395,17 @@ if (STC_BUILD_CLI)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/include)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_SRC_DIR}/cli)
     target_include_directories(${CLI_TARGET} PRIVATE ${STC_BUILD_DIR}/generated)
+
+    if (NOT WIN32)
+        # okay so I'm not gonna pretend to fully understand what's happening here since I'm neither too familiar with ELF or dynamic linking, but:
+        # if the CLI exec uses libjulia globals (e.g. jl_base_module) they receive their own R_X86_64_COPY (or whatever arch) copy relocation thingy
+        # in the BSS, which the dynamic linker then propagates to libstc symbols too
+        # but at load-time only NULL is copied into them, and libjulia probably does some address/storage tricky thing internally that bypasses the symbols
+        # themselves, so our copies end up stale, while they write the actual values into their own storage we cannot look up, meaning we can't access the
+        # actual, initialized values of these globals post-jl_init()
+        # -fPIC disables copy relocations regardless of arch/compiler (platform-wise this is a linux-only issue)
+        target_compile_options(${CLI_TARGET} PRIVATE -fPIC)
+    endif()
 
     if (STC_USE_TIDY AND DEFINED CLANG_TIDY_CMD)
         set_target_properties(${CLI_TARGET} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_CMD}")
@@ -413,7 +440,7 @@ if (STC_BUILD_TESTS)
         message(FATAL_ERROR "Catch2 could not be fetched, but testing has been explicitly requested.")
     endif()
 
-    file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/*.cpp")
+    file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "test/unit/*.cpp")
 
     add_executable(${UNIT_TESTS_TARGET} ${TEST_SOURCES})
     add_dependencies(${UNIT_TESTS_TARGET} ${BUILD_META_TARGET})
@@ -429,6 +456,11 @@ if (STC_BUILD_TESTS)
 
     target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE ${LIBSTC_OBJ_TARGET})
     target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Catch2::Catch2WithMain)
+
+    if (NOT WIN32)
+        # see CLI_TARGET's identical option for reasoning
+        target_compile_options(${UNIT_TESTS_TARGET} PRIVATE -fPIC)
+    endif()
 
     if (STC_ENABLE_PROFILING)
         target_link_libraries(${UNIT_TESTS_TARGET} PRIVATE Tracy::TracyClient)
@@ -446,11 +478,73 @@ if (STC_BUILD_TESTS)
 
     enable_testing()
     include(Catch)
-    catch_discover_tests(${UNIT_TESTS_TARGET})
 
-    message(STATUS "Catch2 found, ${UNIT_TESTS_TARGET} target enabled for testing")
+    if (WIN32) # lib RPATH should take care of this on Linux automatically
+        catch_discover_tests(${UNIT_TESTS_TARGET} DL_PATHS "${JULIA_BIN_DIR}")
+    else()
+        catch_discover_tests(${UNIT_TESTS_TARGET})
+    endif()
+
+    # conformance tests
+    if (STC_BUILD_CLI)
+        find_package(Python3 3.12 COMPONENTS Interpreter REQUIRED)
+
+        if (STC_REQUIRE_GLSLANG_VALIDATOR)
+            find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+        else()
+            find_program(GLSLANG_VALIDATOR glslangValidator)
+        endif()
+
+        set(CONFORMANCE_DIR "${STC_SRC_DIR}/test/conformance")
+        file(GLOB_RECURSE CONFORMANCE_TEST_FILES CONFIGURE_DEPENDS "${CONFORMANCE_DIR}/*.jl")
+
+        set(CONFORMANCE_EXTRA_ARGS "")
+        if (WIN32)
+            list(APPEND CONFORMANCE_EXTRA_ARGS --julia-bin-dir "${JULIA_BIN_DIR}")
+        endif()
+        if (GLSLANG_VALIDATOR)
+            list(APPEND CONFORMANCE_EXTRA_ARGS --glslang-validator "${GLSLANG_VALIDATOR}")
+        endif()
+
+        foreach (file IN LISTS CONFORMANCE_TEST_FILES)
+            file(RELATIVE_PATH file_rel "${CONFORMANCE_DIR}" "${file}")
+            string(REGEX REPLACE "\\.jl$" "" test_name "${file_rel}")
+
+            add_test(NAME "conformance/${test_name}"
+                     COMMAND ${Python3_EXECUTABLE} "${CONFORMANCE_DIR}/run_conformance_test.py"
+                     --path "${file}" --cli $<TARGET_FILE:${CLI_TARGET}>
+                     --verbose --fail-on-stale
+                     ${CONFORMANCE_EXTRA_ARGS})
+            set_tests_properties("conformance/${test_name}" PROPERTIES LABELS conformance SKIP_RETURN_CODE 77)
+        endforeach()
+    else()
+        message(WARNING "Tests are enabled, but CLI building is not. Running conformance tests relies on the CLI as an stc API, so conformance tests will not be enabled")
+    endif()
+
+    # compile-only check that the stc.h header is a valid C header that can be included in C11 without problem
+    # we only compile, since that should already catch if the header is invalid, without having to link the actual library
+    set(C_HEADER_CHECK_TARGET stc_c_header_check)
+    add_library(${C_HEADER_CHECK_TARGET} OBJECT test/header_check.c)
+    target_include_directories(${C_HEADER_CHECK_TARGET} PRIVATE "${STC_SRC_DIR}/include")
+    set_target_properties(${C_HEADER_CHECK_TARGET} PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+
+    if (MSVC)
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
+    if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${C_HEADER_CHECK_TARGET} PRIVATE -Wstrict-prototypes)
+    endif()
+
+    message(STATUS "Catch2 found, test targets enabled")
 else()
-    message(STATUS "Skipping Catch2 build and ${UNIT_TESTS_TARGET} target")
+    message(STATUS "Skipping Catch2 build and test targets")
 endif()
 
 # Doxygen (+ Graphviz)
@@ -491,9 +585,7 @@ if(STC_BUILD_CLI)
     install(PROGRAMS ${STC_SRC_DIR}/packaging/stc.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-# there's no point in shipping includes currently, since they'll be broken
-# planned include redesign in v1.0
-# install(DIRECTORY ${STC_SRC_DIR}/include/api/
-#     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
-#     FILES_MATCHING PATTERN "*.h"
-# )
+install(DIRECTORY ${STC_SRC_DIR}/include/stc/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stc
+    FILES_MATCHING PATTERN "*.h"
+)

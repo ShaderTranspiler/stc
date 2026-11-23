@@ -1,9 +1,12 @@
-#include "frontend/jl/parser.h"
-#include "external/tracy.h"
-#include "frontend/jl/type_conversion.h"
-#include "frontend/jl/utils.h"
+#include "frontend/jl/parser.hpp"
+#include "frontend/jl/type_conversion.hpp"
+#include "frontend/jl/utils.hpp"
+
+#include "external/tracy.hpp"
+
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <utility>
 
 // struct layouts were taken from:
@@ -11,6 +14,7 @@
 
 namespace {
 
+// only used for debug assertions (currently), so release builds need [[maybe_unused]]
 [[maybe_unused]]
 STC_FORCE_INLINE jl_sym_t* is_sym(jl_value_t* value, jl_sym_t* checked_sym) {
     if (value == nullptr || !jl_is_symbol(value))
@@ -32,12 +36,15 @@ STC_FORCE_INLINE bool is_expr(jl_value_t* value, jl_sym_t* head) {
     return to_expr_if(value, head) != nullptr;
 }
 
-stc::SymbolId get_tmp_sym(stc::SymbolPool& sym_pool) {
-    static uint32_t counter = 0;
-
-    std::string temp_name{fmt::format("stc_tmp_sym_{}", counter++)};
-
-    return sym_pool.get_id(temp_name);
+// so that symbol rejection remains in a central place for future modifications
+// the stc_tmp substring is reserved for symbols introduced by the transpiler
+// gl would lead to usyms of form gl_n, which are reserved in GLSL
+// TODO: these could be worked around, but for now us rejecting them is better than letting GLSL
+// compilation fail later
+constexpr std::string_view invalid_user_symbol_msg_suffix =
+    "(identifiers cannot be 'gl' or contain the substring 'stc_tmp')";
+STC_FORCE_INLINE bool is_valid_user_symbol(std::string_view symbol) {
+    return symbol != "gl" && symbol.find("stc_tmp") == std::string_view::npos;
 }
 
 } // namespace
@@ -69,12 +76,11 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
         if (tsym == sym_cache.Nothing) return ctx.jl_Nothing_t();
         // clang-format on
 
-        static_assert((sizeof(void*) == 4U || sizeof(void*) == 8U),
-                      "unsupported environment (sizeof(void*) is not 32 or 64 bits)");
-
         if (tsym == sym_cache.Int && ctx.config.coerce_to_i32)
             return ctx.jl_Int32_t();
 
+        static_assert((sizeof(void*) == 4U || sizeof(void*) == 8U),
+                      "unsupported environment (sizeof(void*) is not 32 or 64 bits)");
         if constexpr (sizeof(void*) == 4U) {
             if (tsym == sym_cache.Int)
                 return ctx.jl_Int32_t();
@@ -92,14 +98,38 @@ TypeId JLParser::resolve_type(jl_value_t* type) {
         if (type_val == nullptr)
             type_val = jl_get_global(ctx.jl_env.module_cache.main_mod, tsym);
 
-        if (type_val != nullptr && jl_is_datatype(type_val)) {
-            TypeId parsed = parse_jl_type(safe_cast<jl_datatype_t>(type_val), ctx);
+        if (type_val != nullptr) {
+            if (jl_is_datatype(type_val)) {
+                TypeId parsed = parse_jl_type(safe_cast<jl_datatype_t>(type_val), ctx);
 
-            if (!parsed.is_null())
-                return parsed;
+                if (!parsed.is_null())
+                    return parsed;
+            }
+
+            if (!jl_is_type(type_val)) {
+                fail(fmt::format("non-type Julia global used in type position: {}",
+                                 jl_symbol_name(tsym)));
+                return TypeId::null_id();
+            }
+
+            if (!jl_is_concrete_type(type_val)) {
+                fail(fmt::format("cannot use abstract Julia type: {}", jl_symbol_name(tsym)));
+                return TypeId::null_id();
+            }
         }
 
-        // TODO: check for struct/iface types to allow them in explicit type declarations
+        const char* type_sym_name = jl_symbol_name(tsym);
+        if (!is_valid_user_symbol(type_sym_name)) {
+            fail(fmt::format("invalid identifier as type name: '{}' {}", type_sym_name,
+                             invalid_user_symbol_msg_suffix));
+            return TypeId::null_id();
+        }
+
+        SymbolId type_sym_id = ctx.sym_pool.get_id(type_sym_name);
+        TypeId struct_id     = ctx.type_pool.get_struct_td(type_sym_id);
+        if (!struct_id.is_null())
+            return struct_id;
+
         fail(fmt::format("unsupported Julia type: {}", jl_symbol_name(tsym)));
         return TypeId::null_id();
     }
@@ -262,7 +292,13 @@ NodeId JLParser::parse(jl_value_t* node) {
         // ! name::Symbol
         auto* name   = safe_cast<jl_sym_t>(safe_fieldref(node, 1, "name"));
 
-        SymbolId name_id = ctx.sym_pool.get_id(jl_symbol_name(name));
+        const char* name_str = jl_symbol_name(name);
+        if (!is_valid_user_symbol(name_str)) {
+            return fail(fmt::format("invalid identifier in GlobalRef: '{}' {}", name_str,
+                                    invalid_user_symbol_msg_suffix));
+        }
+
+        SymbolId name_id = ctx.sym_pool.get_id(name_str);
 
         NodeId glob_ref = emplace_node<GlobalRef>(cur_loc, module, name_id);
 
@@ -279,7 +315,13 @@ NodeId JLParser::parse(jl_value_t* node) {
 
         auto* sym = reinterpret_cast<jl_sym_t*>(inner_v);
 
-        SymbolId sym_id = ctx.sym_pool.get_id(jl_symbol_name(sym));
+        const char* sym_name = jl_symbol_name(sym);
+        if (!is_valid_user_symbol(sym_name)) {
+            return fail(fmt::format("invalid identifier: '{}' {}", sym_name,
+                                    invalid_user_symbol_msg_suffix));
+        }
+
+        SymbolId sym_id = ctx.sym_pool.get_id(sym_name);
         return emplace_node<SymbolLiteral>(cur_loc, sym_id);
     }
 
@@ -287,7 +329,7 @@ NodeId JLParser::parse(jl_value_t* node) {
         return parse_expr(safe_cast<jl_expr_t>(node));
 
     if (jl_is_bool(node)) {
-        // jl_unbox_bool returns an uint8_t
+        // jl_unbox_bool returns an int8_t
         bool value = static_cast<bool>(jl_unbox_bool(node));
 
         return emplace_node<BoolLiteral>(cur_loc, value);
@@ -346,8 +388,18 @@ NodeId JLParser::parse(jl_value_t* node) {
     if (jl_typeis(node, jl_float64_type)) {
         double value = jl_unbox_float64(node);
 
-        if (ctx.config.coerce_to_f32)
-            return emplace_node<Float32Literal>(cur_loc, static_cast<float>(value));
+        if (ctx.config.coerce_to_f32) {
+            float coerced = static_cast<float>(value);
+            if (!ctx.config.coerce_non_finite && std::isfinite(value) && !std::isfinite(coerced)) {
+                return fail(
+                    fmt::format("Float64 literal cannot be coerced to a Float32 value without "
+                                "changing finiteness: {} -> {}.\nUse the --coerce-non-finite flag"
+                                "to enable such conversions.",
+                                value, coerced));
+            }
+
+            return emplace_node<Float32Literal>(cur_loc, coerced);
+        }
 
         return emplace_node<Float64Literal>(cur_loc, value);
     }
@@ -365,38 +417,36 @@ NodeId JLParser::parse(jl_value_t* node) {
     // sema can decide what to do with these later
     // for known datatypes, they can be captured with their current value, or an error can be thrown
 
-    auto* datatype     = safe_cast<jl_datatype_t>(jl_typeof(node));
-    auto* type_name    = jl_symbol_name(datatype->name->name);
+    auto* datatype  = safe_cast<jl_datatype_t>(jl_typeof(node));
+    auto* type_name = jl_symbol_name(datatype->name->name);
+    if (!is_valid_user_symbol(type_name)) {
+        return fail(fmt::format("invalid identifier in type name: '{}' {}", type_name,
+                                invalid_user_symbol_msg_suffix));
+    }
     SymbolId tname_sid = ctx.sym_pool.get_id(type_name);
 
     return emplace_node<OpaqueNode>(cur_loc, tname_sid, node);
 }
 
-// parses the code argument using Julia's Meta.parse and invokes the regular parsing pipeline on it
-NodeId JLParser::parse_code(std::string_view code) {
-    ZoneScoped;
-    ZoneText(code.data(), code.size());
+NodeId JLParser::emplace_decl_ref(SrcLocationId loc, SymbolId sym) {
+    NodeId sym_lit = emplace_node<SymbolLiteral>(loc, sym);
+    if (sym_lit.is_null())
+        return NodeId::null_id();
 
-    jl_value_t* code_jl_str = nullptr;
-    jl_value_t* parsed_expr = nullptr;
-    JL_GC_PUSH2(&code_jl_str, &parsed_expr); // NOLINT
+    return emplace_node<DeclRefExpr>(loc, sym_lit);
+}
 
-    const ScopeGuard jl_gc_pop_guard{[]() { JL_GC_POP(); }};
+NodeId JLParser::emplace_decl_ref(SrcLocationId loc, std::string_view sym) {
+    if (!is_valid_user_symbol(sym)) {
+        return fail(
+            fmt::format("invalid identifier: '{}' {}", sym, invalid_user_symbol_msg_suffix));
+    }
 
-    jl_value_t* parse_fn = ctx.jl_env.module_cache.meta_mod.get_fn("parse", false);
+    return emplace_decl_ref(loc, ctx.sym_pool.get_id(sym));
+}
 
-    if (parse_fn == nullptr)
-        return fail("failed to load parse function from the Meta module");
-
-    // implemented as a simple memcpy in libjulia, avoids strlen (==> null termination agnostic)
-    code_jl_str = jl_pchar_to_string(code.data(), code.size());
-
-    parsed_expr = jl_call1(parse_fn, code_jl_str);
-
-    if (check_exceptions())
-        return fail("Julia exception while trying to parse code string using Meta.parse");
-
-    return parse(parsed_expr);
+NodeId JLParser::emplace_decl_ref(SrcLocationId loc, jl_sym_t* sym) {
+    return emplace_decl_ref(loc, jl_symbol_name(sym));
 }
 
 std::pair<jl_value_t*, TypeId> JLParser::parse_type_annotation(jl_expr_t* annot) {
@@ -529,7 +579,21 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
         // layout qualifiers are handled separately
         if (arg1_sym == sym_cache.gl_layout) {
             expr_it_v = unwrap_layout_qual(expr_it, quals, lq_payloads);
+            if (expr_it_v == nullptr) {
+                assert(!_success);
+                return NodeId::null_id();
+            }
+
             continue;
+        }
+
+        if (nargs == 2)
+            return fail("empty qualifier target is not allowed");
+
+        if (nargs > 3) {
+            return fail(
+                "qualifiers can only have a single argument (e.g. interface block instance names "
+                "are currently not supported)");
         }
 
         std::string_view qual_macro_name = jl_symbol_name(arg1_sym);
@@ -563,9 +627,6 @@ NodeId JLParser::parse_qualified_decl(jl_value_t* qualified_expr, ParseCallback 
             return fail("non-qualifier macro calls are currently not supported");
 
         quals.emplace_back(*qual);
-
-        if (nargs == 2)
-            return fail("empty qualifier target is not allowed");
 
         expr_it_v = jl_exprarg(expr_it, 2);
     }
@@ -719,7 +780,12 @@ NodeId JLParser::parse_var_decl(jl_expr_t* expr, size_t nargs) {
         return internal_error(
             "invalid variable declaration expression, couldn't unwrap identifier symbol");
 
-    SymbolId id_sym = ctx.sym_pool.get_id(jl_symbol_name(safe_cast<jl_sym_t>(id)));
+    const char* sym_name = jl_symbol_name(safe_cast<jl_sym_t>(id));
+    if (!is_valid_user_symbol(sym_name)) {
+        return fail(fmt::format("invalid identifier used as variable name: '{}' {}", sym_name,
+                                invalid_user_symbol_msg_suffix));
+    }
+    SymbolId id_sym = ctx.sym_pool.get_id(sym_name);
 
     return emplace_node<VarDecl>(decl_loc, id_sym,
                                  type != nullptr ? resolve_type(type) : TypeId::null_id(), scope,
@@ -729,6 +795,10 @@ NodeId JLParser::parse_var_decl(jl_expr_t* expr, size_t nargs) {
 NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
     ZoneScoped;
     assert(expr->head == sym_cache.function || expr->head == sym_cache.eq);
+
+    if (nargs == 1)
+        return fail("empty function declarations are currently not supported; the first method of "
+                    "a function declares the function itself.");
 
     if (nargs != 2)
         return internal_error("unexpected function definition layout, expected two argument for "
@@ -782,7 +852,12 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
         return internal_error("unexpected non-symbol name in function header");
     auto* name = reinterpret_cast<jl_sym_t*>(name_v);
 
-    SymbolId fn_name = ctx.sym_pool.get_id(jl_symbol_name(name));
+    const char* sym_name = jl_symbol_name(name);
+    if (!is_valid_user_symbol(sym_name)) {
+        return fail(fmt::format("invalid function identifier used: '{}' {}", sym_name,
+                                invalid_user_symbol_msg_suffix));
+    }
+    SymbolId fn_name = ctx.sym_pool.get_id(sym_name);
 
     std::vector<NodeId> param_decls{};
     param_decls.reserve(header_nargs - 1);
@@ -821,8 +896,13 @@ NodeId JLParser::parse_param_decl(jl_value_t* param) {
 
     auto create_param = [this, param_loc](jl_sym_t* sym, TypeId type = TypeId::null_id(),
                                           NodeId init = NodeId::null_id()) -> NodeId {
-        return this->emplace_node<ParamDecl>(param_loc, ctx.sym_pool.get_id(jl_symbol_name(sym)),
-                                             type, false, init);
+        const char* sym_name = jl_symbol_name(sym);
+        if (!is_valid_user_symbol(sym_name)) {
+            return fail(fmt::format("invalid identifier used as parameter name: '{}' {}", sym_name,
+                                    invalid_user_symbol_msg_suffix));
+        }
+        return this->emplace_node<ParamDecl>(param_loc, ctx.sym_pool.get_id(sym_name), type, false,
+                                             init);
     };
 
     if (jl_is_symbol(param))
@@ -874,7 +954,7 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
     assert(expr->head == sym_cache.eq);
 
     if (nargs != 2)
-        return internal_error("unexpected assignment layut (expected two args)");
+        return internal_error("unexpected assignment layout (expected two args)");
 
     jl_value_t* lhs = jl_exprarg(expr, 0);
 
@@ -885,13 +965,27 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
 
     // x::Int = 0
     if (is_expr(lhs, sym_cache.dbl_col)) {
-        return fail("declarations of the form 'name::Type = value' are currently not supported "
-                    "(explicitly declare the variable local or global, or simply use the form "
-                    "'name = value' without the type constraint if it's not necessary)");
+        if (jl_expr_nargs(lhs) == 0) {
+            return internal_error(
+                "unexpected layout in '::'-based assignment lhs (expected at least one arg)");
+        }
+
+        // f()::Int = 0
+        jl_value_t* lhs_base = jl_exprarg(lhs, 0);
+        if (is_expr(lhs_base, sym_cache.call)) {
+            return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
+                                        &JLParser::parse_method_decl);
+        }
 
         // TODO: add proper support for independent :: exprs
         // ? tedious, since a :: expression could be a typeassert, type conversion or regular decl
         // ? requiring global/local markers resolves this confusion for now at parse time
+
+        return fail(
+            "declarations of the form 'name::Type = value' are currently not supported to "
+            "avoid confusion between type assertions and declarations at the parser level."
+            "\nFor now, explicitly declare the variable local or global, or simply use the form "
+            "'name = value' without the type constraint if it's not necessary.");
 
         // return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
         // &JLParser::parse_var_decl);
@@ -940,13 +1034,11 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
 
         if (lhs.is_null() || rhs.is_null()) {
             if (_success)
-                fail("couldn't parse member in tuple assignment");
-
-            // their place remains set to the default initialized null id
-            continue;
+                fail("couldn't parse a member in tuple assignment");
+            return NodeId::null_id();
         }
 
-        SymbolId tmp_sym = get_tmp_sym(ctx.sym_pool);
+        SymbolId tmp_sym = ctx.get_tmp_sym();
 
         NodeId tmp_dre_rhs = emplace_decl_ref(assign_loc, tmp_sym);
         NodeId rhs_to_tmp  = emplace_node<Assignment>(assign_loc, tmp_dre_rhs, rhs);
@@ -958,7 +1050,7 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
         assignments_block[lhs_n + i] = tmp_to_lhs;
     }
 
-    return emplace_node<CompoundExpr>(assign_loc, std::move(assignments_block));
+    return emplace_node<CompoundExpr>(assign_loc, std::move(assignments_block), true);
 }
 
 NodeId JLParser::parse_update_assignment(jl_expr_t* expr, size_t nargs) {
@@ -989,6 +1081,26 @@ NodeId JLParser::parse_update_assignment(jl_expr_t* expr, size_t nargs) {
                                           is_broadcast);
 }
 
+namespace {
+
+void add_expr_to_compound(std::vector<NodeId>& cmpd_body, NodeId child, const JLCtx& ctx) {
+    if (child.is_null())
+        return;
+
+    const auto* child_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(child);
+    if (child_cmpd == nullptr || !child_cmpd->splice()) {
+        // non-compound and non-splicing compounds are nested
+        cmpd_body.push_back(child);
+        return;
+    }
+
+    // splicing compounds get their body inlined
+    for (NodeId child_of_child : child_cmpd->body)
+        add_expr_to_compound(cmpd_body, child_of_child, ctx);
+}
+
+} // namespace
+
 NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
     ZoneScoped;
     assert(expr->head == sym_cache.block);
@@ -997,19 +1109,16 @@ NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
     std::vector<NodeId> inner_exprs{};
     inner_exprs.reserve(nargs);
 
-    for (size_t i = 0; i < nargs; i++) {
-        NodeId parsed_arg = parse(jl_exprarg(expr, i));
+    for (size_t i = 0; i < nargs; i++)
+        add_expr_to_compound(inner_exprs, parse(jl_exprarg(expr, i)), ctx);
 
-        if (parsed_arg.is_null())
-            continue;
-
-        inner_exprs.push_back(parsed_arg);
-
-        // if block is not empty, make its location point to the first inner line, rather than the
-        // last outer one
-        if (inner_exprs.size() == 1) {
-            cmpd_loc = cur_loc;
-        }
+    // if block is not empty, make its location point to the first inner line, rather than the
+    // last outer one
+    if (!inner_exprs.empty()) {
+        assert(!inner_exprs[0].is_null());
+        const Expr* first_arg = ctx.get_node(inner_exprs[0]);
+        if (first_arg != nullptr)
+            cmpd_loc = first_arg->location;
     }
 
     return emplace_node<CompoundExpr>(cmpd_loc, std::move(inner_exprs));
@@ -1039,7 +1148,7 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
     jl_value_t* target_fn_v = jl_exprarg(expr, 0);
     if (!is_broadcast && jl_is_symbol(target_fn_v)) {
         assert(expr->head == sym_cache.call);
-        jl_sym_t* fn_sym = safe_cast<jl_sym_t>(target_fn_v);
+        auto* fn_sym = safe_cast<jl_sym_t>(target_fn_v);
         std::string_view fn_name{jl_symbol_name(fn_sym)};
 
         // prefix broadcast calls, strip first symbol
@@ -1056,6 +1165,9 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
     } else {
         parsed_target_fn = parse(target_fn_v);
     }
+
+    if (parsed_target_fn.is_null())
+        return error_on_unexpected_null();
 
     jl_expr_t* params_expr = expr;
     size_t first_param_idx = 1;
@@ -1081,6 +1193,9 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
             return fail("Keyword arguments are currently not supported");
 
         NodeId parsed_arg = parse(arg);
+        if (parsed_arg.is_null())
+            return error_on_unexpected_null();
+
         params.push_back(parsed_arg);
     }
 
@@ -1218,8 +1333,12 @@ NodeId JLParser::parse_vect(jl_expr_t* expr, size_t nargs) {
     std::vector<NodeId> members{};
     members.reserve(nargs);
 
-    for (size_t i = 0; i < nargs; i++)
+    for (size_t i = 0; i < nargs; i++) {
         members.emplace_back(parse(jl_exprarg(expr, i)));
+
+        if (members.back().is_null())
+            return error_on_unexpected_null();
+    }
 
     return emplace_node<ArrayLiteral>(base_loc, std::move(members));
 }
@@ -1270,7 +1389,11 @@ NodeId JLParser::parse_field_decl(jl_value_t* field_decl_v) {
     if (!jl_is_symbol(field_id_v))
         return internal_error("unexpected field declaration layout (lhs is not a symbol)");
 
-    std::string_view field_id{jl_symbol_name(safe_cast<jl_sym_t>(field_id_v))};
+    const char* field_id = jl_symbol_name(safe_cast<jl_sym_t>(field_id_v));
+    if (!is_valid_user_symbol(field_id)) {
+        return fail(fmt::format("invalid identifier used as field name: '{}' {}", field_id,
+                                invalid_user_symbol_msg_suffix));
+    }
     SymbolId field_id_sym = ctx.sym_pool.get_id(field_id);
 
     NodeId parsed_decl = emplace_node<FieldDecl>(cur_loc, field_id_sym, field_type);
@@ -1315,7 +1438,12 @@ NodeId JLParser::parse_struct(jl_expr_t* expr, size_t nargs, bool register_td) {
             "unexpected struct definition layout (second arg is an expr, but not {T} or <:)");
     }
 
-    std::string_view struct_id{jl_symbol_name(safe_cast<jl_sym_t>(struct_id_arg))};
+    const char* struct_id = jl_symbol_name(safe_cast<jl_sym_t>(struct_id_arg));
+    if (!is_valid_user_symbol(struct_id)) {
+        return fail(fmt::format("invalid identifier used as struct name: '{}' {}", struct_id,
+                                invalid_user_symbol_msg_suffix));
+    }
+
     SymbolId struct_id_sym = ctx.sym_pool.get_id(struct_id);
 
     if (!ctx.type_pool.get_struct_td(struct_id_sym).is_null())
@@ -1420,6 +1548,9 @@ NodeId JLParser::parse_log_op(jl_expr_t* expr, size_t nargs) {
     NodeId lhs = parse(jl_exprarg(expr, 0));
     NodeId rhs = parse(jl_exprarg(expr, 1));
 
+    if (lhs.is_null() || rhs.is_null())
+        return error_on_unexpected_null();
+
     return emplace_node<LogicalBinOp>(base_loc, lhs, rhs, expr->head == sym_cache.dbl_amper);
 }
 
@@ -1434,11 +1565,27 @@ NodeId JLParser::fail(std::string_view msg, SrcLocationId loc_id) {
 }
 
 NodeId JLParser::internal_error(std::string_view msg, SrcLocationId loc_id) {
+    // avoid user errors from propagating into internal errors
+    if (!_success)
+        return NodeId::null_id();
+
     if (loc_id.is_null())
         loc_id = cur_loc;
 
-    _success = false;
+    _success            = false;
+    _had_internal_error = true;
+
     stc::internal_error(ctx.src_info_pool, loc_id, msg);
+
+    return NodeId::null_id();
+}
+
+NodeId JLParser::error_on_unexpected_null(SrcLocationId loc_id) {
+    if (loc_id.is_null())
+        loc_id = cur_loc;
+
+    if (_success)
+        return internal_error("a child node failed to parse without reporting an error", loc_id);
 
     return NodeId::null_id();
 }

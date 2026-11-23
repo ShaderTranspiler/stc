@@ -1,0 +1,10 @@
+# COMMENT: written by Claude, reviewed by szgerii
+
+# COMMENT: special error messages left over from pre-0.0.2 GLUtils swizzling
+
+function main()
+    v = Vec3F(0)
+
+    x = v[:x]  # ERROR: Symbol
+    y = v["x"] # ERROR: String
+end

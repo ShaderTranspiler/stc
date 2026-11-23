@@ -1,5 +1,5 @@
-#include "frontend/jl/type_conversion.h"
-#include "frontend/jl/rt/utils.h"
+#include "frontend/jl/type_conversion.hpp"
+#include "frontend/jl/rt/utils.hpp"
 
 namespace stc::jl {
 
@@ -145,9 +145,6 @@ jl_datatype_t* TypeToJLVisitor::visit(BuiltinTD builtin_td) {
 TypeId parse_jl_type(jl_datatype_t* dt, JLCtx& ctx) {
     if (dt == nullptr)
         return TypeId::null_id();
-
-    assert(jl_is_concrete_type(reinterpret_cast<jl_value_t*>(dt)) &&
-           "parse_jl_type called with non-concrete datatype");
 
     const auto& type_cache = ctx.jl_env.type_cache;
 
