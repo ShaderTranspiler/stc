@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "common/id_types.hpp"
+#include "external/julia.hpp"
 
 namespace stc {
 
@@ -96,7 +97,12 @@ struct TranspilerConfig {
     std::optional<std::string> fallback_file_path{};
 
     /// Specifies the lookup path of the GLUtils module in the current Julia instance
+    /// @note If @a gl_utils_path is not @c nullptr, this value will be ignored.
     std::string gl_utils_path{default_gl_utils_path};
+    /// Specifies the concrete Julia module storing GLUtils. This should be preferred whenever it's
+    /// available over gl_utils_path.
+    /// @note If this value is not @c nullptr (default value), @a gl_utils_path is ignored.
+    jl_module_t* gl_utils_mod{};
 
     // GLSL
     /// The GLSL target version emitted into the generated code
@@ -128,8 +134,11 @@ struct TranspilerConfig {
     /// If true, prints step-by-step resolution logic for how each symbol bindig was determined
     bool track_bindings = false;
 
-    bool coerce_to_f32 = true; ///< If true, treats f64 literals as f32
-    bool coerce_to_i32 = true; ///< If true, treats i64 literals as i32
+    bool coerce_to_f32     = true; ///< If true, treats f64 literals as f32
+    /// Whether to allow or reject cases where coercing an f64 literal to an f32 value would yield a
+    /// non-finite result (e.g. nan, inf). Only has an effect if @a coerce_to_f32 is set to true.
+    bool coerce_non_finite = false;
+    bool coerce_to_i32     = true; ///< If true, treats i64 literals as i32
 
     /// If true, globals that can be queried from Julia, but are defined outside the source code
     /// will be added as uniform globals in the generated code
@@ -145,6 +154,14 @@ struct TranspilerConfig {
     /// If true, per-phase arena memory usage will be recorded and printed to stdout during
     /// transpilation
     bool track_memory = false;
+
+    /// If true, the transpiler emits warnings when encountering code which lowers with slightly
+    /// different semantics to GLSL. This includes domain differences of builtin functions,
+    /// conditions Julia will throw an error for at runtime, while GLSL treats it undefined, etc.
+    /// @important This feature is experimental! It is only partially implemented for now, with more
+    /// cases to be reported soon. Using it does not guarantee that every semantic difference will
+    /// be reported by the transpiler.
+    bool warn_strict_conformance = false;
 };
 
 /// @}

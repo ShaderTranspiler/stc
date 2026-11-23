@@ -58,6 +58,10 @@ extern "C" {
         STC_SET_CFG_VALUE(cfg_handle, warn_on_jl_sema_query, value);
     }
 
+    STC_API void stc_set_warn_strict_conformance(STC_ConfigHandle cfg_handle, bool value) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, warn_strict_conformance, value);
+    }
+
     STC_API void stc_set_print_convert_fail_reason(STC_ConfigHandle cfg_handle,
                                                    bool value) noexcept {
         STC_SET_CFG_VALUE(cfg_handle, print_convert_fail_reason, value);
@@ -73,6 +77,10 @@ extern "C" {
 
     STC_API void stc_set_coerce_to_i32(STC_ConfigHandle cfg_handle, bool value) noexcept {
         STC_SET_CFG_VALUE(cfg_handle, coerce_to_i32, value);
+    }
+
+    STC_API void stc_set_coerce_non_finite(STC_ConfigHandle cfg_handle, bool value) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, coerce_non_finite, value);
     }
 
     STC_API void stc_set_capture_uniforms(STC_ConfigHandle cfg_handle, bool value) noexcept {
@@ -137,6 +145,10 @@ extern "C" {
             else
                 config.gl_utils_path = TranspilerConfig::default_gl_utils_path;
         } catch (...) {}
+    }
+
+    STC_API void stc_set_gl_utils_mod(STC_ConfigHandle cfg_handle, _jl_module_t* value) noexcept {
+        STC_SET_CFG_VALUE(cfg_handle, gl_utils_mod, value);
     }
 
     STC_API void stc_set_fallback_file_path(STC_ConfigHandle cfg_handle,

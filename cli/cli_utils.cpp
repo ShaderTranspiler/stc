@@ -75,6 +75,7 @@ constexpr std::array transpilation_behavior_entries{
     HelpEntry{"--no-coerce-i32",            "disable automatic Int64 -> Int32 literal type coercion"},
     HelpEntry{"--no-coerce-f32",            "disable automatic Float64 -> Float32 literal type coercion"},
     HelpEntry{"--no-coercion",              "disable all literal type coercion"},
+    HelpEntry{"--coerce-non-finite",        "if Float32 coercion is enabled, enable coercing non-Float32-representable Float64 values to +/- inf"},
     HelpEntry{"--fwd-fns",                  "enable blind forwarding for non-backend-resolvable function calls (may lead to invalid code)"},
     HelpEntry{"--no-uniform-capture",       "don't capture Julia-resolvable globals as uniforms in the output"},
 };
@@ -97,7 +98,8 @@ constexpr std::array errors_and_warnings_entries{
     HelpEntry{"--error-dump none",    "disable AST dumping on errors (default)"},
     HelpEntry{"--error-dump partial", "dump the AST subtree that caused the given error"},
     HelpEntry{"--error-dump verbose", "dump the full AST at every error reported"},
-    HelpEntry{"-Wjl-query",         "warn when the Julia runtime was queried for function call resolution"},
+    HelpEntry{"-Wjl-query",           "warn when the Julia runtime was queried for function call resolution"},
+    HelpEntry{"-Wstrict-conformance", "warn when the lowered code has minor semantic differences, like a function's treatment of an out-of-domain argument (EXPERIMENTAL!)"},
 };
 
 constexpr std::array help_categories{
@@ -162,8 +164,10 @@ void setup_process() {
     // until user interaction happens
     // this would also prevent debuggers from breaking on a failing assert, so we only do this if no
     // debugger is attached (only abort behavior affects this, not the general error mode)
+    #ifdef _MSC_VER // _set_abort_behavior doesn't work on BinaryBuilder's MinGW
     if (IsDebuggerPresent() == FALSE)
         _set_abort_behavior(0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
+    #endif
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
 }

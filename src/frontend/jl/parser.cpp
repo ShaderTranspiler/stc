@@ -1,9 +1,12 @@
 #include "frontend/jl/parser.hpp"
-#include "external/tracy.hpp"
 #include "frontend/jl/type_conversion.hpp"
 #include "frontend/jl/utils.hpp"
+
+#include "external/tracy.hpp"
+
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <utility>
 
 // struct layouts were taken from:
@@ -385,8 +388,18 @@ NodeId JLParser::parse(jl_value_t* node) {
     if (jl_typeis(node, jl_float64_type)) {
         double value = jl_unbox_float64(node);
 
-        if (ctx.config.coerce_to_f32)
-            return emplace_node<Float32Literal>(cur_loc, static_cast<float>(value));
+        if (ctx.config.coerce_to_f32) {
+            float coerced = static_cast<float>(value);
+            if (!ctx.config.coerce_non_finite && std::isfinite(value) && !std::isfinite(coerced)) {
+                return fail(
+                    fmt::format("Float64 literal cannot be coerced to a Float32 value without "
+                                "changing finiteness: {} -> {}.\nUse the --coerce-non-finite flag"
+                                "to enable such conversions.",
+                                value, coerced));
+            }
+
+            return emplace_node<Float32Literal>(cur_loc, coerced);
+        }
 
         return emplace_node<Float64Literal>(cur_loc, value);
     }
@@ -783,6 +796,10 @@ NodeId JLParser::parse_method_decl(jl_expr_t* expr, size_t nargs) {
     ZoneScoped;
     assert(expr->head == sym_cache.function || expr->head == sym_cache.eq);
 
+    if (nargs == 1)
+        return fail("empty function declarations are currently not supported; the first method of "
+                    "a function declares the function itself.");
+
     if (nargs != 2)
         return internal_error("unexpected function definition layout, expected two argument for "
                               "both longdef and shortdef formats");
@@ -937,7 +954,7 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
     assert(expr->head == sym_cache.eq);
 
     if (nargs != 2)
-        return internal_error("unexpected assignment layut (expected two args)");
+        return internal_error("unexpected assignment layout (expected two args)");
 
     jl_value_t* lhs = jl_exprarg(expr, 0);
 
@@ -948,13 +965,27 @@ NodeId JLParser::parse_assignment(jl_expr_t* expr, size_t nargs) {
 
     // x::Int = 0
     if (is_expr(lhs, sym_cache.dbl_col)) {
-        return fail("declarations of the form 'name::Type = value' are currently not supported "
-                    "(explicitly declare the variable local or global, or simply use the form "
-                    "'name = value' without the type constraint if it's not necessary)");
+        if (jl_expr_nargs(lhs) == 0) {
+            return internal_error(
+                "unexpected layout in '::'-based assignment lhs (expected at least one arg)");
+        }
+
+        // f()::Int = 0
+        jl_value_t* lhs_base = jl_exprarg(lhs, 0);
+        if (is_expr(lhs_base, sym_cache.call)) {
+            return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
+                                        &JLParser::parse_method_decl);
+        }
 
         // TODO: add proper support for independent :: exprs
         // ? tedious, since a :: expression could be a typeassert, type conversion or regular decl
         // ? requiring global/local markers resolves this confusion for now at parse time
+
+        return fail(
+            "declarations of the form 'name::Type = value' are currently not supported to "
+            "avoid confusion between type assertions and declarations at the parser level."
+            "\nFor now, explicitly declare the variable local or global, or simply use the form "
+            "'name = value' without the type constraint if it's not necessary.");
 
         // return parse_qualified_decl(reinterpret_cast<jl_value_t*>(expr),
         // &JLParser::parse_var_decl);
@@ -1003,10 +1034,8 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
 
         if (lhs.is_null() || rhs.is_null()) {
             if (_success)
-                fail("couldn't parse member in tuple assignment");
-
-            // their place remains set to the default initialized null id
-            continue;
+                fail("couldn't parse a member in tuple assignment");
+            return NodeId::null_id();
         }
 
         SymbolId tmp_sym = ctx.get_tmp_sym();
@@ -1021,7 +1050,7 @@ NodeId JLParser::parse_tuple_assignment(jl_expr_t* expr) {
         assignments_block[lhs_n + i] = tmp_to_lhs;
     }
 
-    return emplace_node<CompoundExpr>(assign_loc, std::move(assignments_block));
+    return emplace_node<CompoundExpr>(assign_loc, std::move(assignments_block), true);
 }
 
 NodeId JLParser::parse_update_assignment(jl_expr_t* expr, size_t nargs) {
@@ -1052,6 +1081,26 @@ NodeId JLParser::parse_update_assignment(jl_expr_t* expr, size_t nargs) {
                                           is_broadcast);
 }
 
+namespace {
+
+void add_expr_to_compound(std::vector<NodeId>& cmpd_body, NodeId child, const JLCtx& ctx) {
+    if (child.is_null())
+        return;
+
+    const auto* child_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(child);
+    if (child_cmpd == nullptr || !child_cmpd->splice()) {
+        // non-compound and non-splicing compounds are nested
+        cmpd_body.push_back(child);
+        return;
+    }
+
+    // splicing compounds get their body inlined
+    for (NodeId child_of_child : child_cmpd->body)
+        add_expr_to_compound(cmpd_body, child_of_child, ctx);
+}
+
+} // namespace
+
 NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
     ZoneScoped;
     assert(expr->head == sym_cache.block);
@@ -1060,19 +1109,16 @@ NodeId JLParser::parse_block(jl_expr_t* expr, size_t nargs) {
     std::vector<NodeId> inner_exprs{};
     inner_exprs.reserve(nargs);
 
-    for (size_t i = 0; i < nargs; i++) {
-        NodeId parsed_arg = parse(jl_exprarg(expr, i));
+    for (size_t i = 0; i < nargs; i++)
+        add_expr_to_compound(inner_exprs, parse(jl_exprarg(expr, i)), ctx);
 
-        if (parsed_arg.is_null())
-            continue;
-
-        inner_exprs.push_back(parsed_arg);
-
-        // if block is not empty, make its location point to the first inner line, rather than the
-        // last outer one
-        if (inner_exprs.size() == 1) {
-            cmpd_loc = cur_loc;
-        }
+    // if block is not empty, make its location point to the first inner line, rather than the
+    // last outer one
+    if (!inner_exprs.empty()) {
+        assert(!inner_exprs[0].is_null());
+        const Expr* first_arg = ctx.get_node(inner_exprs[0]);
+        if (first_arg != nullptr)
+            cmpd_loc = first_arg->location;
     }
 
     return emplace_node<CompoundExpr>(cmpd_loc, std::move(inner_exprs));
@@ -1102,7 +1148,7 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
     jl_value_t* target_fn_v = jl_exprarg(expr, 0);
     if (!is_broadcast && jl_is_symbol(target_fn_v)) {
         assert(expr->head == sym_cache.call);
-        jl_sym_t* fn_sym = safe_cast<jl_sym_t>(target_fn_v);
+        auto* fn_sym = safe_cast<jl_sym_t>(target_fn_v);
         std::string_view fn_name{jl_symbol_name(fn_sym)};
 
         // prefix broadcast calls, strip first symbol
@@ -1119,6 +1165,9 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
     } else {
         parsed_target_fn = parse(target_fn_v);
     }
+
+    if (parsed_target_fn.is_null())
+        return error_on_unexpected_null();
 
     jl_expr_t* params_expr = expr;
     size_t first_param_idx = 1;
@@ -1144,6 +1193,9 @@ NodeId JLParser::parse_call(jl_expr_t* expr, size_t nargs) {
             return fail("Keyword arguments are currently not supported");
 
         NodeId parsed_arg = parse(arg);
+        if (parsed_arg.is_null())
+            return error_on_unexpected_null();
+
         params.push_back(parsed_arg);
     }
 
@@ -1281,8 +1333,12 @@ NodeId JLParser::parse_vect(jl_expr_t* expr, size_t nargs) {
     std::vector<NodeId> members{};
     members.reserve(nargs);
 
-    for (size_t i = 0; i < nargs; i++)
+    for (size_t i = 0; i < nargs; i++) {
         members.emplace_back(parse(jl_exprarg(expr, i)));
+
+        if (members.back().is_null())
+            return error_on_unexpected_null();
+    }
 
     return emplace_node<ArrayLiteral>(base_loc, std::move(members));
 }
@@ -1492,6 +1548,9 @@ NodeId JLParser::parse_log_op(jl_expr_t* expr, size_t nargs) {
     NodeId lhs = parse(jl_exprarg(expr, 0));
     NodeId rhs = parse(jl_exprarg(expr, 1));
 
+    if (lhs.is_null() || rhs.is_null())
+        return error_on_unexpected_null();
+
     return emplace_node<LogicalBinOp>(base_loc, lhs, rhs, expr->head == sym_cache.dbl_amper);
 }
 
@@ -1517,6 +1576,16 @@ NodeId JLParser::internal_error(std::string_view msg, SrcLocationId loc_id) {
     _had_internal_error = true;
 
     stc::internal_error(ctx.src_info_pool, loc_id, msg);
+
+    return NodeId::null_id();
+}
+
+NodeId JLParser::error_on_unexpected_null(SrcLocationId loc_id) {
+    if (loc_id.is_null())
+        loc_id = cur_loc;
+
+    if (_success)
+        return internal_error("a child node failed to parse without reporting an error", loc_id);
 
     return NodeId::null_id();
 }

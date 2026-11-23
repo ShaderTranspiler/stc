@@ -95,6 +95,7 @@ private:
     TypeId resolve_type(jl_value_t* type);
     NodeId fail(std::string_view msg, SrcLocationId loc_id = SrcLocationId::null_id());
     NodeId internal_error(std::string_view msg, SrcLocationId loc_id = SrcLocationId::null_id());
+    NodeId error_on_unexpected_null(SrcLocationId loc_id = SrcLocationId::null_id());
 };
 
 #undef PARSER_DECL

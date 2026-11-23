@@ -1,7 +1,5 @@
 # COMMENT: written by Claude, reviewed by szgerii
 
-# SKIP: stc crashes on calls with an argument that failed to parse
-
 f(x::Int32, y::Int32) = x
 
 function main()

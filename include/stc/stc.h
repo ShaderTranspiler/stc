@@ -11,11 +11,12 @@
 
 #include "stc/export.h"
 
-// this is what libjulia typedefs to jl_value_t
-// since this is the only libjulia symbol the transpiler API needs, we just forward declare it
-// instead of pulling in the entirety of julia.h
-// has a static_assert tying it to jl_value_t in c_api.cpp to catch libjulia drift
+// these are what libjulia typedefs to jl_value_t and jl_module_t respectively
+// since these are the only two libjulia symbols the transpiler API needs, we just forward declare
+// them instead of pulling in the entirety of julia.h
+// they have a static_assert tying them to their typedef in c_api.cpp to catch libjulia drift
 struct _jl_value_t;
+struct _jl_module_t;
 
 #ifdef __cplusplus
 
@@ -218,6 +219,7 @@ extern "C" {
 
     // errors, warnings
     STC_API void stc_set_warn_on_jl_sema_query    (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_warn_strict_conformance  (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
     STC_API void stc_set_dump_scopes              (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
     STC_API void stc_set_print_convert_fail_reason(STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
 
@@ -225,10 +227,11 @@ extern "C" {
     STC_API void stc_set_error_dump_verbosity(STC_ConfigHandle cfg_handle, STC_DumpVerbosity value) STC_NOEXCEPT;
 
     // Transpilation behaviour
-    STC_API void stc_set_forward_fns     (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
-    STC_API void stc_set_coerce_to_f32   (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
-    STC_API void stc_set_coerce_to_i32   (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
-    STC_API void stc_set_capture_uniforms(STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_forward_fns      (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_coerce_to_f32    (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_coerce_to_i32    (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_coerce_non_finite(STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
+    STC_API void stc_set_capture_uniforms (STC_ConfigHandle cfg_handle, bool value) STC_NOEXCEPT;
 
     // GLSL
     STC_API void stc_set_target_version(STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
@@ -239,6 +242,7 @@ extern "C" {
 
     // Julia
     STC_API void stc_set_gl_utils_path     (STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
+    STC_API void stc_set_gl_utils_mod      (STC_ConfigHandle cfg_handle, struct _jl_module_t* value) STC_NOEXCEPT;
     STC_API void stc_set_fallback_file_path(STC_ConfigHandle cfg_handle, const char* value) STC_NOEXCEPT;
 
     // Tracking and debug dumping

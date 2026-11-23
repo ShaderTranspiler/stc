@@ -61,6 +61,8 @@ enum class NodeKind : uint8_t {
 struct NodeBase {
     using kind_type = NodeKind;
 
+    static constexpr uint32_t NODE_STORAGE_MASK = 0x00FFFFFF;
+
     SrcLocationId location;
     uint32_t _kind         : 8;
     uint32_t _node_storage : 24;
@@ -69,9 +71,10 @@ struct NodeBase {
                       uint32_t node_storage = 0U)
         : location{location},
           _kind{static_cast<uint32_t>(kind)},
-          _node_storage{0x00FFFFFF & static_cast<uint32_t>(node_storage)} {
+          _node_storage{node_storage & NODE_STORAGE_MASK} {
 
-        assert(node_storage <= 0xFFFFFF && "implicit truncation in node_storage of NodeBase");
+        assert((node_storage & ~NODE_STORAGE_MASK) == 0 &&
+               "implicit truncation in node_storage of NodeBase");
     }
 
     // NOTE: node_storage actually returns a "uint24_t"
@@ -107,6 +110,7 @@ struct Decl : public NodeBase {
 };
 
 struct Stmt : public NodeBase {
+    // node_storage is "uint24_t" here, see NodeBase
     explicit Stmt(SrcLocationId location, NodeKind kind, uint32_t node_storage = 0U)
         : NodeBase{location, kind, node_storage} {}
 
@@ -255,12 +259,21 @@ struct IntLiteral : public Expr {
 };
 
 struct FloatLiteral : public Expr {
-    std::string value;
+    float value;
 
-    explicit FloatLiteral(SrcLocationId location, TypeId type, std::string data)
-        : Expr{location, NodeKind::FloatLit, type}, value{std::move(data)} {}
+    explicit FloatLiteral(SrcLocationId location, TypeId type, float value)
+        : Expr{location, NodeKind::FloatLit, type}, value{value} {}
 
     SAME_NODE_KIND_DEF(NodeKind::FloatLit)
+};
+
+struct DoubleLiteral : public Expr {
+    double value;
+
+    explicit DoubleLiteral(SrcLocationId location, TypeId type, double value)
+        : Expr{location, NodeKind::DoubleLit, type}, value{value} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::DoubleLit)
 };
 
 struct VectorLiteral : public Expr {
@@ -385,7 +398,7 @@ struct BinaryOp : public Expr {
         leq,    gt,    geq,
         land,   lor,   lxor,
         band,   bor,   bxor,
-        lshift, rshift
+        lshift, rshift,
     };
     // clang-format on
 
@@ -471,8 +484,13 @@ struct DeclRefExpr : public Expr {
 struct CompoundStmt : public Stmt {
     std::vector<NodeId> body;
 
-    explicit CompoundStmt(SrcLocationId location, std::vector<NodeId> body)
-        : Stmt{location, NodeKind::Compound}, body{std::move(body)} {}
+    explicit CompoundStmt(SrcLocationId location, std::vector<NodeId> body, bool splice = false)
+        : Stmt{location, NodeKind::Compound, static_cast<uint32_t>(splice)},
+          body{std::move(body)} {}
+
+    // same as splice in CompoundExpr of Julia AST except this is processed in the lowering step
+    bool splice() const { return static_cast<bool>(node_storage()); }
+    void set_splice(bool value) { _node_storage = static_cast<uint8_t>(value); }
 
     SAME_NODE_KIND_DEF(NodeKind::Compound)
 };

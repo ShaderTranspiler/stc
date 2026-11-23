@@ -28,6 +28,10 @@ JULIA_DEFINE_FAST_TLS
     jl_eval_string(str);                                                                           \
     STC_CHECK_EXCEPTIONS
 
+#define STC_ASSIGN_EVAL_AND_CHECK(var_name, str)                                                   \
+    jl_value_t* var_name = jl_eval_string(str);                                                    \
+    STC_CHECK_EXCEPTIONS
+
 namespace {
 
 std::optional<std::string> open_julia_file_as_cmpd(const std::string& path) {
@@ -147,6 +151,8 @@ int run(int argc, char* argv[]) {
             config.coerce_to_i32 = false;
         else if (arg == "--no-coerce-f32")
             config.coerce_to_f32 = false;
+        else if (arg == "--coerce-non-finite")
+            config.coerce_non_finite = true;
         else if (arg == "--no-coercion") {
             config.coerce_to_i32 = false;
             config.coerce_to_f32 = false;
@@ -154,6 +160,8 @@ int run(int argc, char* argv[]) {
             config.capture_uniforms = false;
         else if (arg == "-Wjl-query")
             config.warn_on_jl_sema_query = true;
+        else if (arg == "-Wstrict-conformance")
+            config.warn_strict_conformance = true;
         else if (arg == "--skip-no-commit")
             add_no_commit = false;
         else if (arg == "--error-dump") {
@@ -264,6 +272,12 @@ int run(int argc, char* argv[]) {
                   << stc::colored("-o", ansi_codes::cyan) << " is not provided along with it.\n";
     }
 
+    if (config.coerce_non_finite && !config.coerce_to_f32) {
+        print_conflicting_flags_warning(
+            "--no-coerce-f32", "--coerce-non-finite",
+            "--coerce-non-finite will have no effect if f32 coercion is not enabled.");
+    }
+
     if (quiet && !explicitly_asked_for_timing)
         config.track_timing = false;
 
@@ -290,6 +304,13 @@ int run(int argc, char* argv[]) {
         std::cout << "Importing GLUtils...\n";
 
     STC_EVAL_AND_CHECK("using GLUtils");
+    STC_ASSIGN_EVAL_AND_CHECK(gl_utils_mod_val, "Main.GLUtils");
+    if (!jl_is_module(gl_utils_mod_val)) {
+        std::cerr << "Main.GLUtils refers to a non-Module object!\n";
+        return EXIT_FAILURE;
+    }
+    config.gl_utils_mod  = reinterpret_cast<jl_module_t*>(gl_utils_mod_val);
+    config.gl_utils_path = "something_invalid";
 
     if (!pre_eval_path.empty()) {
         if (!std::filesystem::exists(pre_eval_path)) {
@@ -418,5 +439,6 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
 }
 
+#undef STC_ASSIGN_EVAL_AND_CHECK
 #undef STC_EVAL_AND_CHECK
 #undef STC_CHECK_EXCEPTIONS
