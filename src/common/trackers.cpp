@@ -150,15 +150,21 @@ void TimingTracker::print(std::ostream& out) const {
         timings.begin(), timings.end(), size_t{0}, [](size_t a, size_t b) { return a > b ? a : b; },
         real_name_length);
 
-    Duration timings_sum = std::accumulate(timings.begin(), timings.end(), Duration::zero(),
-                                           [](auto acc, const auto& timing) {
-                                               if (!timing.include_in_sum)
-                                                   return acc;
-
-                                               return acc + (timing.end - timing.start);
-                                           });
-
     print_header(out, "Timings");
+
+    // pre-calc stats and data necessary for deciding what to print
+    bool has_not_included     = false;
+    Duration incl_timings_sum = Duration::zero();
+    Duration all_timings_sum  = Duration::zero();
+    for (const Timing& timing : timings) {
+        Duration dur = timing.end - timing.start;
+
+        all_timings_sum += dur;
+        if (timing.include_in_sum)
+            incl_timings_sum += dur;
+        else
+            has_not_included = true;
+    }
 
     for (const Timing& timing : timings) {
         assert(timing.end != TimePoint::min());
@@ -167,7 +173,7 @@ void TimingTracker::print(std::ostream& out) const {
         Duration timing_duration = timing.end - timing.start;
 
         out << colored(timing.name, ansi_codes::yellow);
-        if (timing.include_in_sum)
+        if (has_not_included && timing.include_in_sum)
             out << colored(" (*)", ansi_codes::yellow);
         assert(max_name_length >= real_name_length(timing));
         std::string padding(max_name_length - real_name_length(timing), ' ');
@@ -176,17 +182,23 @@ void TimingTracker::print(std::ostream& out) const {
         out << colored(format_duration(timing_duration), ansi_codes::yellow);
         if (timing.include_in_sum) {
             out << colored(fmt::format(" ({})", format_percentage(timing_duration.count(),
-                                                                  timings_sum.count())),
+                                                                  incl_timings_sum.count())),
                            ansi_codes::yellow);
         }
         out << '\n';
     }
 
     out << "\nEntire transpilation finished in "
-        << colored(format_duration(timings.back().end - timings.front().start), ansi_codes::yellow);
-    out << ", sum of " << colored("(*)", ansi_codes::yellow) << " is "
-        << colored(format_duration(timings_sum), ansi_codes::yellow) << '\n';
+        << colored(format_duration(timings.back().end - timings.front().start), ansi_codes::yellow)
+        << ", sum of all timings is "
+        << colored(format_duration(all_timings_sum), ansi_codes::yellow);
 
+    if (has_not_included) {
+        out << ", sum of " << colored("(*)", ansi_codes::yellow) << " is "
+            << colored(format_duration(incl_timings_sum), ansi_codes::yellow);
+    }
+
+    out << '\n';
     out.flush();
 }
 
