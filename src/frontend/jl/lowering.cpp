@@ -400,10 +400,7 @@ namespace {
         return true;
 
     const auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(node);
-    if (vdecl != nullptr && vdecl->is_silent_decl())
-        return true;
-
-    return false;
+    return vdecl != nullptr && vdecl->is_silent_decl();
 }
 
 void add_node_to_compound(std::vector<SIRNodeId>& body, SIRNodeId child, const sir::SIRCtx& ctx) {
@@ -439,7 +436,15 @@ SIRNodeId JLLoweringVisitor::visit_CompoundExpr(CompoundExpr& cmpd) {
     }
 
     for (NodeId expr : cmpd.body) {
-        SIRNodeId lowered = visit_and_check(expr, true);
+        SIRNodeId lowered = SIRNodeId::null_id();
+        if (auto* expr_as_if = ctx.get_and_dyn_cast<IfExpr>(expr)) {
+            // HACK: this basically bypasses the general dispatch logic that everything else follows
+            // throughout traversal. fine while it's used here and one other spot, but may need some
+            // new design considerations if the number of cases ever grows.
+            pre_visit_ptr(expr_as_if);
+            lowered = lower_if_stmt(*expr_as_if);
+        } else
+            lowered = visit_and_check(expr, true);
 
         // catch unexpected null cases in debug
         assert((!lowered.is_null() || !_success || can_be_null_in_compound(expr, ctx)) &&
@@ -900,14 +905,24 @@ SIRNodeId JLLoweringVisitor::visit_LogicalBinOp(LogicalBinOp& lbo) {
                          : emplace_node<sir::BinaryOp>(lbo.location, BinOpKind::lor, lhs, rhs);
 }
 
-SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
+SIRNodeId JLLoweringVisitor::lower_if_stmt(IfExpr& if_) {
     SIRNodeId lo_cond = visit_and_check(if_.condition);
 
     // force branches to be compound statements in all cases
     // (unless it doesn't have a false branch in which case we keep that unset)
 
     auto lower_into_compound = [this](NodeId branch_src) -> std::optional<SIRNodeId> {
-        SIRNodeId lo_branch_base = visit_and_check(branch_src, true);
+        SIRNodeId lo_branch_base = SIRNodeId::null_id();
+
+        // elseif gets parsed directly into the branch as an IfExpr, no compound involved
+        // so it has to be lowered via this function too, so that it doesn't get coalesced to a
+        // ternary unconditionally
+        if (auto* branch_as_if = ctx.get_and_dyn_cast<IfExpr>(branch_src)) {
+            // same dispatch hack as in visit_CompoundExpr
+            pre_visit_ptr(branch_as_if);
+            lo_branch_base = lower_if_stmt(*branch_as_if);
+        } else
+            lo_branch_base = visit_and_check(branch_src, true);
 
         if (sir_ctx.isa<sir::CompoundStmt>(lo_branch_base))
             return lo_branch_base;
@@ -940,6 +955,12 @@ SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
     }
 
     return emplace_node<sir::IfStmt>(if_.location, lo_cond, *lo_true, lo_false);
+}
+
+SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
+    // we don't need to do the pre_visit hack we do in compound and the helper, since this is only
+    // ever reached through dispatch
+    return lower_if_stmt(if_);
 }
 
 SIRNodeId JLLoweringVisitor::visit_WhileExpr(WhileExpr& while_) {
