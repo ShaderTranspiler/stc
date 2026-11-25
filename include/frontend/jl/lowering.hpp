@@ -108,6 +108,12 @@ private:
 
     void swap_lower_type(TypeId& type) { type = lower_type(type); }
 
+    // unified if handling logic to share between lowering statement-level ternaries and proper if
+    // statements
+    SIRNodeId lower_if_stmt(IfExpr& if_);
+
+    NodeId unwrap_value_if_branch(NodeId node);
+
     // skips id-lookup roundtrip for nodes that have already been looked up
     SIRNodeId visit_ptr(Expr* node);
 
