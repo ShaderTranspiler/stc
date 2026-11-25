@@ -1369,6 +1369,30 @@ TypeId JLSema::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
     return tpool.void_td();
 }
 
+// we check paths recursively
+bool JLSema::all_paths_return(NodeId node) const {
+    if (ctx.isa<ReturnStmt>(node))
+        return true;
+
+    if (const auto* cmpd = ctx.get_and_dyn_cast<CompoundExpr>(node)) {
+        for (NodeId sub_node : cmpd->body) {
+            if (all_paths_return(sub_node))
+                return true;
+        }
+
+        return false;
+    }
+
+    if (const auto* if_ = ctx.get_and_dyn_cast<IfExpr>(node)) {
+        if (if_->true_branch.is_null() || if_->false_branch.is_null())
+            return false;
+
+        return all_paths_return(if_->true_branch) && all_paths_return(if_->false_branch);
+    }
+
+    return false;
+}
+
 TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
     if (cmpd.body.empty()) {
         if (visiting_method_body)
@@ -1429,7 +1453,13 @@ TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
 
         result_type = current_fn_ret;
 
-        if (current_fn_ret != ctx.jl_Nothing_t() && ret == nullptr) {
+        // FEATURE: for now we only take into account the last expression for all_paths_return,
+        // since applying it over the entire method body is a different question, which brings a
+        // bunch of (for now) undecided questions
+        // this is actually not that bad though, just might add some unnecessary returns that will
+        // have no effect once actually compiled from the generated output
+        if (current_fn_ret != ctx.jl_Nothing_t() && ret == nullptr &&
+            !all_paths_return(cmpd.body.back())) {
             // if the last expression isn't a return (and we're in a method body), insert an
             // explicit return for consistency
 
@@ -2955,7 +2985,7 @@ TypeId JLSema::visit_WhileExpr(WhileExpr& while_) {
 
 TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
     if (current_method == nullptr)
-        return fail("return statement outside of method body", ret);
+        return fail("return statement outside of method body is not allowed", ret);
 
     bool has_inner = !ret.inner.is_null();
 
@@ -2967,15 +2997,47 @@ TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
 
     // first return in body
     if (current_fn_ret.is_null()) {
-        if (has_inner)
+        if (has_inner) {
             current_fn_ret = infer(ret.inner);
-        else
+            if (current_fn_ret == ctx.jl_Nothing_t()) {
+                const auto* inner_as_if = ctx.get_and_dyn_cast<IfExpr>(ret.inner);
+                if (inner_as_if != nullptr && !inner_as_if->false_branch.is_null()) {
+                    if (inner_as_if->true_branch.is_null()) {
+                        return internal_error("if expression without a true branch in AST",
+                                              *inner_as_if);
+                    }
+
+                    const auto* true_branch_node  = ctx.get_node(inner_as_if->true_branch);
+                    const auto* false_branch_node = ctx.get_node(inner_as_if->false_branch);
+                    if (true_branch_node == nullptr || false_branch_node == nullptr) {
+                        return internal_error("if expression with invalid node IDs for branches",
+                                              *inner_as_if);
+                    }
+
+                    if (true_branch_node->type != false_branch_node->type) {
+                        return fail(
+                            fmt::format(
+                                "couldn't infer function return type from an if expression used as "
+                                "a "
+                                "value, because the types of its branches differ. Specify the "
+                                "function's return type explicitly, which could make the same "
+                                "return "
+                                "statement type-stable according to Julia semantics.\nTrue branch: "
+                                "{}\nFalse branch: {}",
+                                type_str(true_branch_node->type),
+                                type_str(false_branch_node->type)),
+                            ret);
+                    }
+                }
+            }
+        } else {
             current_fn_ret = ctx.jl_Nothing_t();
+        }
     } else {
         if (has_inner)
             check(ret.inner, current_fn_ret);
         else if (current_fn_ret != ctx.jl_Nothing_t())
-            return fail(fmt::format("empty return stmt in function expected to return {}",
+            return fail(fmt::format("empty return statement in function expected to return {}",
                                     type_str(current_fn_ret)),
                         ret);
     }

@@ -112,6 +112,8 @@ private:
     // statements
     SIRNodeId lower_if_stmt(IfExpr& if_);
 
+    NodeId unwrap_value_if_branch(NodeId node);
+
     // skips id-lookup roundtrip for nodes that have already been looked up
     SIRNodeId visit_ptr(Expr* node);
 
