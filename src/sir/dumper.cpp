@@ -344,6 +344,28 @@ void SIRDumper::visit_DeclRefExpr(DeclRefExpr& decl_ref) {
     out << indent() << "DeclRefExpr: '" << ctx.get_sym(decl->identifier) << "'\n";
 }
 
+void SIRDumper::visit_Ternary(Ternary& ternary) {
+    out << indent() << "Ternary:\n";
+    inc_indent();
+
+    out << indent() << dump_label("condition");
+    inc_indent();
+    visit(ternary.condition);
+    dec_indent();
+
+    out << indent() << dump_label("true value");
+    inc_indent();
+    visit(ternary.true_value);
+    dec_indent();
+
+    out << indent() << dump_label("false value");
+    inc_indent();
+    visit(ternary.false_value);
+    dec_indent();
+
+    dec_indent();
+}
+
 void SIRDumper::visit_ScopedStmt(ScopedStmt& scoped_stmt) {
     out << indent() << "ScopedStmt:\n";
     inc_indent();

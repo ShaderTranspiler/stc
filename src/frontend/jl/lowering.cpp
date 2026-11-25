@@ -957,10 +957,50 @@ SIRNodeId JLLoweringVisitor::lower_if_stmt(IfExpr& if_) {
     return emplace_node<sir::IfStmt>(if_.location, lo_cond, *lo_true, lo_false);
 }
 
+// acts strictly as the value form of IfExpr
+// IfExpr-s in statements positions are not visited by this, thanks to the cmpd visitor's
+// dispatch hijacking hack
 SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
-    // we don't need to do the pre_visit hack we do in compound and the helper, since this is only
-    // ever reached through dispatch
-    return lower_if_stmt(if_);
+    if (if_.true_branch.is_null())
+        return internal_error("null true branch inside if expression", if_);
+    if (if_.false_branch.is_null())
+        return fail("an if expression used as an r-value must have both its branches defined", if_);
+
+    auto unwrap_branch = [this, &if_](NodeId node) -> NodeId {
+        assert(!node.is_null()); // we handle this case separately above
+
+        if (const auto* node_as_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(node)) {
+            if (node_as_cmpd->body.size() == 1)
+                return node_as_cmpd->body[0];
+
+            fail(
+                fmt::format("an if expression used as an r-value cannot have a branch {} "
+                            "expression in it",
+                            node_as_cmpd->body.empty() ? "without a single" : "with more than one"),
+                if_);
+
+            return NodeId::null_id();
+        }
+
+        return node;
+    };
+
+    NodeId unwrapped_true_value  = unwrap_branch(if_.true_branch);
+    NodeId unwrapped_false_value = unwrap_branch(if_.false_branch);
+    if (unwrapped_true_value.is_null() || unwrapped_false_value.is_null())
+        return SIRNodeId::null_id();
+
+    // we expect sema to take care of the type checking part, since it has more robust capabilities
+    // for type compatibility resolution than we do here anyway
+
+    SIRNodeId lo_cond  = visit_and_check(if_.condition);
+    SIRNodeId lo_true  = visit_and_check(unwrapped_true_value);
+    SIRNodeId lo_false = visit_and_check(unwrapped_false_value);
+    if (lo_cond.is_null() || lo_true.is_null() || lo_false.is_null())
+        return SIRNodeId::null_id();
+
+    return sir_ctx.emplace_node<sir::Ternary>(if_.location, lo_cond, lo_true, lo_false, if_.type)
+        .first;
 }
 
 SIRNodeId JLLoweringVisitor::visit_WhileExpr(WhileExpr& while_) {

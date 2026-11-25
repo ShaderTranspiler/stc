@@ -1,5 +1,3 @@
-# GLSL(missing): unexpected IF
-
 # COMMENT: the final if (or ternary) is the method's value, so it's an if used as a value
 
 function g(c::Bool)::Int32

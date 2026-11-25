@@ -592,6 +592,16 @@ void GLSLCodeGenVisitor::visit_DeclRefExpr(DeclRefExpr& decl_ref) {
     out << ctx.get_sym(decl->identifier);
 }
 
+void GLSLCodeGenVisitor::visit_Ternary(Ternary& ternary) {
+    out << '(';
+    visit(ternary.condition);
+    out << ") ? (";
+    visit(ternary.true_value);
+    out << ") : (";
+    visit(ternary.false_value);
+    out << ')';
+}
+
 // ================
 //   Declarations
 // ================
