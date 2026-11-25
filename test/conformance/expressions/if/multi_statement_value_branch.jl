@@ -3,7 +3,7 @@
 function main()
     local c::Bool = true
 
-    x = if c # ERROR(missing)
+    x = if c # ERROR(+1)
         y = 1
         y + 1
     else

@@ -1,7 +1,5 @@
 # COMMENT: written by Claude, reviewed by szgerii
 
-# GLSL(missing): unexpected IF
-
 g(x::Float32) = x
 
 function h(c::Bool)::Float32

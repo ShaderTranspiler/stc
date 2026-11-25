@@ -157,6 +157,13 @@ private:
 
     NodeId resolve_sym_with_binding(SymbolId sym, BindingType bt, const Expr& base_expr);
 
+    // tries to decide if all execution paths in a given subtree return a value
+    // does NOT check their type against each other (if there are more than one), since that's
+    // handled by the visitors already
+    // for now, we only do some basic "unification", we don't check complex cases, or take constants
+    // into account, etc.
+    bool all_paths_return(NodeId node) const;
+
     void wrap_in_cast(NodeId& target, TypeId cast_type, bool explicit_cast, Expr& expr) {
         assert(!target.is_null() && ctx.get_node(target) != nullptr);
         assert(ctx.get_node(target) == &expr);
