@@ -400,10 +400,7 @@ namespace {
         return true;
 
     const auto* vdecl = ctx.get_and_dyn_cast<VarDecl>(node);
-    if (vdecl != nullptr && vdecl->is_silent_decl())
-        return true;
-
-    return false;
+    return vdecl != nullptr && vdecl->is_silent_decl();
 }
 
 void add_node_to_compound(std::vector<SIRNodeId>& body, SIRNodeId child, const sir::SIRCtx& ctx) {
@@ -439,7 +436,15 @@ SIRNodeId JLLoweringVisitor::visit_CompoundExpr(CompoundExpr& cmpd) {
     }
 
     for (NodeId expr : cmpd.body) {
-        SIRNodeId lowered = visit_and_check(expr, true);
+        SIRNodeId lowered = SIRNodeId::null_id();
+        if (auto* expr_as_if = ctx.get_and_dyn_cast<IfExpr>(expr)) {
+            // HACK: this basically bypasses the general dispatch logic that everything else follows
+            // throughout traversal. fine while it's used here and one other spot, but may need some
+            // new design considerations if the number of cases ever grows.
+            pre_visit_ptr(expr_as_if);
+            lowered = lower_if_stmt(*expr_as_if);
+        } else
+            lowered = visit_and_check(expr, true);
 
         // catch unexpected null cases in debug
         assert((!lowered.is_null() || !_success || can_be_null_in_compound(expr, ctx)) &&
@@ -900,14 +905,24 @@ SIRNodeId JLLoweringVisitor::visit_LogicalBinOp(LogicalBinOp& lbo) {
                          : emplace_node<sir::BinaryOp>(lbo.location, BinOpKind::lor, lhs, rhs);
 }
 
-SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
+SIRNodeId JLLoweringVisitor::lower_if_stmt(IfExpr& if_) {
     SIRNodeId lo_cond = visit_and_check(if_.condition);
 
     // force branches to be compound statements in all cases
     // (unless it doesn't have a false branch in which case we keep that unset)
 
     auto lower_into_compound = [this](NodeId branch_src) -> std::optional<SIRNodeId> {
-        SIRNodeId lo_branch_base = visit_and_check(branch_src, true);
+        SIRNodeId lo_branch_base = SIRNodeId::null_id();
+
+        // elseif gets parsed directly into the branch as an IfExpr, no compound involved
+        // so it has to be lowered via this function too, so that it doesn't get coalesced to a
+        // ternary unconditionally
+        if (auto* branch_as_if = ctx.get_and_dyn_cast<IfExpr>(branch_src)) {
+            // same dispatch hack as in visit_CompoundExpr
+            pre_visit_ptr(branch_as_if);
+            lo_branch_base = lower_if_stmt(*branch_as_if);
+        } else
+            lo_branch_base = visit_and_check(branch_src, true);
 
         if (sir_ctx.isa<sir::CompoundStmt>(lo_branch_base))
             return lo_branch_base;
@@ -942,6 +957,66 @@ SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
     return emplace_node<sir::IfStmt>(if_.location, lo_cond, *lo_true, lo_false);
 }
 
+NodeId JLLoweringVisitor::unwrap_value_if_branch(NodeId node) {
+    if (node.is_null()) {
+        ::stc::internal_error("unwrap_value_if_branch called with null node");
+        return NodeId::null_id();
+    }
+
+    if (const auto* node_as_cmpd = ctx.get_and_dyn_cast<CompoundExpr>(node)) {
+        if (node_as_cmpd->body.size() == 1)
+            return unwrap_value_if_branch(node_as_cmpd->body[0]);
+
+        fail(fmt::format("an if expression used as an r-value cannot have a branch {} "
+                         "expression in it",
+                         node_as_cmpd->body.empty() ? "without a single" : "with more than one"),
+             *node_as_cmpd);
+
+        return NodeId::null_id();
+    }
+
+    if (ctx.isa<ReturnStmt>(node) || ctx.isa<BreakStmt>(node) || ctx.isa<ContinueStmt>(node)) {
+        const auto* node_base = ctx.get_node(node);
+        if (node_base != nullptr) {
+            fail("cannot use control flow statements inside an if used as a value (i.e. return, "
+                 "break or continue)",
+                 *node_base);
+        } else {
+            ::stc::internal_error("invalid node ID in subtree passed to unwrap_value_if_branch");
+        }
+
+        return NodeId::null_id();
+    }
+
+    return node;
+}
+
+// acts strictly as the value form of IfExpr
+// IfExpr-s in statements positions are not visited by this, thanks to the cmpd visitor's
+// dispatch hijacking hack
+SIRNodeId JLLoweringVisitor::visit_IfExpr(IfExpr& if_) {
+    if (if_.true_branch.is_null())
+        return internal_error("null true branch inside if expression", if_);
+    if (if_.false_branch.is_null())
+        return fail("an if expression used as an r-value must have both its branches defined", if_);
+
+    NodeId unwrapped_true_value  = unwrap_value_if_branch(if_.true_branch);
+    NodeId unwrapped_false_value = unwrap_value_if_branch(if_.false_branch);
+    if (unwrapped_true_value.is_null() || unwrapped_false_value.is_null())
+        return SIRNodeId::null_id();
+
+    // we expect sema to take care of the type checking part, since it has more robust capabilities
+    // for type compatibility resolution than we do here anyway
+
+    SIRNodeId lo_cond  = visit_and_check(if_.condition);
+    SIRNodeId lo_true  = visit_and_check(unwrapped_true_value);
+    SIRNodeId lo_false = visit_and_check(unwrapped_false_value);
+    if (lo_cond.is_null() || lo_true.is_null() || lo_false.is_null())
+        return SIRNodeId::null_id();
+
+    return emplace_node<sir::Ternary>(if_.location, lo_cond, lo_true, lo_false, if_.type);
+}
+
 SIRNodeId JLLoweringVisitor::visit_WhileExpr(WhileExpr& while_) {
     SIRNodeId lo_cond = visit_and_check(while_.condition);
 
@@ -955,8 +1030,29 @@ SIRNodeId JLLoweringVisitor::visit_ReturnStmt(ReturnStmt& return_stmt) {
     if (return_stmt.inner.is_null() || ctx.isa<NothingLiteral>(return_stmt.inner))
         return emplace_node<sir::ReturnStmt>(return_stmt.location);
 
-    SIRNodeId lo_inner = visit_and_check(return_stmt.inner);
+    Expr* inner = ctx.get_node(return_stmt.inner);
+    if (inner != nullptr && inner->type == ctx.jl_Nothing_t()) {
+        // in Julia, you can return a Nothing-typed expression from a function returning Nothing
+        // in GLSL, you cannot do void f() {}; void g() { return f(); }
+        // we lower expression that might be Nothing-typed into executing them first, then returning
+        // nothing regularly, which ensures any side effect is not stripped
+        // since a return only ever occurs in a compound, we can splice the generated code into it
 
+        SIRNodeId lo_inner;
+        if (auto* inner_as_if = dyn_cast<IfExpr>(inner)) {
+            pre_visit_ptr(inner_as_if);
+            lo_inner = lower_if_stmt(*inner_as_if);
+        } else {
+            lo_inner = visit_and_check(return_stmt.inner, true);
+        }
+
+        // generate empty return
+        SIRNodeId lo_ret = emplace_node<sir::ReturnStmt>(return_stmt.location);
+        return emplace_node<sir::CompoundStmt>(return_stmt.location, std::vector{lo_inner, lo_ret},
+                                               true);
+    }
+
+    SIRNodeId lo_inner = visit_and_check(return_stmt.inner);
     return emplace_node<sir::ReturnStmt>(return_stmt.location, lo_inner);
 }
 

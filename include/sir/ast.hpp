@@ -477,6 +477,19 @@ struct DeclRefExpr : public Expr {
     SAME_NODE_KIND_DEF(NodeKind::DeclRef)
 };
 
+struct Ternary : public Expr {
+    NodeId condition, true_value, false_value;
+
+    explicit Ternary(SrcLocationId location, NodeId condition, NodeId true_value,
+                     NodeId false_value, TypeId type)
+        : Expr{location, NodeKind::Ternary, type},
+          condition{condition},
+          true_value{true_value},
+          false_value{false_value} {}
+
+    SAME_NODE_KIND_DEF(NodeKind::Ternary)
+};
+
 // ===============
 //   Statements
 // ===============

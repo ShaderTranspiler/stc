@@ -56,6 +56,11 @@ jl_datatype_t* JLSema::to_jl_type(TypeId type) {
 }
 
 NodeId JLSema::try_unwrap_cmpd(NodeId cmpd_id) {
+    if (cmpd_id.is_null()) {
+        ::stc::internal_error("null id passed to try_unwrap_cmpd");
+        return NodeId::null_id();
+    }
+
     const auto* cmpd = ctx.get_and_dyn_cast<CompoundExpr>(cmpd_id);
 
     if (cmpd == nullptr)
@@ -67,8 +72,8 @@ NodeId JLSema::try_unwrap_cmpd(NodeId cmpd_id) {
     }
 
     if (cmpd->body.size() > 1) {
-        fail("multi-expression compound expression in position where a single expression is "
-             "expected",
+        fail("multi-expression compound expression in position where only a single expression, or "
+             "a compound containing only a single expression is expected",
              *cmpd);
         return NodeId::null_id();
     }
@@ -637,18 +642,22 @@ TypeId JLSema::visit_VarDecl(VarDecl& vdecl) {
         }
     }
 
-    // TODO: lazy infer declared var type
     if (!has_type && !has_init)
         return fail("variable declaration without neither a type annotation, or an initializer is "
                     "currently not allowed",
                     vdecl);
 
+    if (has_init) {
+        vdecl.initializer = try_unwrap_cmpd(vdecl.initializer);
+        if (vdecl.initializer.is_null())
+            return TypeId::null_id();
+    }
+
     if (has_type) {
         if (has_init) {
             bool valid_init = check(vdecl.initializer, vdecl.annot_type);
-
-            // check already reports the type mismatch, this is just to stop further traversal of
-            // AST subtree (to reduce number of errors propagated from the same source)
+            // check already reports the type mismatch, this is just to stop further traversal
+            // of AST subtree (to reduce number of errors propagated from the same source)
             if (!valid_init)
                 return TypeId::null_id();
 
@@ -696,6 +705,12 @@ TypeId JLSema::visit_ParamDecl(ParamDecl& pdecl) {
         return fail("parameter declaration without either a type annotation or a default "
                     "initializer is not allowed",
                     pdecl);
+
+    if (has_init) {
+        pdecl.default_initializer = try_unwrap_cmpd(pdecl.default_initializer);
+        if (pdecl.default_initializer.is_null())
+            return TypeId::null_id();
+    }
 
     if (has_type) {
         if (has_init) {
@@ -1354,6 +1369,30 @@ TypeId JLSema::visit_InterfaceBlockDecl(InterfaceBlockDecl& iface_blk) {
     return tpool.void_td();
 }
 
+// we check paths recursively
+bool JLSema::all_paths_return(NodeId node) const {
+    if (ctx.isa<ReturnStmt>(node))
+        return true;
+
+    if (const auto* cmpd = ctx.get_and_dyn_cast<CompoundExpr>(node)) {
+        for (NodeId sub_node : cmpd->body) {
+            if (all_paths_return(sub_node))
+                return true;
+        }
+
+        return false;
+    }
+
+    if (const auto* if_ = ctx.get_and_dyn_cast<IfExpr>(node)) {
+        if (if_->true_branch.is_null() || if_->false_branch.is_null())
+            return false;
+
+        return all_paths_return(if_->true_branch) && all_paths_return(if_->false_branch);
+    }
+
+    return false;
+}
+
 TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
     if (cmpd.body.empty()) {
         if (visiting_method_body)
@@ -1414,7 +1453,13 @@ TypeId JLSema::visit_CompoundExpr(CompoundExpr& cmpd) {
 
         result_type = current_fn_ret;
 
-        if (current_fn_ret != ctx.jl_Nothing_t() && ret == nullptr) {
+        // FEATURE: for now we only take into account the last expression for all_paths_return,
+        // since applying it over the entire method body is a different question, which brings a
+        // bunch of (for now) undecided questions
+        // this is actually not that bad though, just might add some unnecessary returns that will
+        // have no effect once actually compiled from the generated output
+        if (current_fn_ret != ctx.jl_Nothing_t() && ret == nullptr &&
+            !all_paths_return(cmpd.body.back())) {
             // if the last expression isn't a return (and we're in a method body), insert an
             // explicit return for consistency
 
@@ -1510,19 +1555,31 @@ TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
     }
 
     if (!checked_el_type.is_null()) {
-        for (NodeId& member : arr_lit.members)
+        for (NodeId& member : arr_lit.members) {
+            member = try_unwrap_cmpd(member);
+            if (member.is_null())
+                return TypeId::null_id();
+
             check(member, checked_el_type);
+        }
 
         return tpool.array_td(checked_el_type, len);
     }
 
-    TypeId inferred_el_type = infer(arr_lit.members[0]);
+    arr_lit.members[0] = try_unwrap_cmpd(arr_lit.members[0]);
+    if (arr_lit.members[0].is_null())
+        return TypeId::null_id();
 
+    TypeId inferred_el_type = infer(arr_lit.members[0]);
     if (inferred_el_type.is_null())
         return fail("failed to infer element type for first element of array literal", arr_lit);
 
     bool any_check_failed = false;
     for (size_t i = 1; i < arr_lit.members.size(); i++) {
+        arr_lit.members[i] = try_unwrap_cmpd(arr_lit.members[i]);
+        if (arr_lit.members[i].is_null())
+            return TypeId::null_id();
+
         bool member_valid = check(arr_lit.members[i], inferred_el_type);
         any_check_failed  = any_check_failed || !member_valid;
     }
@@ -1536,9 +1593,18 @@ TypeId JLSema::visit_ArrayLiteral(ArrayLiteral& arr_lit) {
 TypeId JLSema::visit_IndexerExpr(IndexerExpr& idx_expr) {
     bool prev_vis_idx = visiting_indexer;
     visiting_indexer  = true;
-    for (auto& idx : idx_expr.indexers)
+    for (NodeId& idx : idx_expr.indexers) {
+        idx = try_unwrap_cmpd(idx);
+        if (idx.is_null())
+            return TypeId::null_id();
+
         infer(idx);
+    }
     visiting_indexer = prev_vis_idx;
+
+    idx_expr.target = try_unwrap_cmpd(idx_expr.target);
+    if (idx_expr.target.is_null())
+        return TypeId::null_id();
 
     infer(idx_expr.target);
     TypeId coll_type = ctx.get_node(idx_expr.target)->type;
@@ -1625,8 +1691,11 @@ TypeId JLSema::visit_FieldAccess(FieldAccess& acc) {
     if (!acc.type.is_null())
         return acc.type;
 
-    TypeId target_ty = infer(acc.target);
+    acc.target = try_unwrap_cmpd(acc.target);
+    if (acc.target.is_null())
+        return TypeId::null_id();
 
+    TypeId target_ty = infer(acc.target);
     if (target_ty.is_null())
         return fail("couldn't infer type of field access node's target expression", acc);
 
@@ -2055,6 +2124,10 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
             NodeId decl_id = resolve_sym_with_binding(sym->value, bt, assign);
 
             if (decl_id.is_null()) {
+                assign.value = try_unwrap_cmpd(assign.value);
+                if (assign.value.is_null())
+                    return TypeId::null_id();
+
                 TypeId inf_type = infer(assign.value);
                 if (inf_type.is_null())
                     return TypeId::null_id();
@@ -2164,6 +2237,10 @@ TypeId JLSema::visit_Assignment(Assignment& assign) {
         }
     }
 
+    assign.value = try_unwrap_cmpd(assign.value);
+    if (assign.value.is_null())
+        return TypeId::null_id();
+
     if (assign.value.is_null()) {
         if (!_success)
             return internal_error("rhs of assignment points to null", assign);
@@ -2203,7 +2280,12 @@ TypeId JLSema::visit_UpdateAssignment(UpdateAssignment& up_assign) {
                               up_assign);
 
     // lhs should be inferrable for valid update assignments
-    TypeId lhs_ty   = infer(up_assign.target);
+    TypeId lhs_ty = infer(up_assign.target);
+
+    up_assign.value = try_unwrap_cmpd(up_assign.value);
+    if (up_assign.value.is_null())
+        return TypeId::null_id();
+
     TypeId value_ty = infer(up_assign.value); // CLEANUP: check call instead of this
 
     std::vector<TypeId> arg_types = {lhs_ty, value_ty};
@@ -2610,6 +2692,10 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
         if (arg.is_null())
             return internal_error("null node as argument to function call", fn_call);
 
+        arg = try_unwrap_cmpd(arg);
+        if (arg.is_null())
+            return TypeId::null_id();
+
         TypeId arg_type = infer(arg);
 
         if (arg_type.is_null()) {
@@ -2702,6 +2788,8 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             std::vector<TypeId> arg_el_types{};
             arg_el_types.reserve(arg_types.size());
 
+            // arg_type here requires no compound unwrapping since we already did that in the base
+            // arg loop earlier
             for (TypeId arg_type : arg_types)
                 arg_el_types.emplace_back(tpool.el_type_of(arg_type, true));
 
@@ -2743,6 +2831,7 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
             const auto* field_decl = ctx.get_and_dyn_cast<FieldDecl>(struct_decl->field_decls[i]);
             assert(field_decl != nullptr);
 
+            // we don't unwrap_cmpd the args here, since we already did that in the generic arg loop
             bool arg_valid = check(fn_call.args[i], field_decl->type, true);
             valid_call     = valid_call && arg_valid;
         }
@@ -2825,6 +2914,11 @@ TypeId JLSema::visit_FunctionCall(FunctionCall& fn_call) {
 TypeId JLSema::visit_LogicalBinOp(LogicalBinOp& lbo) {
     TypeId bool_id = tpool.bool_td();
 
+    lbo.lhs = try_unwrap_cmpd(lbo.lhs);
+    lbo.rhs = try_unwrap_cmpd(lbo.rhs);
+    if (lbo.lhs.is_null() || lbo.rhs.is_null())
+        return TypeId::null_id();
+
     check(lbo.lhs, bool_id);
     check(lbo.rhs, bool_id);
 
@@ -2891,28 +2985,59 @@ TypeId JLSema::visit_WhileExpr(WhileExpr& while_) {
 
 TypeId JLSema::visit_ReturnStmt(ReturnStmt& ret) {
     if (current_method == nullptr)
-        return fail("return statement outside of method body", ret);
+        return fail("return statement outside of method body is not allowed", ret);
 
     bool has_inner = !ret.inner.is_null();
 
     if (has_inner) {
         ret.inner = try_unwrap_cmpd(ret.inner);
-
         if (ret.inner.is_null())
             return TypeId::null_id();
     }
 
     // first return in body
     if (current_fn_ret.is_null()) {
-        if (has_inner)
+        if (has_inner) {
             current_fn_ret = infer(ret.inner);
-        else
+            if (current_fn_ret == ctx.jl_Nothing_t()) {
+                const auto* inner_as_if = ctx.get_and_dyn_cast<IfExpr>(ret.inner);
+                if (inner_as_if != nullptr && !inner_as_if->false_branch.is_null()) {
+                    if (inner_as_if->true_branch.is_null()) {
+                        return internal_error("if expression without a true branch in AST",
+                                              *inner_as_if);
+                    }
+
+                    const auto* true_branch_node  = ctx.get_node(inner_as_if->true_branch);
+                    const auto* false_branch_node = ctx.get_node(inner_as_if->false_branch);
+                    if (true_branch_node == nullptr || false_branch_node == nullptr) {
+                        return internal_error("if expression with invalid node IDs for branches",
+                                              *inner_as_if);
+                    }
+
+                    if (true_branch_node->type != false_branch_node->type) {
+                        return fail(
+                            fmt::format(
+                                "couldn't infer function return type from an if expression used as "
+                                "a "
+                                "value, because the types of its branches differ. Specify the "
+                                "function's return type explicitly, which could make the same "
+                                "return "
+                                "statement type-stable according to Julia semantics.\nTrue branch: "
+                                "{}\nFalse branch: {}",
+                                type_str(true_branch_node->type),
+                                type_str(false_branch_node->type)),
+                            ret);
+                    }
+                }
+            }
+        } else {
             current_fn_ret = ctx.jl_Nothing_t();
+        }
     } else {
         if (has_inner)
             check(ret.inner, current_fn_ret);
         else if (current_fn_ret != ctx.jl_Nothing_t())
-            return fail(fmt::format("empty return stmt in function expected to return {}",
+            return fail(fmt::format("empty return statement in function expected to return {}",
                                     type_str(current_fn_ret)),
                         ret);
     }

@@ -1,5 +1,3 @@
-# GLSL(missing): unexpected IF
-
 function main()
     some_bool = true
     x = some_bool ? 1.0 : 2.0
